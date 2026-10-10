@@ -90,6 +90,28 @@ class DocumentParser:
         full_text = "\n\n".join(sheet_texts)
         return full_text, len(wb.sheetnames), page_chunks
 
+    @staticmethod
+    def parse_docx(file_bytes: bytes) -> Tuple[str, int, List[Dict[str, Any]]]:
+        """Parses DOCX documents using standard zipfile and xml parsing."""
+        import zipfile
+        import xml.etree.ElementTree as ET
+
+        try:
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+                xml_content = z.read("word/document.xml")
+                tree = ET.fromstring(xml_content)
+                paragraphs = []
+                for p in tree.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p"):
+                    texts = [elem.text for elem in p.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t") if elem.text]
+                    if texts:
+                        paragraphs.append("".join(texts).strip())
+                full_text = "\n".join([p for p in paragraphs if p])
+                page_chunks = [{"page": 1, "text": full_text}]
+                return full_text, 1, page_chunks
+        except Exception as e:
+            logger.error(f"Failed to parse DOCX: {e}")
+            return "", 0, []
+
     @classmethod
     def parse_file(cls, file_name: str, file_bytes: bytes) -> Tuple[str, int, List[Dict[str, int]]]:
         """Auto-detects file format by extension and parses."""
@@ -102,6 +124,9 @@ class DocumentParser:
             return cls.parse_csv(file_bytes)
         elif ext in [".xlsx", ".xls"]:
             return cls.parse_excel(file_bytes)
+        elif ext in [".docx", ".doc"]:
+            return cls.parse_docx(file_bytes)
         else:
             # Fallback to plain text
             return cls.parse_text(file_bytes)
+
