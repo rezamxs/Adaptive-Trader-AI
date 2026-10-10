@@ -1,0 +1,100 @@
+{"timestamp":"2026-10-10T17:30:58", "level":"INFO", "module":"init_db", "message":"Initializing database tables..."}
+{"timestamp":"2026-10-10T17:30:59", "level":"INFO", "module":"init_db", "message":"Initialized default emergency stop state (Inactive)."}
+{"timestamp":"2026-10-10T17:43:08", "level":"INFO", "module":"logging", "message":"SECURITY_AUDIT | Event=RULE_APPROVED | Details={'rule_id': 'rule_a94c8fb3', 'name': 'Trading Playbook Volume 1', 'actor': 'SENIOR_TRADER'}"}
+{"timestamp":"2026-10-10T17:43:08", "level":"INFO", "module":"logging", "message":"SECURITY_AUDIT | Event=RULE_REJECTED | Details={'rule_id': 'rule_067b6877', 'reason': 'Ambiguous stop loss definition', 'actor': 'RISK_OFFICER'}"}
+{"timestamp":"2026-10-10T17:47:32", "level":"INFO", "module":"mt5_provider", "message":"Connected to MT5 terminal at C:\Program Files\<YourBroker> MT5"}
+{"timestamp":"2026-10-10T17:47:32", "level":"INFO", "module":"mt5_provider", "message":"MT5 connection closed."}
+{"timestamp":"2026-10-10T17:59:52", "level":"INFO", "module":"pipeline", "message":"Recorded dataset version ds_eurusd_m15_628ad3ba in database."}
+{"timestamp":"2026-10-10T17:59:52", "level":"INFO", "module":"trainer", "message":"Registered new model model_logist_558fb2a7 as CANDIDATE in database."}
+{"timestamp":"2026-10-10T17:59:53", "level":"INFO", "module":"pipeline", "message":"Recorded dataset version ds_eurusd_m15_a029ccc2 in database."}
+{"timestamp":"2026-10-10T17:59:53", "level":"INFO", "module":"trainer", "message":"Registered new model model_logist_56b2b2ab as CANDIDATE in database."}
+{"timestamp":"2026-10-10T17:59:53", "level":"INFO", "module":"trainer", "message":"Registered new model model_random_988e4c74 as CANDIDATE in database."}
+{"timestamp":"2026-10-10T17:59:53", "level":"INFO", "module":"logging", "message":"SECURITY_AUDIT | Event=MODEL_PROMOTED | Details={'model_id': 'model_logist_56b2b2ab', 'actor': 'QUANT_LEAD', 'previous_active': None}"}
+{"timestamp":"2026-10-10T17:59:53", "level":"INFO", "module":"registry", "message":"Archived previous active model model_logist_56b2b2ab."}
+{"timestamp":"2026-10-10T17:59:53", "level":"INFO", "module":"logging", "message":"SECURITY_AUDIT | Event=MODEL_PROMOTED | Details={'model_id': 'model_random_988e4c74', 'actor': 'QUANT_LEAD', 'previous_active': 'model_logist_56b2b2ab'}"}
+{"timestamp":"2026-10-10T17:59:53", "level":"INFO", "module":"pipeline", "message":"Recorded dataset version ds_eurusd_m15_3e148387 in database."}
+{"timestamp":"2026-10-10T17:59:54", "level":"INFO", "module":"trainer", "message":"Registered new model model_baseli_ff6de22f as CANDIDATE in database."}
+{"timestamp":"2026-10-10T18:15:50", "level":"CRITICAL", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_ACTIVATED | Details={'actor': 'TRADER_ADMIN', 'reason': 'Manual test trigger'}"}
+{"timestamp":"2026-10-10T18:15:50", "level":"CRITICAL", "module":"circuit_breaker", "message":"EMERGENCY STOP ACTIVATED by TRADER_ADMIN. Reason: Manual test trigger"}
+{"timestamp":"2026-10-10T18:15:50", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_DEACTIVATED | Details={'actor': 'TRADER_ADMIN', 'notes': 'System cleared'}"}
+{"timestamp":"2026-10-10T18:15:50", "level":"WARNING", "module":"circuit_breaker", "message":"EMERGENCY STOP DEACTIVATED by TRADER_ADMIN. Notes: System cleared"}
+{"timestamp":"2026-10-10T18:15:50", "level":"CRITICAL", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_ACTIVATED | Details={'actor': 'SYS', 'reason': 'Emergency maintenance'}"}
+{"timestamp":"2026-10-10T18:15:50", "level":"CRITICAL", "module":"circuit_breaker", "message":"EMERGENCY STOP ACTIVATED by SYS. Reason: Emergency maintenance"}
+{"timestamp":"2026-10-10T18:15:50", "level":"CRITICAL", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_ACTIVATED | Details={'actor': 'RISK_ENGINE', 'reason': 'Daily drawdown limit breached: 3.50% >= 3.00%'}"}
+{"timestamp":"2026-10-10T18:15:50", "level":"CRITICAL", "module":"circuit_breaker", "message":"EMERGENCY STOP ACTIVATED by RISK_ENGINE. Reason: Daily drawdown limit breached: 3.50% >= 3.00%"}
+{"timestamp":"2026-10-10T18:20:51", "level":"INFO", "module":"logging", "message":"SECURITY_AUDIT | Event=SIGNAL_GENERATED | Details={'signal_id': 'sig_e0e62fe250', 'symbol': 'EURUSD', 'direction': 'BUY', 'mode': 'SIGNAL_ONLY', 'risk_status': 'APPROVED'}"}
+{"timestamp":"2026-10-10T18:20:51", "level":"INFO", "module":"manager", "message":"Generated signal sig_e0e62fe250 (BUY on EURUSD) under mode SIGNAL_ONLY."}
+{"timestamp":"2026-10-10T18:20:51", "level":"INFO", "module":"logging", "message":"SECURITY_AUDIT | Event=SIGNAL_GENERATED | Details={'signal_id': 'sig_c9e2e58e33', 'symbol': 'EURUSD', 'direction': 'BUY', 'mode': 'SIGNAL_ONLY', 'risk_status': 'APPROVED'}"}
+{"timestamp":"2026-10-10T18:20:51", "level":"INFO", "module":"manager", "message":"Generated signal sig_c9e2e58e33 (BUY on EURUSD) under mode SIGNAL_ONLY."}
+{"timestamp":"2026-10-10T18:20:51", "level":"INFO", "module":"manager", "message":"Signal with key EURUSD_M15_202610101435_BUY already recorded. Skipping duplicate."}
+{"timestamp":"2026-10-10T18:26:05", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=DEMO_ORDER_BLOCKED | Details={'signal_id': 'sig_test_001', 'error': "Execution blocked: System execution mode is 'SIGNAL_ONLY', not 'DEMO_TRADING'."}"}
+{"timestamp":"2026-10-10T18:26:05", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=DEMO_ORDER_BLOCKED | Details={'signal_id': 'sig_test_001', 'error': 'Execution blocked: DEMO_TRADING_ENABLED gate is False in settings.'}"}
+{"timestamp":"2026-10-10T18:26:05", "level":"CRITICAL", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_ACTIVATED | Details={'actor': 'RISK_SYSTEM', 'reason': 'Market volatility spike'}"}
+{"timestamp":"2026-10-10T18:26:05", "level":"CRITICAL", "module":"circuit_breaker", "message":"EMERGENCY STOP ACTIVATED by RISK_SYSTEM. Reason: Market volatility spike"}
+{"timestamp":"2026-10-10T18:26:05", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=DEMO_ORDER_BLOCKED | Details={'signal_id': 'sig_test_001', 'error': 'Execution blocked: Emergency Stop is currently ACTIVE.'}"}
+{"timestamp":"2026-10-10T18:26:05", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=DEMO_ORDER_BLOCKED | Details={'signal_id': 'sig_test_001', 'error': 'Execution blocked: Account could not be verified as a genuine DEMO account.'}"}
+{"timestamp":"2026-10-10T18:26:58", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=DEMO_ORDER_BLOCKED | Details={'signal_id': 'sig_test_001', 'error': "Execution blocked: System execution mode is 'SIGNAL_ONLY', not 'DEMO_TRADING'."}"}
+{"timestamp":"2026-10-10T18:26:58", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=DEMO_ORDER_BLOCKED | Details={'signal_id': 'sig_test_001', 'error': 'Execution blocked: DEMO_TRADING_ENABLED gate is False in settings.'}"}
+{"timestamp":"2026-10-10T18:26:58", "level":"CRITICAL", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_ACTIVATED | Details={'actor': 'RISK_SYSTEM', 'reason': 'Market volatility spike'}"}
+{"timestamp":"2026-10-10T18:26:58", "level":"CRITICAL", "module":"circuit_breaker", "message":"EMERGENCY STOP ACTIVATED by RISK_SYSTEM. Reason: Market volatility spike"}
+{"timestamp":"2026-10-10T18:26:58", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=DEMO_ORDER_BLOCKED | Details={'signal_id': 'sig_test_001', 'error': 'Execution blocked: Emergency Stop is currently ACTIVE.'}"}
+{"timestamp":"2026-10-10T18:26:58", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=DEMO_ORDER_BLOCKED | Details={'signal_id': 'sig_test_001', 'error': 'Execution blocked: Account could not be verified as a genuine DEMO account.'}"}
+{"timestamp":"2026-10-10T18:40:03", "level":"INFO", "module":"init_db", "message":"Initializing database tables..."}
+{"timestamp":"2026-10-10T18:40:03", "level":"INFO", "module":"init_db", "message":"Loaded existing emergency stop state: Active=False"}
+{"timestamp":"2026-10-10T18:40:03", "level":"CRITICAL", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_ACTIVATED | Details={'actor': 'TEST_RUNNER', 'reason': 'API test stop'}"}
+{"timestamp":"2026-10-10T18:40:03", "level":"CRITICAL", "module":"circuit_breaker", "message":"EMERGENCY STOP ACTIVATED by TEST_RUNNER. Reason: API test stop"}
+{"timestamp":"2026-10-10T18:40:04", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_DEACTIVATED | Details={'actor': 'TEST_RUNNER', 'notes': 'API test clear'}"}
+{"timestamp":"2026-10-10T18:40:04", "level":"WARNING", "module":"circuit_breaker", "message":"EMERGENCY STOP DEACTIVATED by TEST_RUNNER. Notes: API test clear"}
+{"timestamp":"2026-10-10T18:40:17", "level":"INFO", "module":"mt5_provider", "message":"Connected to MT5 terminal at C:\Program Files\<YourBroker> MT5"}
+{"timestamp":"2026-10-10T18:40:17", "level":"INFO", "module":"mt5_provider", "message":"MT5 connection closed."}
+{"timestamp":"2026-10-10T18:46:15", "level":"INFO", "module":"init_db", "message":"Initializing database tables..."}
+{"timestamp":"2026-10-10T18:46:15", "level":"INFO", "module":"init_db", "message":"Loaded existing emergency stop state: Active=False"}
+{"timestamp":"2026-10-10T18:46:15", "level":"CRITICAL", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_ACTIVATED | Details={'actor': 'TEST_RUNNER', 'reason': 'API test stop'}"}
+{"timestamp":"2026-10-10T18:46:15", "level":"CRITICAL", "module":"circuit_breaker", "message":"EMERGENCY STOP ACTIVATED by TEST_RUNNER. Reason: API test stop"}
+{"timestamp":"2026-10-10T18:46:15", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_DEACTIVATED | Details={'actor': 'TEST_RUNNER', 'notes': 'API test clear'}"}
+{"timestamp":"2026-10-10T18:46:15", "level":"WARNING", "module":"circuit_breaker", "message":"EMERGENCY STOP DEACTIVATED by TEST_RUNNER. Notes: API test clear"}
+{"timestamp":"2026-10-10T18:46:22", "level":"INFO", "module":"mt5_provider", "message":"Connected to MT5 terminal at C:\Program Files\<YourBroker> MT5"}
+{"timestamp":"2026-10-10T18:46:22", "level":"INFO", "module":"mt5_provider", "message":"MT5 connection closed."}
+{"timestamp":"2026-10-10T18:46:23", "level":"INFO", "module":"engine", "message":"Recorded backtest run bt_6cdf8a7426 in database."}
+{"timestamp":"2026-10-10T18:48:24", "level":"INFO", "module":"init_db", "message":"Initializing database tables..."}
+{"timestamp":"2026-10-10T18:48:24", "level":"INFO", "module":"init_db", "message":"Loaded existing emergency stop state: Active=False"}
+{"timestamp":"2026-10-10T18:48:24", "level":"INFO", "module":"pipeline", "message":"Recorded dataset version ds_eurusd_m15_8f358d5c in database."}
+{"timestamp":"2026-10-10T18:48:24", "level":"INFO", "module":"trainer", "message":"Registered new model model_logist_2153c9db as CANDIDATE in database."}
+{"timestamp":"2026-10-10T18:48:25", "level":"INFO", "module":"pipeline", "message":"Recorded dataset version ds_eurusd_m15_c6499097 in database."}
+{"timestamp":"2026-10-10T18:48:25", "level":"INFO", "module":"trainer", "message":"Registered new model model_logist_5002d737 as CANDIDATE in database."}
+{"timestamp":"2026-10-10T18:48:25", "level":"INFO", "module":"trainer", "message":"Registered new model model_random_30f658d5 as CANDIDATE in database."}
+{"timestamp":"2026-10-10T18:48:25", "level":"INFO", "module":"logging", "message":"SECURITY_AUDIT | Event=MODEL_PROMOTED | Details={'model_id': 'model_logist_5002d737', 'actor': 'QUANT_LEAD', 'previous_active': None}"}
+{"timestamp":"2026-10-10T18:48:25", "level":"INFO", "module":"registry", "message":"Archived previous active model model_logist_5002d737."}
+{"timestamp":"2026-10-10T18:48:25", "level":"INFO", "module":"logging", "message":"SECURITY_AUDIT | Event=MODEL_PROMOTED | Details={'model_id': 'model_random_30f658d5', 'actor': 'QUANT_LEAD', 'previous_active': 'model_logist_5002d737'}"}
+{"timestamp":"2026-10-10T18:48:25", "level":"INFO", "module":"pipeline", "message":"Recorded dataset version ds_eurusd_m15_972deb8c in database."}
+{"timestamp":"2026-10-10T18:48:25", "level":"INFO", "module":"trainer", "message":"Registered new model model_baseli_b9be0f0d as CANDIDATE in database."}
+{"timestamp":"2026-10-10T18:48:25", "level":"CRITICAL", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_ACTIVATED | Details={'actor': 'TEST_RUNNER', 'reason': 'API test stop'}"}
+{"timestamp":"2026-10-10T18:48:25", "level":"CRITICAL", "module":"circuit_breaker", "message":"EMERGENCY STOP ACTIVATED by TEST_RUNNER. Reason: API test stop"}
+{"timestamp":"2026-10-10T18:48:25", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_DEACTIVATED | Details={'actor': 'TEST_RUNNER', 'notes': 'API test clear'}"}
+{"timestamp":"2026-10-10T18:48:25", "level":"WARNING", "module":"circuit_breaker", "message":"EMERGENCY STOP DEACTIVATED by TEST_RUNNER. Notes: API test clear"}
+{"timestamp":"2026-10-10T18:48:34", "level":"INFO", "module":"mt5_provider", "message":"Connected to MT5 terminal at C:\Program Files\<YourBroker> MT5"}
+{"timestamp":"2026-10-10T18:48:34", "level":"INFO", "module":"mt5_provider", "message":"MT5 connection closed."}
+{"timestamp":"2026-10-10T18:48:35", "level":"INFO", "module":"engine", "message":"Recorded backtest run bt_aa37718d19 in database."}
+{"timestamp":"2026-10-10T18:48:35", "level":"INFO", "module":"mt5_provider", "message":"Connected to MT5 terminal at C:\Program Files\<YourBroker> MT5"}
+{"timestamp":"2026-10-10T18:48:35", "level":"INFO", "module":"mt5_provider", "message":"MT5 connection closed."}
+{"timestamp":"2026-10-10T18:48:35", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=DEMO_ORDER_BLOCKED | Details={'signal_id': 'sig_test_001', 'error': "Execution blocked: System execution mode is 'SIGNAL_ONLY', not 'DEMO_TRADING'."}"}
+{"timestamp":"2026-10-10T18:48:35", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=DEMO_ORDER_BLOCKED | Details={'signal_id': 'sig_test_001', 'error': 'Execution blocked: DEMO_TRADING_ENABLED gate is False in settings.'}"}
+{"timestamp":"2026-10-10T18:48:35", "level":"CRITICAL", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_ACTIVATED | Details={'actor': 'RISK_SYSTEM', 'reason': 'Market volatility spike'}"}
+{"timestamp":"2026-10-10T18:48:35", "level":"CRITICAL", "module":"circuit_breaker", "message":"EMERGENCY STOP ACTIVATED by RISK_SYSTEM. Reason: Market volatility spike"}
+{"timestamp":"2026-10-10T18:48:35", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=DEMO_ORDER_BLOCKED | Details={'signal_id': 'sig_test_001', 'error': 'Execution blocked: Emergency Stop is currently ACTIVE.'}"}
+{"timestamp":"2026-10-10T18:48:35", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=DEMO_ORDER_BLOCKED | Details={'signal_id': 'sig_test_001', 'error': 'Execution blocked: Account could not be verified as a genuine DEMO account.'}"}
+{"timestamp":"2026-10-10T18:48:35", "level":"CRITICAL", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_ACTIVATED | Details={'actor': 'TRADER_ADMIN', 'reason': 'Manual test trigger'}"}
+{"timestamp":"2026-10-10T18:48:35", "level":"CRITICAL", "module":"circuit_breaker", "message":"EMERGENCY STOP ACTIVATED by TRADER_ADMIN. Reason: Manual test trigger"}
+{"timestamp":"2026-10-10T18:48:35", "level":"WARNING", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_DEACTIVATED | Details={'actor': 'TRADER_ADMIN', 'notes': 'System cleared'}"}
+{"timestamp":"2026-10-10T18:48:35", "level":"WARNING", "module":"circuit_breaker", "message":"EMERGENCY STOP DEACTIVATED by TRADER_ADMIN. Notes: System cleared"}
+{"timestamp":"2026-10-10T18:48:35", "level":"CRITICAL", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_ACTIVATED | Details={'actor': 'SYS', 'reason': 'Emergency maintenance'}"}
+{"timestamp":"2026-10-10T18:48:35", "level":"CRITICAL", "module":"circuit_breaker", "message":"EMERGENCY STOP ACTIVATED by SYS. Reason: Emergency maintenance"}
+{"timestamp":"2026-10-10T18:48:35", "level":"CRITICAL", "module":"logging", "message":"SECURITY_AUDIT | Event=EMERGENCY_STOP_ACTIVATED | Details={'actor': 'RISK_ENGINE', 'reason': 'Daily drawdown limit breached: 3.50% >= 3.00%'}"}
+{"timestamp":"2026-10-10T18:48:35", "level":"CRITICAL", "module":"circuit_breaker", "message":"EMERGENCY STOP ACTIVATED by RISK_ENGINE. Reason: Daily drawdown limit breached: 3.50% >= 3.00%"}
+{"timestamp":"2026-10-10T18:48:35", "level":"INFO", "module":"logging", "message":"SECURITY_AUDIT | Event=SIGNAL_GENERATED | Details={'signal_id': 'sig_f56e062a8a', 'symbol': 'EURUSD', 'direction': 'BUY', 'mode': 'SIGNAL_ONLY', 'risk_status': 'APPROVED'}"}
+{"timestamp":"2026-10-10T18:48:35", "level":"INFO", "module":"manager", "message":"Generated signal sig_f56e062a8a (BUY on EURUSD) under mode SIGNAL_ONLY."}
+{"timestamp":"2026-10-10T18:48:35", "level":"INFO", "module":"logging", "message":"SECURITY_AUDIT | Event=SIGNAL_GENERATED | Details={'signal_id': 'sig_142c8a2751', 'symbol': 'EURUSD', 'direction': 'BUY', 'mode': 'SIGNAL_ONLY', 'risk_status': 'APPROVED'}"}
+{"timestamp":"2026-10-10T18:48:35", "level":"INFO", "module":"manager", "message":"Generated signal sig_142c8a2751 (BUY on EURUSD) under mode SIGNAL_ONLY."}
+{"timestamp":"2026-10-10T18:48:35", "level":"INFO", "module":"manager", "message":"Signal with key EURUSD_M15_202610101503_BUY already recorded. Skipping duplicate."}
+{"timestamp":"2026-10-10T18:48:36", "level":"INFO", "module":"logging", "message":"SECURITY_AUDIT | Event=RULE_APPROVED | Details={'rule_id': 'rule_3b5460a7', 'name': 'Trading Playbook Volume 1', 'actor': 'SENIOR_TRADER'}"}
+{"timestamp":"2026-10-10T18:48:36", "level":"INFO", "module":"logging", "message":"SECURITY_AUDIT | Event=RULE_REJECTED | Details={'rule_id': 'rule_cc07b820', 'reason': 'Ambiguous stop loss definition', 'actor': 'RISK_OFFICER'}"}

@@ -1,0 +1,91 @@
+"""System Status and Emergency Stop Endpoints."""
+from datetime import datetime, timezone
+from typing import Any, Dict
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from backend.app.core.config import settings
+from backend.app.db.session import get_db
+from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
+from backend.app.services.risk.circuit_breaker import EmergencyStopManager
+from backend.app.models.audit_log import AuditLog
+
+router = APIRouter()
+
+
+class EmergencyStopRequest(BaseModel):
+    reason: str
+    actor: str = "USER"
+
+
+class EmergencyStopDeactivateRequest(BaseModel):
+    notes: str = "Manual resumption"
+    actor: str = "USER"
+
+
+@router.get("/status")
+def get_system_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Returns real-time status of system, database, MT5, demo mode, and circuit breaker."""
+    stop_mgr = EmergencyStopManager(db)
+    is_stop_active, stop_reason, stop_at = stop_mgr.get_status()
+
+    # Query MT5 connection status
+    provider = MT5MarketDataProvider()
+    is_mt5_connected = provider.is_connected()
+    account_info = provider.get_account_info() if is_mt5_connected else None
+
+    return {
+        "app_name": settings.APP_NAME,
+        "environment": settings.APP_ENV,
+        "execution_mode": settings.EXECUTION_MODE.value,
+        "demo_trading_gate_enabled": settings.DEMO_TRADING_ENABLED,
+        "database_connected": True,
+        "emergency_stop": {
+            "is_active": is_stop_active,
+            "reason": stop_reason,
+            "activated_at": stop_at.isoformat() if stop_at else None,
+        },
+        "mt5": {
+            "terminal_path": settings.MT5_PATH,
+            "is_connected": is_mt5_connected,
+            "account_verified_demo": account_info.is_demo if account_info else False,
+            "account_trade_mode": account_info.trade_mode if account_info else None,
+            "server": account_info.server if account_info else "N/A",
+            "currency": account_info.currency if account_info else "N/A",
+            "balance": account_info.balance if account_info else 0.0,
+            "equity": account_info.equity if account_info else 0.0,
+            "login_masked": account_info.login_masked if account_info else "N/A",
+        },
+        "server_time_utc": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.post("/emergency-stop/activate")
+def activate_emergency_stop(req: EmergencyStopRequest, db: Session = Depends(get_db)):
+    """Triggers emergency stop circuit breaker immediately."""
+    stop_mgr = EmergencyStopManager(db)
+    stop_mgr.activate(reason=req.reason, actor=req.actor)
+    return {"status": "ACTIVATED", "reason": req.reason}
+
+
+@router.post("/emergency-stop/deactivate")
+def deactivate_emergency_stop(req: EmergencyStopDeactivateRequest, db: Session = Depends(get_db)):
+    """Deactivates emergency stop circuit breaker."""
+    stop_mgr = EmergencyStopManager(db)
+    stop_mgr.deactivate(actor=req.actor, notes=req.notes)
+    return {"status": "DEACTIVATED", "notes": req.notes}
+
+
+@router.get("/audit-logs")
+def get_audit_logs(limit: int = 50, db: Session = Depends(get_db)):
+    """Returns recent audit logs."""
+    logs = db.query(AuditLog).order_by(AuditLog.id.desc()).limit(limit).all()
+    return [{
+        "id": l.id,
+        "event_type": l.event_type,
+        "severity": l.severity,
+        "actor": l.actor,
+        "details": l.details,
+        "created_at": l.created_at.isoformat(),
+    } for l in logs]

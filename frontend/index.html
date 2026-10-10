@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Adaptive Trader AI | سامانه معاملاتی تطبیقی</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-main: #0f172a;
+      --bg-card: #1e293b;
+      --bg-card-hover: #273549;
+      --border-color: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, Tahoma, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: var(--font-family);
+    }
+
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    header {
+      background-color: var(--bg-card);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .brand h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #60a5fa;
+    }
+
+    .brand span {
+      background-color: rgba(59, 130, 246, 0.1);
+      color: #93c5fd;
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    /* Emergency Stop Button */
+    .btn-emergency {
+      background-color: var(--danger);
+      color: white;
+      border: none;
+      padding: 0.6rem 1.2rem;
+      border-radius: 0.5rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s;
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+    }
+
+    .btn-emergency:hover {
+      background-color: #dc2626;
+      transform: translateY(-1px);
+    }
+
+    .btn-emergency.inactive-mode {
+      background-color: var(--success);
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+
+    /* Navigation Tabs */
+    nav {
+      background-color: #131d31;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      padding: 0 2rem;
+      gap: 0.5rem;
+      overflow-x: auto;
+    }
+
+    .nav-tab {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      padding: 1rem 1.25rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .nav-tab:hover {
+      color: var(--text-main);
+    }
+
+    .nav-tab.active {
+      color: #60a5fa;
+      border-bottom-color: #60a5fa;
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      padding: 2rem;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+      animation: fadeIn 0.2s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Grid and Cards */
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .card-value {
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: var(--text-main);
+    }
+
+    .card-subtext {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+
+    /* Tables */
+    .table-container {
+      overflow-x: auto;
+      margin-top: 1rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: right;
+      font-size: 0.9rem;
+    }
+
+    th, td {
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    th {
+      background-color: #172033;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    tr:hover {
+      background-color: var(--bg-card-hover);
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .badge-success { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+    .badge-danger { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+    .badge-warning { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+    .badge-info { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+
+    /* Form Controls */
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background-color: #131d31;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      color: var(--text-main);
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--primary);
+    }
+
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background-color: var(--primary);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background-color: var(--primary-hover);
+    }
+
+    .btn-sm {
+      padding: 0.4rem 0.8rem;
+      font-size: 0.8rem;
+    }
+
+    /* Footer */
+    footer {
+      background-color: var(--bg-card);
+      border-top: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <h1>سامانه Adaptive Trader AI</h1>
+      <span id="badge-mode">SIGNAL_ONLY</span>
+      <span id="badge-mt5">MT5: در حال بررسی...</span>
+    </div>
+    <div class="header-actions">
+      <button id="btn-emergency-toggle" class="btn-emergency" onclick="toggleEmergencyStop()">
+        ⛔ توقف اضطراری (غیرفعال)
+      </button>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav>
+    <button class="nav-tab active" onclick="switchTab('system')">وضعیت سامانه</button>
+    <button class="nav-tab" onclick="switchTab('knowledge')">اسناد و استراتژی</button>
+    <button class="nav-tab" onclick="switchTab('data-ml')">داده و مدل هوش مصنوعی</button>
+    <button class="nav-tab" onclick="switchTab('backtest')">بکتست واقع‌گرایانه</button>
+    <button class="nav-tab" onclick="switchTab('signals')">سیگنال‌ها و دمو</button>
+    <button class="nav-tab" onclick="switchTab('settings')">تنظیمات و رخدادها</button>
+  </nav>
+
+  <!-- Main Content -->
+  <main>
+    <!-- TAB 1: System Status -->
+    <div id="tab-system" class="tab-content active">
+      <div class="grid-4">
+        <div class="card">
+          <div class="card-title">وضعیت اتصال MT5</div>
+          <div class="card-value" id="val-mt5-status">-</div>
+          <div class="card-subtext" id="val-mt5-server">سرور: -</div>
+        </div>
+        <div class="card">
+          <div class="card-title">نوع حساب تأییدشده</div>
+          <div class="card-value" id="val-account-type">-</div>
+          <div class="card-subtext" id="val-account-login">شناسه: -</div>
+        </div>
+        <div class="card">
+          <div class="card-title">موجودی و ارزش حساب (دمو)</div>
+          <div class="card-value" id="val-account-balance">-</div>
+          <div class="card-subtext" id="val-account-equity">اکوئیتی: -</div>
+        </div>
+        <div class="card">
+          <div class="card-title">کلید توقف اضطراری</div>
+          <div class="card-value" id="val-circuit-status">-</div>
+          <div class="card-subtext" id="val-circuit-reason">-</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">پیکربندی امنیتی فعال سامانه</div>
+        <p style="margin-top: 0.5rem; line-height: 1.8; color: var(--text-muted);">
+          • <strong>حالت اجرای فعلی:</strong> <span class="badge badge-info" id="cfg-mode">SIGNAL_ONLY</span> (معامله واقعی از نظر معماری و ریشه کد مسدود است)<br>
+          • <strong>کلید سخت‌افزاری دمو:</strong> <span class="badge badge-danger" id="cfg-demo-gate">غیرفعال (پیش‌فرض امن)</span><br>
+          • <strong>پایگاه داده:</strong> <span class="badge badge-success">SQLAlchemy SQLite / PostgreSQL Ready</span><br>
+          • <strong>آدرس ترمینال محلی:</strong> <code id="cfg-mt5-path">-</code>
+        </p>
+      </div>
+    </div>
+
+    <!-- TAB 2: Knowledge & Strategy -->
+    <div id="tab-knowledge" class="tab-content">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">بارگذاری سند جدید (PDF / TXT / CSV / XLSX)</div>
+          <div class="form-group" style="margin-top: 1rem;">
+            <label>انتخاب فایل استراتژی یا تجربیات معاملاتی:</label>
+            <input type="file" id="input-doc-file" accept=".pdf,.txt,.md,.csv,.xlsx">
+          </div>
+          <div class="form-group">
+            <label>توضیح کوتاه منبع:</label>
+            <input type="text" id="input-doc-desc" placeholder="مثال: جزوه پرایس اکشن یا قوانین حد ضرر">
+          </div>
+          <button class="btn btn-primary" onclick="uploadDocument()">بارگذاری و استخراج قوانین</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">راهنمای اعتبارسنجی قوانین</div>
+          <p style="margin-top: 0.5rem; line-height: 1.8; color: var(--text-muted);">
+            • تمام گزاره‌های استخراج‌شده از اسناد به صورت پیش‌فرض در وضعیت <strong>در انتظار تأیید (Pending)</strong> ثبت می‌شوند.<br>
+            • هیچ قانونی تا زمان تأیید صریح شما وارد استراتژی فعال نمی‌شود.<br>
+            • عبارات کیفی و مبهم (مانند «روند قوی» یا «کندل مناسب») مستقلاً شناسایی شده و هشدار داده می‌شوند.
+          </p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">قوانین معاملاتی و گردش‌کار تأیید انسانی</div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>شناسه</th>
+                <th>عنوان قانون</th>
+                <th>دسته‌بندی</th>
+                <th>منبع و صفحه</th>
+                <th>فرض‌ها و ابهامات</th>
+                <th>وضعیت</th>
+                <th>عملیات</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-rules">
+              <tr><td colspan="7" style="text-align: center;">در حال بارگذاری قوانین...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: Data & ML Model -->
+    <div id="tab-data-ml" class="tab-content">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">آموزش مدل یادگیری ماشین جدید (Candidate)</div>
+          <div class="form-group" style="margin-top: 1rem;">
+            <label>نماد معاملاتی:</label>
+            <select id="ml-symbol">
+              <option value="EURUSD">EURUSD</option>
+              <option value="GBPUSD">GBPUSD</option>
+              <option value="AUDUSD">AUDUSD</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>الگوریتم یادگیری:</label>
+            <select id="ml-algo">
+              <option value="logistic_regression">رگرسیون لجستیک (Logistic Regression - کالیبره و قابل‌تفسیر)</option>
+              <option value="random_forest">جنگل تصادفی (Random Forest - غیرخطی)</option>
+              <option value="baseline">خط پایه ساده (Baseline Dummy)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>تعداد کندل‌های آموزش (M15):</label>
+            <input type="number" id="ml-bars" value="300" min="100" max="1000">
+          </div>
+          <button class="btn btn-primary" onclick="trainModel()">شروع آموزش و ارزیابی زمانی</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">اصول حاکمیت مدل‌ها (Model Governance)</div>
+          <p style="margin-top: 0.5rem; line-height: 1.8; color: var(--text-muted);">
+            • مدل‌های جدید صرفاً به عنوان <strong>نامزد (Candidate)</strong> ثبت می‌شوند.<br>
+            • داده‌های ارزیابی کاملاً خارج از نمونه زمانی (Out-of-Time) و بدون همپوشانی افق هستند.<br>
+            • ارتقای مدل به وضعیت <strong>فعال (Active)</strong> فقط پس از مقایسه صریح و برتری آماری ممکن است.
+          </p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">فهرست مدل‌ها و وضعیت فعال‌سازی</div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>شناسه مدل</th>
+                <th>الگوریتم</th>
+                <th>وضعیت</th>
+                <th>معیارهای آزمون (AUC / Brier / F1)</th>
+                <th>تاریخ آموزش</th>
+                <th>عملیات ارتقا</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-models">
+              <tr><td colspan="6" style="text-align: center;">در حال بارگذاری مدل‌ها...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: Backtest -->
+    <div id="tab-backtest" class="tab-content">
+      <div class="card" style="margin-bottom: 1.5rem;">
+        <div class="card-title">اجرای بکتست واقع‌گرایانه با مدلسازی هزینه‌ها</div>
+        <div style="display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap;">
+          <div style="flex: 1; min-width: 150px;">
+            <label>نماد:</label>
+            <select id="bt-symbol">
+              <option value="EURUSD">EURUSD</option>
+              <option value="GBPUSD">GBPUSD</option>
+            </select>
+          </div>
+          <div style="flex: 1; min-width: 150px;">
+            <label>اسپرد فرضی (پوینت):</label>
+            <input type="number" id="bt-spread" value="15">
+          </div>
+          <div style="flex: 1; min-width: 150px;">
+            <label>لغزش قیمت (Slippage):</label>
+            <input type="number" id="bt-slip" value="3">
+          </div>
+          <div style="flex: 1; min-width: 150px;">
+            <label>کمیسیون ($ به ازای لات):</label>
+            <input type="number" id="bt-comm" value="7">
+          </div>
+          <div style="align-self: flex-end;">
+            <button class="btn btn-primary" onclick="runBacktest()">اجرای شبیه‌سازی و تحلیل استرس</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="backtest-results" style="display: none;">
+        <div class="grid-4">
+          <div class="card">
+            <div class="card-title">سود خالص نهایی</div>
+            <div class="card-value" id="bt-net-profit">$0.00</div>
+          </div>
+          <div class="card">
+            <div class="card-title">حداکثر افت سرمایه (Drawdown)</div>
+            <div class="card-value" id="bt-max-dd">0.0%</div>
+          </div>
+          <div class="card">
+            <div class="card-title">فاکتور سود (Profit Factor)</div>
+            <div class="card-value" id="bt-profit-factor">0.0</div>
+          </div>
+          <div class="card">
+            <div class="card-title">نرخ برد و تعداد معاملات</div>
+            <div class="card-value" id="bt-win-rate">0.0%</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">نتایج سناریوهای تحلیل استرس (Stress Testing)</div>
+          <div class="table-container">
+            <table id="table-stress">
+              <thead>
+                <tr>
+                  <th>سناریوی استرس</th>
+                  <th>سود خالص نهایی</th>
+                  <th>فاکتور سود</th>
+                  <th>حداکثر دراودان</th>
+                  <th>نرخ برد</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-stress"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: Signals & Demo -->
+    <div id="tab-signals" class="tab-content">
+      <div class="card" style="margin-bottom: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div class="card-title">تولید دستی سیگنال لحظه‌ای (کندل آخر M15)</div>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
+              بررسی قواعد تأییدشده و مدل هوش مصنوعی فعال بر روی آخرین کندل بسته شده.
+            </p>
+          </div>
+          <button class="btn btn-primary" onclick="generateSignal()">ارزیابی و صدور سیگنال</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">تاریخچه سیگنال‌های تولیدشده</div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>شناسه</th>
+                <th>نماد</th>
+                <th>جهت</th>
+                <th>قیمت ورود</th>
+                <th>حد ضرر / حد سود</th>
+                <th>وضعیت ریسک</th>
+                <th>حجم مجاز</th>
+                <th>حالت اجرا</th>
+                <th>زمان کندل</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-signals">
+              <tr><td colspan="9" style="text-align: center;">در حال بارگذاری سیگنال‌ها...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 6: Settings & Logs -->
+    <div id="tab-settings" class="tab-content">
+      <div class="card" style="margin-bottom: 1.5rem;">
+        <div class="card-title">محدودیت‌های ریسک سیستم (Fail-Closed)</div>
+        <p style="margin-top: 0.5rem; line-height: 1.8; color: var(--text-muted);">
+          • ریسک مجاز در هر معامله: <strong>۱.۰٪</strong> سرمایه کل<br>
+          • سقف مجاز دراودان روزانه: <strong>۳.۰٪</strong> (در صورت نقض، کلید توقف اضطراری فوراً فعال می‌شود)<br>
+          • سقف معاملات همزمان باز: <strong>۳ معامله</strong><br>
+          • حداکثر اسپرد مجاز: <strong>۳۵ پوینت</strong>
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">گزارش رویدادهای امنیتی و حسابرسی (Audit Trail)</div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>شناسه</th>
+                <th>نوع رویداد</th>
+                <th>سطح</th>
+                <th>عامل (Actor)</th>
+                <th>جزئیات</th>
+                <th>زمان</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-audit">
+              <tr><td colspan="6" style="text-align: center;">در حال بارگذاری لاگ‌ها...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    Adaptive Trader AI &copy; 2026 | معماری ایمن و ضد نشت اطلاعات | نسخه 1.0.0
+  </footer>
+
+  <script>
+    const API_BASE = "/api/v1";
+
+    function switchTab(tabName) {
+      document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
+      document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+      
+      const btn = Array.from(document.querySelectorAll(".nav-tab")).find(b => b.innerText.includes(getTabTitle(tabName)));
+      if (btn) btn.classList.add("active");
+      
+      const content = document.getElementById("tab-" + tabName);
+      if (content) content.classList.add("active");
+
+      // Auto-refresh data on tab change
+      if (tabName === "system") loadSystemStatus();
+      if (tabName === "knowledge") loadRules();
+      if (tabName === "data-ml") loadModels();
+      if (tabName === "signals") loadSignals();
+      if (tabName === "settings") loadAuditLogs();
+    }
+
+    function getTabTitle(name) {
+      if (name === "system") return "وضعیت";
+      if (name === "knowledge") return "اسناد";
+      if (name === "data-ml") return "داده";
+      if (name === "backtest") return "بکتست";
+      if (name === "signals") return "سیگنال";
+      if (name === "settings") return "تنظیمات";
+      return "";
+    }
+
+    async function loadSystemStatus() {
+      try {
+        const res = await fetch(`${API_BASE}/system/status`);
+        const data = await res.json();
+
+        document.getElementById("badge-mode").innerText = data.execution_mode;
+        document.getElementById("cfg-mode").innerText = data.execution_mode;
+        document.getElementById("cfg-demo-gate").innerText = data.demo_trading_gate_enabled ? "فعال" : "غیرفعال (پیش‌فرض امن)";
+        document.getElementById("cfg-mt5-path").innerText = data.mt5.terminal_path;
+
+        // MT5 info
+        const isMt5 = data.mt5.is_connected;
+        document.getElementById("badge-mt5").innerText = isMt5 ? "MT5: متصل" : "MT5: قطع";
+        document.getElementById("badge-mt5").className = isMt5 ? "badge badge-success" : "badge badge-danger";
+        document.getElementById("val-mt5-status").innerText = isMt5 ? "متصل به سرور" : "قطع اتصال";
+        document.getElementById("val-mt5-server").innerText = `سرور: ${data.mt5.server}`;
+
+        // Account info
+        document.getElementById("val-account-type").innerText = data.mt5.account_verified_demo ? "حساب دمو (Demo)" : "نامشخص / غیر دمو";
+        document.getElementById("val-account-login").innerText = `شناسه کاربری: ${data.mt5.login_masked}`;
+        document.getElementById("val-account-balance").innerText = `$${data.mt5.balance.toLocaleString()} ${data.mt5.currency}`;
+        document.getElementById("val-account-equity").innerText = `اکوئیتی: $${data.mt5.equity.toLocaleString()}`;
+
+        // Emergency Stop
+        const isStop = data.emergency_stop.is_active;
+        const btnStop = document.getElementById("btn-emergency-toggle");
+        if (isStop) {
+          btnStop.innerText = "🚨 رفع قفل اضطراری";
+          btnStop.className = "btn-emergency inactive-mode";
+          document.getElementById("val-circuit-status").innerText = "فعال (مسدود)";
+          document.getElementById("val-circuit-status").style.color = "var(--danger)";
+        } else {
+          btnStop.innerText = "⛔ توقف اضطراری (غیرفعال)";
+          btnStop.className = "btn-emergency";
+          document.getElementById("val-circuit-status").innerText = "آماده‌به‌کار (عادی)";
+          document.getElementById("val-circuit-status").style.color = "var(--success)";
+        }
+        document.getElementById("val-circuit-reason").innerText = data.emergency_stop.reason;
+      } catch (e) {
+        console.error("Status load failed", e);
+      }
+    }
+
+    async function toggleEmergencyStop() {
+      const btn = document.getElementById("btn-emergency-toggle");
+      const isCurrentlyActive = btn.innerText.includes("رفع قفل");
+
+      if (isCurrentlyActive) {
+        await fetch(`${API_BASE}/system/emergency-stop/deactivate`, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({notes: "Resumed from dashboard by user"})
+        });
+      } else {
+        await fetch(`${API_BASE}/system/emergency-stop/activate`, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({reason: "Manual emergency stop triggered via Web Dashboard", actor: "USER"})
+        });
+      }
+      loadSystemStatus();
+    }
+
+    async function uploadDocument() {
+      const fileInput = document.getElementById("input-doc-file");
+      const descInput = document.getElementById("input-doc-desc");
+      if (!fileInput.files[0]) {
+        alert("لطفاً یک فایل انتخاب کنید.");
+        return;
+      }
+
+      const fd = new FormData();
+      fd.append("file", fileInput.files[0]);
+      fd.append("description", descInput.value);
+
+      try {
+        const res = await fetch(`${API_BASE}/documents/upload`, {
+          method: "POST",
+          body: fd,
+        });
+        const data = await res.json();
+        alert(`سند با موفقیت پردازش شد. تعداد ${data.rules_extracted_count} قانون استخراج گردید.`);
+        fileInput.value = "";
+        descInput.value = "";
+        loadRules();
+      } catch (e) {
+        alert("خطا در بارگذاری سند: " + e);
+      }
+    }
+
+    async function loadRules() {
+      try {
+        const res = await fetch(`${API_BASE}/rules/`);
+        const rules = await res.json();
+        const tbody = document.getElementById("tbody-rules");
+        if (rules.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align: center;">قانونی یافت نشد. سندی بارگذاری کنید.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = rules.map(r => {
+          let badgeClass = "badge-warning";
+          if (r.approval_status === "approved") badgeClass = "badge-success";
+          if (r.approval_status === "rejected") badgeClass = "badge-danger";
+
+          const ambigText = r.ambiguities && r.ambiguities.length > 0 
+            ? `<span style="color: #fbbf24;">⚠️ ${r.ambiguities.join('<br>')}</span>`
+            : "صریح و بدون ابهام";
+
+          const actions = r.approval_status === "pending" ? `
+            <button class="btn btn-primary btn-sm" onclick="approveRule('${r.rule_id}')">تأیید</button>
+            <button class="btn btn-emergency btn-sm" onclick="rejectRule('${r.rule_id}')" style="margin-right: 0.25rem;">رد</button>
+          ` : `<span style="color: var(--text-muted); font-size: 0.8rem;">تکمیل‌شده</span>`;
+
+          return `
+            <tr>
+              <td><code>${r.rule_id}</code></td>
+              <td><strong>${r.name}</strong></td>
+              <td>${r.category}</td>
+              <td>صفحه ${r.source_pages.join(', ') || '1'}</td>
+              <td style="max-width: 250px; font-size: 0.8rem;">${ambigText}</td>
+              <td><span class="badge ${badgeClass}">${r.approval_status}</span></td>
+              <td>${actions}</td>
+            </tr>
+          `;
+        }).join("");
+      } catch (e) {
+        console.error("Rules load error", e);
+      }
+    }
+
+    async function approveRule(ruleId) {
+      await fetch(`${API_BASE}/rules/${ruleId}/approve`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({actor: "USER"})
+      });
+      loadRules();
+    }
+
+    async function rejectRule(ruleId) {
+      const reason = prompt("علت رد این قانون را وارد کنید:", "قانون مبهم است یا با سیستم ناسازگار است.");
+      if (!reason) return;
+      await fetch(`${API_BASE}/rules/${ruleId}/reject`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({reason: reason, actor: "USER"})
+      });
+      loadRules();
+    }
+
+    async function trainModel() {
+      const sym = document.getElementById("ml-symbol").value;
+      const algo = document.getElementById("ml-algo").value;
+      const bars = document.getElementById("ml-bars").value;
+
+      try {
+        const res = await fetch(`${API_BASE}/ml/train`, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({symbol: sym, algorithm: algo, bars_count: parseInt(bars)})
+        });
+        const data = await res.json();
+        alert(`آموزش مدل نامزد ${data.model_id} با موفقیت انجام شد. AUC تست: ${data.test_metrics.roc_auc || 'N/A'}`);
+        loadModels();
+      } catch (e) {
+        alert("خطا در آموزش مدل: " + e);
+      }
+    }
+
+    async function loadModels() {
+      try {
+        const res = await fetch(`${API_BASE}/ml/models`);
+        const models = await res.json();
+        const tbody = document.getElementById("tbody-models");
+        if (models.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" style="text-align: center;">هنوز مدلی آموزش داده نشده است.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = models.map(m => {
+          let badge = m.status === "active" ? "badge-success" : (m.status === "candidate" ? "badge-warning" : "badge-danger");
+          const promoteBtn = m.status === "candidate" ? `
+            <button class="btn btn-primary btn-sm" onclick="promoteModel('${m.model_id}')">ارتقا به فعال</button>
+          ` : `<span style="color: var(--text-muted); font-size: 0.8rem;">${m.status}</span>`;
+
+          const mStr = `AUC: ${m.test_metrics.roc_auc ?? '-'} | Brier: ${m.test_metrics.brier_score ?? '-'} | F1: ${m.test_metrics.f1 ?? '-'}`;
+
+          return `
+            <tr>
+              <td><code>${m.model_id}</code></td>
+              <td>${m.algorithm}</td>
+              <td><span class="badge ${badge}">${m.status}</span></td>
+              <td>${mStr}</td>
+              <td>${new Date(m.trained_at).toLocaleTimeString('fa-IR')}</td>
+              <td>${promoteBtn}</td>
+            </tr>
+          `;
+        }).join("");
+      } catch (e) {
+        console.error("Models load error", e);
+      }
+    }
+
+    async function promoteModel(modelId) {
+      await fetch(`${API_BASE}/ml/models/${modelId}/promote`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({notes: "Manual promotion via dashboard"})
+      });
+      loadModels();
+    }
+
+    async function runBacktest() {
+      const sym = document.getElementById("bt-symbol").value;
+      const spread = document.getElementById("bt-spread").value;
+      const slip = document.getElementById("bt-slip").value;
+      const comm = document.getElementById("bt-comm").value;
+
+      try {
+        const res = await fetch(`${API_BASE}/backtest/run`, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            symbol: sym,
+            spread_points: parseInt(spread),
+            slippage_points: parseInt(slip),
+            commission_per_lot: parseFloat(comm)
+          })
+        });
+        const data = await res.json();
+        const m = data.metrics;
+
+        document.getElementById("bt-net-profit").innerText = `$${m.net_profit.toFixed(2)}`;
+        document.getElementById("bt-max-dd").innerText = `${m.max_drawdown_percent}% ($${m.max_drawdown_amount})`;
+        document.getElementById("bt-profit-factor").innerText = m.profit_factor;
+        document.getElementById("bt-win-rate").innerText = `${m.win_rate}% (${m.winning_trades}/${m.total_trades})`;
+
+        // Stress table
+        const tbodyStress = document.getElementById("tbody-stress");
+        if (data.stress_test && data.stress_test.scenarios) {
+          tbodyStress.innerHTML = Object.entries(data.stress_test.scenarios).map(([scName, sc]) => `
+            <tr>
+              <td><strong>${scName}</strong></td>
+              <td style="color: ${sc.net_profit >= 0 ? '#34d399' : '#f87171'}">$${sc.net_profit.toFixed(2)}</td>
+              <td>${sc.profit_factor}</td>
+              <td>${sc.max_drawdown_percent}%</td>
+              <td>${sc.win_rate}%</td>
+            </tr>
+          `).join("");
+        }
+
+        document.getElementById("backtest-results").style.display = "block";
+      } catch (e) {
+        alert("خطا در بکتست: " + e);
+      }
+    }
+
+    async function generateSignal() {
+      try {
+        const res = await fetch(`${API_BASE}/signals/generate`, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({symbol: "EURUSD"})
+        });
+        const data = await res.json();
+        if (data.status === "NO_SIGNAL") {
+          alert("نتیجه بررسی: " + data.message);
+        } else {
+          alert(`سیگنال صادر شد! جهت: ${data.direction} | نماد: ${data.symbol} | وضعیت ریسک: ${data.risk_status}`);
+        }
+        loadSignals();
+      } catch (e) {
+        alert("خطا در صدور سیگنال: " + e);
+      }
+    }
+
+    async function loadSignals() {
+      try {
+        const res = await fetch(`${API_BASE}/signals/`);
+        const signals = await res.json();
+        const tbody = document.getElementById("tbody-signals");
+        if (signals.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="9" style="text-align: center;">هنوز سیگنالی تولید نشده است.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = signals.map(s => `
+          <tr>
+            <td><code>${s.signal_id}</code></td>
+            <td><strong>${s.symbol}</strong></td>
+            <td><span class="badge ${s.direction === 'BUY' ? 'badge-success' : 'badge-danger'}">${s.direction}</span></td>
+            <td>${s.entry_price}</td>
+            <td>${s.stop_loss} / ${s.take_profit}</td>
+            <td><span class="badge ${s.risk_status === 'APPROVED' ? 'badge-success' : 'badge-danger'}">${s.risk_status}</span></td>
+            <td>${s.calculated_volume || '-'}</td>
+            <td><span class="badge badge-info">${s.execution_mode}</span></td>
+            <td>${new Date(s.bar_time).toLocaleTimeString('fa-IR')}</td>
+          </tr>
+        `).join("");
+      } catch (e) {
+        console.error("Signals load error", e);
+      }
+    }
+
+    async function loadAuditLogs() {
+      try {
+        const res = await fetch(`${API_BASE}/system/audit-logs`);
+        const logs = await res.json();
+        const tbody = document.getElementById("tbody-audit");
+        tbody.innerHTML = logs.map(l => `
+          <tr>
+            <td>#${l.id}</td>
+            <td><strong>${l.event_type}</strong></td>
+            <td><span class="badge badge-warning">${l.severity}</span></td>
+            <td>${l.actor}</td>
+            <td style="font-size: 0.8rem;"><code>${JSON.stringify(l.details)}</code></td>
+            <td>${new Date(l.created_at).toLocaleTimeString('fa-IR')}</td>
+          </tr>
+        `).join("");
+      } catch (e) {
+        console.error("Audit load error", e);
+      }
+    }
+
+    // Initial load
+    window.onload = () => {
+      loadSystemStatus();
+    };
+  </script>
+</body>
+</html>

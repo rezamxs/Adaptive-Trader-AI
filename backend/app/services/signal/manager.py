@@ -1,0 +1,159 @@
+"""Signal Lifecycle Manager with strict idempotency and audit trail."""
+import uuid
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
+import pandas as pd
+from sqlalchemy.orm import Session
+
+from backend.app.core.config import settings, ExecutionMode
+from backend.app.core.logging import logger, log_security_event
+from backend.app.models.signal import TradeSignal
+from backend.app.models.audit_log import AuditLog
+from backend.app.services.market_data.base import IMarketDataProvider, TimeFrame
+from backend.app.services.knowledge.manager import KnowledgeManager
+from backend.app.services.ml.registry import ModelRegistry
+from backend.app.services.dataset.features import FeatureEngineer
+from backend.app.services.risk.risk_engine import RiskEngine
+from backend.app.services.signal.generator import SignalGenerator
+
+
+class SignalManager:
+    """Orchestrates signal generation, idempotency checks, risk assessment, and DB persistence."""
+
+    def __init__(self, db: Session, data_provider: IMarketDataProvider):
+        self.db = db
+        self.data_provider = data_provider
+        self.knowledge_mgr = KnowledgeManager(db)
+        self.model_registry = ModelRegistry(db)
+        self.risk_engine = RiskEngine(db)
+
+    def process_latest_bar(
+        self,
+        symbol: str = "EURUSD",
+        timeframe: TimeFrame = TimeFrame.M15,
+        tp_atr_mult: float = 1.5,
+        sl_atr_mult: float = 1.0,
+    ) -> Optional[TradeSignal]:
+        """Analyzes latest completed bar, runs rules and model, assesses risk, and records signal."""
+        # 1. Fetch historical candles and compute features
+        df_raw = self.data_provider.get_historical_dataframe(symbol, timeframe, count=100)
+        if len(df_raw) < 50:
+            logger.warning(f"Insufficient bars ({len(df_raw)}) to generate signal for {symbol}.")
+            return None
+
+        df_feats, _ = FeatureEngineer.transform(df_raw)
+        latest_bar = df_feats.iloc[-1]
+        bar_time = df_feats.index[-1]
+        if isinstance(bar_time, pd.Timestamp):
+            bar_time_dt = bar_time.to_pydatetime()
+        else:
+            bar_time_dt = bar_time
+
+        # 2. Get approved rules & active ML model
+        approved_rules = self.knowledge_mgr.get_active_strategy_rules()
+        active_model_artifact = self.model_registry.load_active_model_artifact()
+
+        # 3. Evaluate Rule logic
+        rule_dir, rule_str, triggered_rules = SignalGenerator.evaluate_rules(latest_bar, approved_rules)
+
+        # 4. Evaluate Model logic
+        model_dir, model_prob = SignalGenerator.evaluate_model(latest_bar, active_model_artifact)
+
+        # Consensus direction
+        final_direction = "HOLD"
+        confidence = 0.0
+
+        if rule_dir != "HOLD" and model_dir == rule_dir:
+            # High conviction agreement
+            final_direction = rule_dir
+            confidence = model_prob
+        elif rule_dir != "HOLD" and model_dir is None:
+            # Rule-only execution
+            final_direction = rule_dir
+            confidence = 1.0
+        elif model_dir is not None and model_dir != "HOLD" and len(approved_rules) == 0:
+            # Model-only execution
+            final_direction = model_dir
+            confidence = model_prob
+
+        if final_direction == "HOLD":
+            return None
+
+        # 5. Idempotency Check
+        idempotency_key = f"{symbol}_{timeframe.value}_{bar_time_dt.strftime('%Y%m%d%H%M')}_{final_direction}"
+        existing = self.db.query(TradeSignal).filter_by(idempotency_key=idempotency_key).first()
+        if existing:
+            logger.info(f"Signal with key {idempotency_key} already recorded. Skipping duplicate.")
+            return existing
+
+        # 6. Price and SL/TP calculation
+        entry_price = float(latest_bar["close"])
+        atr = float(latest_bar.get("atr_14", 0.0015))
+        if final_direction == "BUY":
+            stop_loss = entry_price - (sl_atr_mult * atr)
+            take_profit = entry_price + (tp_atr_mult * atr)
+        else:
+            stop_loss = entry_price + (sl_atr_mult * atr)
+            take_profit = entry_price - (tp_atr_mult * atr)
+
+        # 7. Query account, symbol info, quote for Risk Assessment
+        account = self.data_provider.get_account_info()
+        symbol_info = self.data_provider.get_symbol_info(symbol)
+        quote = self.data_provider.get_current_quote(symbol)
+
+        is_approved, calculated_lots, risk_reason = False, 0.0, "Risk evaluation unfulfilled"
+        if account and symbol_info and quote:
+            is_approved, calculated_lots, risk_reason = self.risk_engine.assess_signal(
+                symbol=symbol,
+                direction=final_direction,
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                account=account,
+                symbol_info=symbol_info,
+                quote=quote,
+                open_trades_count=0,
+                daily_loss_percent=0.0
+            )
+
+        # 8. Create and persist TradeSignal
+        signal_id = f"sig_{uuid.uuid4().hex[:10]}"
+        current_mode = settings.EXECUTION_MODE.value
+
+        signal_record = TradeSignal(
+            signal_id=signal_id,
+            idempotency_key=idempotency_key,
+            symbol=symbol,
+            timeframe=timeframe.value,
+            direction=final_direction,
+            strength=confidence,
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            rules_triggered=triggered_rules,
+            model_version_id=active_model_artifact.get("model_id") if active_model_artifact else None,
+            features_snapshot={"rsi_14": float(latest_bar.get("rsi_14", 50.0)), "atr_14": atr},
+            risk_status="APPROVED" if is_approved else "REJECTED",
+            risk_rejection_reason=risk_reason if not is_approved else None,
+            calculated_volume=calculated_lots if is_approved else None,
+            execution_mode=current_mode,
+            status="GENERATED",
+            bar_time=bar_time_dt,
+        )
+        self.db.add(signal_record)
+        self.db.commit()
+        self.db.refresh(signal_record)
+
+        log_security_event(
+            "SIGNAL_GENERATED",
+            {
+                "signal_id": signal_id,
+                "symbol": symbol,
+                "direction": final_direction,
+                "mode": current_mode,
+                "risk_status": signal_record.risk_status,
+            },
+            "INFO"
+        )
+        logger.info(f"Generated signal {signal_id} ({final_direction} on {symbol}) under mode {current_mode}.")
+        return signal_record
