@@ -1,0 +1,5 @@
+threshold,test_samples,positive_signals,negative_signals,signals_rejected_open_pos,signals_rejected_other,simulated_entry_requests,trades_opened,trades_closed,win_rate,gross_pnl,total_costs,net_pnl,expected_value_per_trade,max_drawdown_standard_from_zero,max_drawdown_closed_only_p2_legacy
+0.25,3938,3938,0,3768,13,157,157,157,32.48,623.51,9263.0,-8639.49,-55.03,9180.37,9016.3
+0.45,3938,3735,203,3579,0,156,156,156,38.46,4704.27,9204.0,-4499.73,-28.84,4619.37,4455.3
+0.5,3938,2663,1275,2511,13,139,139,139,34.53,3044.85,8201.0,-5156.15,-37.09,5355.32,5355.32
+0.55,3938,754,3184,668,1,85,85,85,34.12,2141.53,5015.0,-2873.47,-33.81,4259.55,4259.55
