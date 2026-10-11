@@ -71,7 +71,7 @@ if frontend_dir.exists():
 
 @app.get("/health", tags=["Health"])
 def health_check():
-    """Liveness and readiness check with worker status."""
+    """Liveness and separated readiness check with worker status."""
     worker = get_market_worker()
     return {
         "status": "healthy",
@@ -79,6 +79,12 @@ def health_check():
         "mode": settings.EXECUTION_MODE.value,
         "liveness": worker.liveness_status,
         "readiness": worker.readiness_status,
+        "service_ready": worker.service_ready,
+        "service_ready_reason": worker.service_ready_reason,
+        "market_data_ready": worker.market_data_ready,
+        "market_data_reason": worker.market_data_reason,
+        "trading_ready": worker.trading_ready,
+        "trading_readiness_reason": worker.trading_readiness_reason,
         "worker_running": worker.is_running,
     }
 

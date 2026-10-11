@@ -49,6 +49,12 @@ def get_system_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
         "database_connected": True,
         "liveness": worker_diag["liveness"],
         "readiness": worker_diag["readiness"],
+        "service_ready": worker_diag.get("service_ready", False),
+        "service_ready_reason": worker_diag.get("service_ready_reason", ""),
+        "market_data_ready": worker_diag.get("market_data_ready", False),
+        "market_data_reason": worker_diag.get("market_data_reason", ""),
+        "trading_ready": worker_diag.get("trading_ready", False),
+        "trading_readiness_reason": worker_diag.get("trading_readiness_reason", ""),
         "worker": worker_diag,
         "emergency_stop": {
             "is_active": is_stop_active,

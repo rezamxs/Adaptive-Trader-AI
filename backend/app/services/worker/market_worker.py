@@ -69,6 +69,11 @@ class MarketMonitoringWorker:
         self.last_tick_time: Optional[datetime] = None
         self.last_lifecycle_phase: str = "IDLE"
         
+        # Explicit Event Timestamps
+        self.last_poll_time: Optional[datetime] = None
+        self.last_successful_analysis_time: Optional[datetime] = None
+        self.last_error_time: Optional[datetime] = None
+        
         self.total_cycles: int = 0
         self.successful_cycles: int = 0
         self.consecutive_errors: int = 0
@@ -94,6 +99,95 @@ class MarketMonitoringWorker:
         if self.mt5_status == "MT5_DISCONNECTED" or self.last_status_code == "EMERGENCY_STOP_ACTIVE":
             return "DEGRADED"
         return "READY"
+
+    @property
+    def service_ready(self) -> bool:
+        """Service infrastructure readiness: True if process is alive, heartbeat fresh, and no breaker trip."""
+        return (
+            self.is_running
+            and self.liveness_status == "LIVE"
+            and self.consecutive_errors <= 3
+            and self.last_status_code != "EMERGENCY_STOP_ACTIVE"
+        )
+
+    @property
+    def service_ready_reason(self) -> str:
+        if not self.is_running:
+            return "SERVICE_COMPONENT_UNAVAILABLE (Worker stopped)"
+        if self.liveness_status != "LIVE":
+            return "SERVICE_HEARTBEAT_STALE"
+        if self.consecutive_errors > 3:
+            return f"EXCESSIVE_CONSECUTIVE_ERRORS ({self.consecutive_errors})"
+        if self.last_status_code == "EMERGENCY_STOP_ACTIVE":
+            return "SAFETY_GATE_BLOCKED (Emergency stop circuit breaker active)"
+        return "SERVICE_HEALTHY_AND_OPERATIONAL"
+
+    @property
+    def market_data_ready(self) -> bool:
+        """Market feed readiness: True ONLY if MT5 is connected and live quotes are fresh."""
+        return (
+            self.mt5_status == "MT5_CONNECTED"
+            and self.market_status == "MARKET_OPEN_DATA_FRESH"
+        )
+
+    @property
+    def market_data_reason(self) -> str:
+        if self.mt5_status != "MT5_CONNECTED":
+            return "MT5_DISCONNECTED"
+        if self.market_status == "MARKET_CLOSED":
+            return self.market_staleness_reason or "MARKET_CLOSED"
+        if self.market_status in ["NO_RECENT_TICK", "MARKET_DATA_STALE", "MARKET_CLOSED_OR_STALE"]:
+            return self.market_staleness_reason or self.market_status
+        if self.market_status == "MARKET_OPEN_DATA_FRESH":
+            return "MARKET_DATA_FRESH_AND_STREAMING"
+        return self.market_status
+
+    @property
+    def trading_ready(self) -> bool:
+        """Signal generation readiness: True ONLY if service is ready, market data is fresh,
+        and approved strategy rules and active ML model artifact exist in database.
+        NOTE: Never enables trade execution; strictly governs signal generation validity.
+        """
+        if not self.service_ready or not self.market_data_ready:
+            return False
+
+        db = self.db_factory()
+        try:
+            from backend.app.services.knowledge.manager import KnowledgeManager
+            from backend.app.services.ml.registry import ModelRegistry
+            rules = KnowledgeManager(db).get_active_strategy_rules()
+            model = ModelRegistry(db).load_active_model_artifact()
+            return len(rules) > 0 and model is not None
+        except Exception:
+            return False
+        finally:
+            db.close()
+
+    @property
+    def trading_readiness_reason(self) -> str:
+        if not self.service_ready:
+            return f"SERVICE_NOT_READY ({self.service_ready_reason})"
+        if not self.market_data_ready:
+            return f"MARKET_DATA_NOT_READY ({self.market_data_reason})"
+
+        db = self.db_factory()
+        try:
+            from backend.app.services.knowledge.manager import KnowledgeManager
+            from backend.app.services.ml.registry import ModelRegistry
+            rules = KnowledgeManager(db).get_active_strategy_rules()
+            model = ModelRegistry(db).load_active_model_artifact()
+            missing = []
+            if len(rules) == 0:
+                missing.append("NO_APPROVED_RULES")
+            if model is None:
+                missing.append("NO_ACTIVE_MODEL")
+            if missing:
+                return "_AND_".join(missing)
+            return "READY_FOR_SIGNAL_GENERATION"
+        except Exception as e:
+            return f"GOVERNANCE_CHECK_FAILED: {e}"
+        finally:
+            db.close()
 
     def evaluate_market_freshness(self, quote: Optional[Quote], now_utc: datetime) -> Tuple[str, str]:
         """Evaluates market state independently:
@@ -132,6 +226,12 @@ class MarketMonitoringWorker:
         return {
             "liveness": self.liveness_status,
             "readiness": self.readiness_status,
+            "service_ready": self.service_ready,
+            "service_ready_reason": self.service_ready_reason,
+            "market_data_ready": self.market_data_ready,
+            "market_data_reason": self.market_data_reason,
+            "trading_ready": self.trading_ready,
+            "trading_readiness_reason": self.trading_readiness_reason,
             "is_running": self.is_running,
             "symbol": self.symbol,
             "timeframe": self.timeframe.value,
@@ -141,7 +241,10 @@ class MarketMonitoringWorker:
             "heartbeat_age_seconds": round(heartbeat_age, 1) if heartbeat_age is not None else None,
             "last_cycle_time": self.last_cycle_time.isoformat() if self.last_cycle_time else None,
             "last_cycle_age_seconds": round(last_cycle_age, 1) if last_cycle_age is not None else None,
+            "last_poll_time": self.last_poll_time.isoformat() if self.last_poll_time else None,
+            "last_successful_analysis_time": self.last_successful_analysis_time.isoformat() if self.last_successful_analysis_time else None,
             "last_successful_cycle_time": self.last_successful_cycle_time.isoformat() if self.last_successful_cycle_time else None,
+            "last_error_time": self.last_error_time.isoformat() if self.last_error_time else None,
             "last_processed_bar_time": self.last_processed_bar_time.isoformat() if self.last_processed_bar_time else None,
             "last_processed_bar_key": self.last_processed_bar_key,
             "last_status_code": self.last_status_code,
@@ -215,13 +318,17 @@ class MarketMonitoringWorker:
 
             try:
                 # Run the single cycle in worker thread to prevent event loop blocking
-                await asyncio.to_thread(self.run_single_cycle)
+                cycle_res = await asyncio.to_thread(self.run_single_cycle)
                 self.consecutive_errors = 0
-                self.last_successful_cycle_time = datetime.now(timezone.utc)
+                self.last_poll_time = datetime.now(timezone.utc)
+                if cycle_res.get("analysis_executed"):
+                    self.last_successful_analysis_time = self.last_poll_time
+                    self.last_successful_cycle_time = self.last_poll_time
                 current_delay = self.poll_interval
             except Exception as e:
                 self.consecutive_errors += 1
                 self.total_errors += 1
+                self.last_error_time = datetime.now(timezone.utc)
                 self.last_error_message = str(e)
                 self.last_status_code = "WORKER_EXCEPTION"
                 self.last_reason = f"Unhandled error in cycle: {str(e)}"
@@ -253,7 +360,7 @@ class MarketMonitoringWorker:
         if settings.EXECUTION_MODE != ExecutionMode.SIGNAL_ONLY or settings.DEMO_TRADING_ENABLED:
             self.last_status_code = "SECURITY_VIOLATION_BLOCKED"
             self.last_reason = "Execution mode is not strictly SIGNAL_ONLY or DEMO_TRADING_ENABLED is True."
-            return {"cycle_id": cycle_id, "status_code": self.last_status_code, "reason": self.last_reason}
+            return {"cycle_id": cycle_id, "status_code": self.last_status_code, "reason": self.last_reason, "analysis_executed": False}
 
         db: Session = self.db_factory()
         try:
@@ -263,7 +370,7 @@ class MarketMonitoringWorker:
                 self.last_status_code = "EMERGENCY_STOP_ACTIVE"
                 self.last_reason = "Emergency Stop Circuit Breaker is active. Pipeline suspended."
                 self.last_decision = "HOLD"
-                return {"cycle_id": cycle_id, "status_code": self.last_status_code, "reason": self.last_reason}
+                return {"cycle_id": cycle_id, "status_code": self.last_status_code, "reason": self.last_reason, "analysis_executed": False}
 
             # 3. Check / Establish MT5 Connection
             if not self.data_provider.is_connected():
@@ -274,7 +381,7 @@ class MarketMonitoringWorker:
                     self.last_status_code = "MT5_DISCONNECTED"
                     self.last_reason = "Failed to connect to MetaTrader 5 terminal."
                     self.last_decision = "NONE"
-                    return {"cycle_id": cycle_id, "status_code": self.last_status_code, "reason": self.last_reason}
+                    return {"cycle_id": cycle_id, "status_code": self.last_status_code, "reason": self.last_reason, "analysis_executed": False}
             self.mt5_status = "MT5_CONNECTED"
 
             # 4. Market Status and Quote Freshness
@@ -297,7 +404,7 @@ class MarketMonitoringWorker:
                 self.last_status_code = "DATA_INVALID"
                 self.last_reason = f"Insufficient or invalid closed bars ({len(candles) if candles else 0} < 50) retrieved for {self.symbol}."
                 self.last_decision = "NONE"
-                return {"cycle_id": cycle_id, "status_code": self.last_status_code, "reason": self.last_reason}
+                return {"cycle_id": cycle_id, "status_code": self.last_status_code, "reason": self.last_reason, "analysis_executed": False}
 
             # Identify latest completed candle
             latest_bar: Candle = candles[-1]
@@ -311,17 +418,21 @@ class MarketMonitoringWorker:
             if existing_record:
                 if existing_record.lifecycle_phase == "COMPLETED":
                     self.last_status_code = "NO_NEW_CLOSED_BAR"
-                    self.last_reason = f"Latest closed bar {bar_key} has already been analyzed in cycle {existing_record.cycle_id}."
+                    self.last_reason = f"Latest closed bar {bar_key} has already been analyzed in reference cycle {existing_record.cycle_id}."
                     self.last_decision = existing_record.decision or "HOLD"
-                    self.last_lifecycle_phase = "COMPLETED"
+                    self.last_lifecycle_phase = "DUPLICATE_SKIPPED"
                     self.successful_cycles += 1
                     return {
                         "cycle_id": cycle_id,
                         "bar_key": bar_key,
                         "status_code": self.last_status_code,
-                        "lifecycle_phase": "COMPLETED",
+                        "lifecycle_phase": "DUPLICATE_SKIPPED",
+                        "reference_cycle_id": existing_record.cycle_id,
+                        "reference_status": existing_record.status_code,
+                        "decision": self.last_decision,
                         "reason": self.last_reason,
                         "bar_time": bar_time_utc.isoformat(),
+                        "analysis_executed": False,
                     }
                 elif existing_record.lifecycle_phase == "PROCESSING":
                     # Check age of processing record
@@ -334,7 +445,10 @@ class MarketMonitoringWorker:
                             "bar_key": bar_key,
                             "status_code": self.last_status_code,
                             "lifecycle_phase": "PROCESSING",
+                            "reference_cycle_id": existing_record.cycle_id,
+                            "reference_status": existing_record.status_code,
                             "reason": self.last_reason,
+                            "analysis_executed": False,
                         }
                     else:
                         # Orphaned from previous crash/restart -> recover and complete
@@ -371,12 +485,17 @@ class MarketMonitoringWorker:
                     self.last_status_code = "NO_NEW_CLOSED_BAR"
                     self.last_reason = f"Bar {bar_key} claimed concurrently by cycle {existing.cycle_id if existing else 'parallel'}."
                     self.last_decision = existing.decision if existing else "HOLD"
+                    self.last_lifecycle_phase = "DUPLICATE_SKIPPED"
                     return {
                         "cycle_id": cycle_id,
                         "bar_key": bar_key,
                         "status_code": self.last_status_code,
-                        "lifecycle_phase": existing.lifecycle_phase if existing else "COMPLETED",
+                        "lifecycle_phase": "DUPLICATE_SKIPPED",
+                        "reference_cycle_id": existing.cycle_id if existing else None,
+                        "reference_status": existing.status_code if existing else None,
+                        "decision": self.last_decision,
                         "reason": self.last_reason,
+                        "analysis_executed": False,
                     }
                 except Exception as db_res_err:
                     db.rollback()
@@ -512,6 +631,7 @@ class MarketMonitoringWorker:
                 "signal_id": signal_id_created,
                 "reason": reason_msg,
                 "duration_ms": dur_ms,
+                "analysis_executed": True,
             }
 
         finally:
