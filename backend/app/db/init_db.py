@@ -12,6 +12,22 @@ def init_db(db: Session = None) -> None:
     logger.info("Initializing database tables...")
     Base.metadata.create_all(bind=engine)
 
+    # Lightweight schema migration for SQLite if columns are added
+    try:
+        from sqlalchemy import inspect, text
+        inspector = inspect(engine)
+        if "worker_cycle_records" in inspector.get_table_names():
+            columns = [col["name"] for col in inspector.get_columns("worker_cycle_records")]
+            with engine.connect() as conn:
+                if "lifecycle_phase" not in columns:
+                    conn.execute(text("ALTER TABLE worker_cycle_records ADD COLUMN lifecycle_phase VARCHAR(30) DEFAULT 'COMPLETED'"))
+                    conn.commit()
+                if "updated_at" not in columns:
+                    conn.execute(text("ALTER TABLE worker_cycle_records ADD COLUMN updated_at DATETIME"))
+                    conn.commit()
+    except Exception as e:
+        logger.warning(f"Schema check error (non-fatal): {e}")
+
     close_session = False
     if db is None:
         db = SessionLocal()

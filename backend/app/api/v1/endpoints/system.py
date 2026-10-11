@@ -89,12 +89,14 @@ def get_worker_cycles(limit: int = 50, db: Session = Depends(get_db)) -> List[Di
         "bar_key": r.bar_key,
         "bar_time": r.bar_time.isoformat() if r.bar_time else None,
         "status_code": r.status_code,
+        "lifecycle_phase": getattr(r, "lifecycle_phase", "COMPLETED"),
         "decision": r.decision,
         "signal_id": r.signal_id,
         "duration_ms": r.duration_ms,
         "details": r.details,
         "error_message": r.error_message,
-        "created_at": r.created_at.isoformat(),
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "updated_at": r.updated_at.isoformat() if getattr(r, "updated_at", None) else None,
     } for r in records]
 
 

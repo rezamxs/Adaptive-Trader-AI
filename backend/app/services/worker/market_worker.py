@@ -62,6 +62,13 @@ class MarketMonitoringWorker:
         self.last_signal_id: Optional[str] = None
         self.last_error_message: Optional[str] = None
         
+        # Taxonomy & Freshness State
+        self.mt5_status: str = "MT5_DISCONNECTED"
+        self.market_status: str = "INITIALIZING"
+        self.market_staleness_reason: Optional[str] = None
+        self.last_tick_time: Optional[datetime] = None
+        self.last_lifecycle_phase: str = "IDLE"
+        
         self.total_cycles: int = 0
         self.successful_cycles: int = 0
         self.consecutive_errors: int = 0
@@ -84,9 +91,37 @@ class MarketMonitoringWorker:
             return "STOPPED"
         if self.consecutive_errors > 3:
             return "ERROR"
-        if self.last_status_code in ["MT5_DISCONNECTED", "MARKET_CLOSED", "MARKET_DATA_STALE", "EMERGENCY_STOP_ACTIVE"]:
+        if self.mt5_status == "MT5_DISCONNECTED" or self.last_status_code == "EMERGENCY_STOP_ACTIVE":
             return "DEGRADED"
         return "READY"
+
+    def evaluate_market_freshness(self, quote: Optional[Quote], now_utc: datetime) -> Tuple[str, str]:
+        """Evaluates market state independently:
+        Returns (market_status, reason)
+        Statuses: MARKET_OPEN_DATA_FRESH, NO_RECENT_TICK, MARKET_CLOSED, MARKET_CLOSED_OR_STALE
+        """
+        if not quote:
+            return "NO_RECENT_TICK", "No quote or tick data received from broker terminal."
+        
+        age_seconds = (now_utc - quote.time).total_seconds()
+        if age_seconds <= settings.WORKER_STALE_TICK_SECONDS:
+            return "MARKET_OPEN_DATA_FRESH", f"Market is open with live quotes (tick age {age_seconds:.1f}s)."
+        
+        # Check if UTC weekday falls in weekend session closure
+        weekday = now_utc.weekday()  # 0=Mon, 4=Fri, 5=Sat, 6=Sun
+        hour = now_utc.hour
+        is_weekend = (
+            weekday == 5  # Saturday
+            or (weekday == 6 and hour < 22)  # Sunday before 22:00 UTC
+            or (weekday == 4 and hour >= 23)  # Friday after 23:00 UTC
+        )
+        
+        if is_weekend:
+            return "MARKET_CLOSED", f"Market is closed for the weekend (UTC day={now_utc.strftime('%A')}, tick age={age_seconds/3600:.1f}h)."
+        elif age_seconds > 7200:  # Over 2 hours outside weekend
+            return "MARKET_CLOSED_OR_STALE", f"Market data stale for {age_seconds/3600:.1f} hours (potential holiday or session closure)."
+        else:
+            return "NO_RECENT_TICK", f"Quote is stale ({age_seconds:.1f}s > {settings.WORKER_STALE_TICK_SECONDS}s threshold)."
 
     def get_diagnostics(self) -> Dict[str, Any]:
         """Provides full structured telemetry for API inspection."""
@@ -114,6 +149,11 @@ class MarketMonitoringWorker:
             "last_reason": self.last_reason,
             "last_signal_id": self.last_signal_id,
             "last_error_message": self.last_error_message,
+            "mt5_status": self.mt5_status,
+            "market_status": self.market_status,
+            "market_staleness_reason": self.market_staleness_reason,
+            "last_tick_time": self.last_tick_time.isoformat() if self.last_tick_time else None,
+            "last_lifecycle_phase": self.last_lifecycle_phase,
             "total_cycles": self.total_cycles,
             "successful_cycles": self.successful_cycles,
             "consecutive_errors": self.consecutive_errors,
@@ -229,24 +269,21 @@ class MarketMonitoringWorker:
             if not self.data_provider.is_connected():
                 ok = self.data_provider.connect()
                 if not ok:
+                    self.mt5_status = "MT5_DISCONNECTED"
+                    self.market_status = "UNKNOWN"
                     self.last_status_code = "MT5_DISCONNECTED"
                     self.last_reason = "Failed to connect to MetaTrader 5 terminal."
                     self.last_decision = "NONE"
                     return {"cycle_id": cycle_id, "status_code": self.last_status_code, "reason": self.last_reason}
+            self.mt5_status = "MT5_CONNECTED"
 
             # 4. Market Status and Quote Freshness
             quote = self.data_provider.get_current_quote(self.symbol, max_staleness_seconds=settings.WORKER_STALE_TICK_SECONDS)
-            if not quote or quote.is_stale:
-                tick = getattr(self.data_provider, "get_last_tick", lambda s: None)(self.symbol) if hasattr(self.data_provider, "get_last_tick") else None
-                # If quote is very stale (> 2 hours), market is closed
-                if quote and (now_utc - quote.time).total_seconds() > 7200:
-                    self.last_status_code = "MARKET_CLOSED"
-                    self.last_reason = f"Market is currently closed (Last tick age: {(now_utc - quote.time).total_seconds() / 3600:.1f} hours)."
-                else:
-                    self.last_status_code = "MARKET_DATA_STALE"
-                    self.last_reason = "Market quote is stale or unavailable."
-                self.last_decision = "HOLD"
-                # Even if market is closed, we proceed to check if there is an unhandled closed bar from prior session
+            m_status, m_reason = self.evaluate_market_freshness(quote, now_utc)
+            self.market_status = m_status
+            self.market_staleness_reason = m_reason
+            if quote:
+                self.last_tick_time = quote.time
 
             # 5. Retrieve Historical Completed Candles (start_pos=1 guarantees closed bars only)
             candles = self.data_provider.get_historical_candles(
@@ -257,8 +294,8 @@ class MarketMonitoringWorker:
             )
 
             if not candles or len(candles) < 50:
-                self.last_status_code = "DATA_VALIDATION_FAILED"
-                self.last_reason = f"Insufficient closed bars ({len(candles) if candles else 0} < 50) retrieved for {self.symbol}."
+                self.last_status_code = "DATA_INVALID"
+                self.last_reason = f"Insufficient or invalid closed bars ({len(candles) if candles else 0} < 50) retrieved for {self.symbol}."
                 self.last_decision = "NONE"
                 return {"cycle_id": cycle_id, "status_code": self.last_status_code, "reason": self.last_reason}
 
@@ -267,23 +304,86 @@ class MarketMonitoringWorker:
             bar_time_utc = latest_bar.time
             bar_key = f"{self.symbol}_{self.timeframe.value}_{bar_time_utc.strftime('%Y%m%d%H%M')}"
 
-            # 6. Check Bar Deduplication in Database
+            # 6. Check Bar Deduplication & Atomic Reservation
             existing_record = db.query(WorkerCycleRecord).filter_by(bar_key=bar_key).first()
-            if existing_record:
-                # We already processed this exact closed bar! Prevent duplicate signal generation.
-                self.last_status_code = "NO_NEW_CLOSED_BAR"
-                self.last_reason = f"Latest closed bar {bar_key} has already been analyzed in cycle {existing_record.cycle_id}."
-                self.last_decision = existing_record.decision or "HOLD"
-                self.successful_cycles += 1
-                return {
-                    "cycle_id": cycle_id,
-                    "bar_key": bar_key,
-                    "status_code": self.last_status_code,
-                    "reason": self.last_reason,
-                    "bar_time": bar_time_utc.isoformat(),
-                }
+            rec: Optional[WorkerCycleRecord] = None
 
-            # 7. A NEW CLOSED BAR IS AVAILABLE! Process through Analysis Pipeline
+            if existing_record:
+                if existing_record.lifecycle_phase == "COMPLETED":
+                    self.last_status_code = "NO_NEW_CLOSED_BAR"
+                    self.last_reason = f"Latest closed bar {bar_key} has already been analyzed in cycle {existing_record.cycle_id}."
+                    self.last_decision = existing_record.decision or "HOLD"
+                    self.last_lifecycle_phase = "COMPLETED"
+                    self.successful_cycles += 1
+                    return {
+                        "cycle_id": cycle_id,
+                        "bar_key": bar_key,
+                        "status_code": self.last_status_code,
+                        "lifecycle_phase": "COMPLETED",
+                        "reason": self.last_reason,
+                        "bar_time": bar_time_utc.isoformat(),
+                    }
+                elif existing_record.lifecycle_phase == "PROCESSING":
+                    # Check age of processing record
+                    age_proc = (datetime.utcnow() - (existing_record.created_at or datetime.utcnow())).total_seconds()
+                    if age_proc < 120.0:
+                        self.last_status_code = "BAR_UNDER_PROCESSING"
+                        self.last_reason = f"Bar {bar_key} is currently being processed by cycle {existing_record.cycle_id}."
+                        return {
+                            "cycle_id": cycle_id,
+                            "bar_key": bar_key,
+                            "status_code": self.last_status_code,
+                            "lifecycle_phase": "PROCESSING",
+                            "reason": self.last_reason,
+                        }
+                    else:
+                        # Orphaned from previous crash/restart -> recover and complete
+                        rec = existing_record
+                        rec.cycle_id = cycle_id
+                        rec.details = "Recovered orphaned processing cycle on restart"
+                        db.commit()
+                else:
+                    rec = existing_record
+            else:
+                # Atomically reserve candle in database before running heavy pipeline
+                from sqlalchemy.exc import IntegrityError
+                try:
+                    rec = WorkerCycleRecord(
+                        cycle_id=cycle_id,
+                        symbol=self.symbol,
+                        timeframe=self.timeframe.value,
+                        bar_key=bar_key,
+                        bar_time=bar_time_utc,
+                        status_code="PROCESSING",
+                        lifecycle_phase="PROCESSING",
+                        decision="PENDING",
+                        duration_ms=0.0,
+                        details="Bar discovered, analysis in progress",
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
+                    )
+                    db.add(rec)
+                    db.commit()
+                    self.last_lifecycle_phase = "PROCESSING"
+                except IntegrityError:
+                    db.rollback()
+                    existing = db.query(WorkerCycleRecord).filter_by(bar_key=bar_key).first()
+                    self.last_status_code = "NO_NEW_CLOSED_BAR"
+                    self.last_reason = f"Bar {bar_key} claimed concurrently by cycle {existing.cycle_id if existing else 'parallel'}."
+                    self.last_decision = existing.decision if existing else "HOLD"
+                    return {
+                        "cycle_id": cycle_id,
+                        "bar_key": bar_key,
+                        "status_code": self.last_status_code,
+                        "lifecycle_phase": existing.lifecycle_phase if existing else "COMPLETED",
+                        "reason": self.last_reason,
+                    }
+                except Exception as db_res_err:
+                    db.rollback()
+                    logger.warning(f"Failed to reserve bar {bar_key} in DB: {db_res_err}")
+                    rec = None
+
+            # 7. A NEW CLOSED BAR IS RESERVED! Process through Analysis Pipeline
             self.last_processed_bar_time = bar_time_utc
             self.last_processed_bar_key = bar_key
 
@@ -304,7 +404,17 @@ class MarketMonitoringWorker:
             except Exception as fe_err:
                 self.last_status_code = "FEATURE_GENERATION_FAILED"
                 self.last_reason = f"Feature generation error: {str(fe_err)}"
-                self._record_cycle_in_db(db, cycle_id, bar_key, bar_time_utc, self.last_status_code, "HOLD", None, t0, self.last_reason)
+                self.last_lifecycle_phase = "FAILED"
+                if rec:
+                    try:
+                        rec.status_code = self.last_status_code
+                        rec.lifecycle_phase = "FAILED"
+                        rec.error_message = str(fe_err)
+                        rec.details = self.last_reason
+                        rec.updated_at = datetime.utcnow()
+                        db.commit()
+                    except Exception:
+                        db.rollback()
                 return {"cycle_id": cycle_id, "status_code": self.last_status_code, "reason": self.last_reason}
 
             latest_feat_series = df_feats.iloc[-1]
@@ -356,33 +466,52 @@ class MarketMonitoringWorker:
                     signal_id_created = sig_record.signal_id
                     self.last_signal_id = signal_id_created
 
-            # 9. Persist Cycle Record in Database
+            # 9. Finalize Persistent Cycle Record in Database
             self.last_status_code = status_code
             self.last_decision = final_direction
             self.last_reason = reason_msg
+            self.last_lifecycle_phase = "COMPLETED"
             self.successful_cycles += 1
 
-            self._record_cycle_in_db(
-                db=db,
-                cycle_id=cycle_id,
-                bar_key=bar_key,
-                bar_time=bar_time_utc,
-                status_code=status_code,
-                decision=final_direction,
-                signal_id=signal_id_created,
-                t0=t0,
-                details=reason_msg
-            )
+            dur_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            if rec:
+                try:
+                    rec.status_code = status_code
+                    rec.lifecycle_phase = "COMPLETED"
+                    rec.decision = final_direction
+                    rec.signal_id = signal_id_created
+                    rec.duration_ms = dur_ms
+                    rec.details = reason_msg
+                    rec.updated_at = datetime.utcnow()
+                    db.commit()
+                except Exception as commit_err:
+                    db.rollback()
+                    logger.error(f"Failed to commit completed cycle record: {commit_err}")
+                    self.last_status_code = "DATABASE_WRITE_FAILED"
+                    self.last_reason = f"Database commit failed: {commit_err}"
+            else:
+                self._record_cycle_in_db(
+                    db=db,
+                    cycle_id=cycle_id,
+                    bar_key=bar_key,
+                    bar_time=bar_time_utc,
+                    status_code=status_code,
+                    decision=final_direction,
+                    signal_id=signal_id_created,
+                    t0=t0,
+                    details=reason_msg
+                )
 
             return {
                 "cycle_id": cycle_id,
                 "bar_key": bar_key,
                 "bar_time": bar_time_utc.isoformat(),
                 "status_code": status_code,
+                "lifecycle_phase": "COMPLETED",
                 "decision": final_direction,
                 "signal_id": signal_id_created,
                 "reason": reason_msg,
-                "duration_ms": round((time.perf_counter() - t0) * 1000, 2),
+                "duration_ms": dur_ms,
             }
 
         finally:
@@ -415,6 +544,8 @@ class MarketMonitoringWorker:
                 duration_ms=dur_ms,
                 details=details,
                 error_message=self.last_error_message,
+                lifecycle_phase="COMPLETED",
+                updated_at=datetime.utcnow(),
             )
             db.add(rec)
             db.commit()

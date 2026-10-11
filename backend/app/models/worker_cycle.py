@@ -20,7 +20,9 @@ class WorkerCycleRecord(Base):
     duration_ms = Column(Float, nullable=False, default=0.0)
     details = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
+    lifecycle_phase = Column(String(30), default="COMPLETED", nullable=False)  # DISCOVERED, PROCESSING, COMPLETED, FAILED
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     __table_args__ = (
         Index("idx_worker_sym_tf_bar", "symbol", "timeframe", "bar_time"),
