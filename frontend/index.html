@@ -315,6 +315,8 @@
   <header>
     <div class="brand">
       <h1>سامانه Adaptive Trader AI</h1>
+      <span id="badge-backend" class="badge badge-info">Backend: بررسی...</span>
+      <span id="badge-worker" class="badge badge-info">Worker: بررسی...</span>
       <span id="badge-mode">SIGNAL_ONLY</span>
       <span id="badge-mt5">MT5: در حال بررسی...</span>
     </div>
@@ -359,6 +361,30 @@
           <div class="card-title">کلید توقف اضطراری</div>
           <div class="card-value" id="val-circuit-status">-</div>
           <div class="card-subtext" id="val-circuit-reason">-</div>
+        </div>
+      </div>
+
+      <!-- Worker & Market Monitoring Status Grid -->
+      <div class="grid-4" style="margin-bottom: 2rem;">
+        <div class="card">
+          <div class="card-title">وضعیت Worker پایش بازار</div>
+          <div class="card-value" id="val-worker-status">-</div>
+          <div class="card-subtext" id="val-worker-info">نماد: XAUUSD | M1</div>
+        </div>
+        <div class="card">
+          <div class="card-title">آخرین چرخه پایش</div>
+          <div class="card-value" id="val-worker-cycles-count">-</div>
+          <div class="card-subtext" id="val-worker-cycle-time">زمان: -</div>
+        </div>
+        <div class="card">
+          <div class="card-title">آخرین کندل بسته‌شده</div>
+          <div class="card-value" id="val-worker-bar">-</div>
+          <div class="card-subtext" id="val-worker-bar-key">کلید: -</div>
+        </div>
+        <div class="card">
+          <div class="card-title">نتیجه و تصمیم تحلیل</div>
+          <div class="card-value" id="val-worker-decision">-</div>
+          <div class="card-subtext" id="val-worker-reason">-</div>
         </div>
       </div>
 
@@ -667,6 +693,60 @@
         const res = await fetch(`${API_BASE}/system/status`);
         const data = await res.json();
 
+        // Backend Liveness
+        const badgeBackend = document.getElementById("badge-backend");
+        if (badgeBackend) {
+          badgeBackend.innerText = `Backend: ${data.liveness || "LIVE"}`;
+          badgeBackend.className = "badge badge-success";
+        }
+
+        // Worker Telemetry
+        const worker = data.worker || {};
+        const badgeWorker = document.getElementById("badge-worker");
+        if (badgeWorker) {
+          const isWorkerLive = worker.liveness === "LIVE";
+          badgeWorker.innerText = `Worker: ${worker.liveness || "STOPPED"}`;
+          badgeWorker.className = isWorkerLive ? "badge badge-success" : "badge badge-warning";
+        }
+
+        const elWorkerStatus = document.getElementById("val-worker-status");
+        if (elWorkerStatus) {
+          elWorkerStatus.innerText = `${worker.liveness || "STOPPED"} (${worker.readiness || "UNKNOWN"})`;
+          elWorkerStatus.style.color = worker.readiness === "READY" ? "var(--success)" : "var(--warning)";
+        }
+        const elWorkerInfo = document.getElementById("val-worker-info");
+        if (elWorkerInfo) {
+          elWorkerInfo.innerText = `نماد: ${worker.symbol || "XAUUSD"} | ${worker.timeframe || "M1"} | بازه پایش: ${worker.poll_interval_seconds || 3}s`;
+        }
+
+        const elWorkerCycles = document.getElementById("val-worker-cycles-count");
+        if (elWorkerCycles) {
+          elWorkerCycles.innerText = `${worker.successful_cycles || 0} موفق / ${worker.total_cycles || 0} کل`;
+        }
+        const elWorkerCycleTime = document.getElementById("val-worker-cycle-time");
+        if (elWorkerCycleTime) {
+          elWorkerCycleTime.innerText = worker.last_cycle_time ? `آخرین چرخه: ${worker.last_cycle_time.substring(11, 19)} UTC` : "هنوز اجرا نشده";
+        }
+
+        const elWorkerBar = document.getElementById("val-worker-bar");
+        if (elWorkerBar) {
+          elWorkerBar.innerText = worker.last_processed_bar_time ? worker.last_processed_bar_time.substring(0, 16).replace("T", " ") : "در انتظار کندل جدید";
+        }
+        const elWorkerBarKey = document.getElementById("val-worker-bar-key");
+        if (elWorkerBarKey) {
+          elWorkerBarKey.innerText = worker.last_processed_bar_key ? `کلید: ${worker.last_processed_bar_key}` : `کد وضعیت: ${worker.last_status_code || "-"}`;
+        }
+
+        const elWorkerDecision = document.getElementById("val-worker-decision");
+        if (elWorkerDecision) {
+          elWorkerDecision.innerText = worker.last_decision || "HOLD";
+          elWorkerDecision.style.color = (worker.last_decision === "BUY" ? "var(--success)" : (worker.last_decision === "SELL" ? "var(--danger)" : "var(--text-main)"));
+        }
+        const elWorkerReason = document.getElementById("val-worker-reason");
+        if (elWorkerReason) {
+          elWorkerReason.innerText = worker.last_reason || "در انتظار چرخه";
+        }
+
         document.getElementById("badge-mode").innerText = data.execution_mode;
         document.getElementById("cfg-mode").innerText = data.execution_mode;
         document.getElementById("cfg-demo-gate").innerText = data.demo_trading_gate_enabled ? "فعال" : "غیرفعال (پیش‌فرض امن)";
@@ -702,6 +782,21 @@
         document.getElementById("val-circuit-reason").innerText = data.emergency_stop.reason;
       } catch (e) {
         console.error("Status load failed", e);
+        const badgeBackend = document.getElementById("badge-backend");
+        if (badgeBackend) {
+          badgeBackend.innerText = "Backend: قطع ارتباط";
+          badgeBackend.className = "badge badge-danger";
+        }
+        const badgeWorker = document.getElementById("badge-worker");
+        if (badgeWorker) {
+          badgeWorker.innerText = "Worker: متوقف";
+          badgeWorker.className = "badge badge-danger";
+        }
+        const elWorkerStatus = document.getElementById("val-worker-status");
+        if (elWorkerStatus) {
+          elWorkerStatus.innerText = "عدم پاسخ سرور";
+          elWorkerStatus.style.color = "var(--danger)";
+        }
       }
     }
 

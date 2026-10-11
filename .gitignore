@@ -33,6 +33,12 @@ wheels/
 *.sqlite
 *.sqlite3
 *.db
+*.db-shm
+*.db-wal
+*.log
+logs/*
+"فایل ها"/
+فایل ها/
 data/raw/*
 !data/raw/.gitkeep
 data/processed/*

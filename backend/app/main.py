@@ -1,4 +1,5 @@
 """FastAPI Main Application for Adaptive Trader AI."""
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,14 +10,39 @@ from backend.app.core.config import settings
 from backend.app.core.logging import logger
 from backend.app.db.init_db import init_db
 from backend.app.api.v1.api_router import api_router
+from backend.app.services.worker.market_worker import get_market_worker
 
-# Initialize Database Schema on start
-init_db()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Controlled application lifespan managing DB initialization and background worker."""
+    # Startup phase
+    init_db()
+    worker = None
+    if settings.WORKER_ENABLED:
+        try:
+            worker = get_market_worker()
+            await worker.start()
+            logger.info("MarketMonitoringWorker started during application lifespan startup.")
+        except Exception as e:
+            logger.error(f"Failed to start MarketMonitoringWorker during lifespan startup: {e}")
+
+    yield
+
+    # Shutdown phase
+    if worker and worker.is_running:
+        try:
+            await worker.stop()
+            logger.info("MarketMonitoringWorker stopped during application lifespan shutdown.")
+        except Exception as e:
+            logger.warning(f"Error stopping MarketMonitoringWorker during lifespan shutdown: {e}")
+
 
 app = FastAPI(
     title=settings.APP_NAME,
-    description="Adaptive Algorithmic Trading AI with MT5 Integration and Risk Safety Gates",
-    version="1.0.0",
+    description="Adaptive Algorithmic Trading AI with MT5 Integration, Background Market Worker, and Risk Safety Gates",
+    version="1.1.0",
+    lifespan=lifespan,
 )
 
 # CORS Configuration
@@ -45,11 +71,15 @@ if frontend_dir.exists():
 
 @app.get("/health", tags=["Health"])
 def health_check():
-    """Simple liveness check."""
+    """Liveness and readiness check with worker status."""
+    worker = get_market_worker()
     return {
         "status": "healthy",
         "app": settings.APP_NAME,
         "mode": settings.EXECUTION_MODE.value,
+        "liveness": worker.liveness_status,
+        "readiness": worker.readiness_status,
+        "worker_running": worker.is_running,
     }
 
 

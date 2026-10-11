@@ -1,6 +1,6 @@
-"""System Status and Emergency Stop Endpoints."""
+"""System Status, Worker Telemetry, and Emergency Stop Endpoints."""
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -9,7 +9,9 @@ from backend.app.core.config import settings
 from backend.app.db.session import get_db
 from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
 from backend.app.services.risk.circuit_breaker import EmergencyStopManager
+from backend.app.services.worker.market_worker import get_market_worker
 from backend.app.models.audit_log import AuditLog
+from backend.app.models.worker_cycle import WorkerCycleRecord
 
 router = APIRouter()
 
@@ -26,14 +28,18 @@ class EmergencyStopDeactivateRequest(BaseModel):
 
 @router.get("/status")
 def get_system_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
-    """Returns real-time status of system, database, MT5, demo mode, and circuit breaker."""
+    """Returns real-time status of system, database, MT5, worker, demo mode, and circuit breaker."""
     stop_mgr = EmergencyStopManager(db)
     is_stop_active, stop_reason, stop_at = stop_mgr.get_status()
 
+    # Query Worker diagnostics
+    worker = get_market_worker()
+    worker_diag = worker.get_diagnostics()
+
     # Query MT5 connection status
-    provider = MT5MarketDataProvider()
-    is_mt5_connected = provider.is_connected()
-    account_info = provider.get_account_info() if is_mt5_connected else None
+    active_provider = worker.data_provider if (worker and worker.data_provider.is_connected()) else MT5MarketDataProvider()
+    is_mt5_connected = active_provider.is_connected()
+    account_info = active_provider.get_account_info() if is_mt5_connected else None
 
     return {
         "app_name": settings.APP_NAME,
@@ -41,6 +47,9 @@ def get_system_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
         "execution_mode": settings.EXECUTION_MODE.value,
         "demo_trading_gate_enabled": settings.DEMO_TRADING_ENABLED,
         "database_connected": True,
+        "liveness": worker_diag["liveness"],
+        "readiness": worker_diag["readiness"],
+        "worker": worker_diag,
         "emergency_stop": {
             "is_active": is_stop_active,
             "reason": stop_reason,
@@ -59,6 +68,34 @@ def get_system_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
         },
         "server_time_utc": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@router.get("/worker/status")
+def get_worker_status() -> Dict[str, Any]:
+    """Returns granular real-time telemetry from the background market worker."""
+    worker = get_market_worker()
+    return worker.get_diagnostics()
+
+
+@router.get("/worker/cycles")
+def get_worker_cycles(limit: int = 50, db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
+    """Returns recent persistent worker execution cycle records."""
+    records = db.query(WorkerCycleRecord).order_by(WorkerCycleRecord.id.desc()).limit(limit).all()
+    return [{
+        "id": r.id,
+        "cycle_id": r.cycle_id,
+        "symbol": r.symbol,
+        "timeframe": r.timeframe,
+        "bar_key": r.bar_key,
+        "bar_time": r.bar_time.isoformat() if r.bar_time else None,
+        "status_code": r.status_code,
+        "decision": r.decision,
+        "signal_id": r.signal_id,
+        "duration_ms": r.duration_ms,
+        "details": r.details,
+        "error_message": r.error_message,
+        "created_at": r.created_at.isoformat(),
+    } for r in records]
 
 
 @router.post("/emergency-stop/activate")

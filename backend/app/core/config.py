@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     MIN_DATA_POINTS_REQUIRED: int = 100
     MAX_CONSECUTIVE_EXECUTION_ERRORS: int = 3
 
+    # Market Monitoring Worker Settings
+    WORKER_ENABLED: bool = True
+    WORKER_SYMBOL: str = "XAUUSD"
+    WORKER_TIMEFRAME: str = "M1"
+    WORKER_POLL_INTERVAL_SECONDS: float = 3.0
+    WORKER_RETRY_BACKOFF_BASE: float = 2.0
+    WORKER_MAX_RETRY_DELAY_SECONDS: float = 60.0
+    WORKER_STALE_TICK_SECONDS: int = 120
+
     # Storage Paths
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent.parent
     DATA_RAW_DIR: Path = Path("./data/raw")

@@ -8,6 +8,7 @@ from backend.app.models.signal import TradeSignal
 from backend.app.models.order import DemoOrder
 from backend.app.models.emergency_stop import EmergencyStopState
 from backend.app.models.audit_log import AuditLog
+from backend.app.models.worker_cycle import WorkerCycleRecord
 
 __all__ = [
     "Document",
@@ -19,4 +20,5 @@ __all__ = [
     "DemoOrder",
     "EmergencyStopState",
     "AuditLog",
+    "WorkerCycleRecord",
 ]
