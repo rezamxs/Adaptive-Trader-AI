@@ -60,7 +60,7 @@ def test_promotion_rejects_metrics_at_or_below_baseline(db_session, tmp_path):
     db_session.add(candidate)
     db_session.commit()
 
-    with pytest.raises(ModelGovernanceError, match="minimum gate"):
+    with pytest.raises(ModelGovernanceError, match="metrics do not pass"):
         ModelRegistry(db_session).promote_candidate(candidate.model_id)
 
     db_session.refresh(candidate)
@@ -69,7 +69,7 @@ def test_promotion_rejects_metrics_at_or_below_baseline(db_session, tmp_path):
 
 def test_promotion_rejects_missing_or_invalid_metrics(db_session, tmp_path):
     artifact = tmp_path / "invalid.joblib"
-    artifact.write_bytes(b"test artifact")
+    _write_artifact(artifact)
     candidate = _model("invalid-model", artifact, auc=float("nan"), brier=0.20)
     db_session.add(candidate)
     db_session.commit()
@@ -110,9 +110,9 @@ def test_promotion_does_not_archive_active_if_candidate_is_weaker(db_session, tm
 
 def test_promotion_archives_previous_active_after_all_gates_pass(db_session, tmp_path, monkeypatch):
     active_artifact = tmp_path / "active2.joblib"
-    active_artifact.write_bytes(b"active artifact")
+    _write_artifact(active_artifact)
     candidate_artifact = tmp_path / "candidate2.joblib"
-    candidate_artifact.write_bytes(b"candidate artifact")
+    _write_artifact(candidate_artifact)
     active = _model("active-model-2", active_artifact, status="active", auc=0.53, brier=0.20)
     candidate = _model("better-model", candidate_artifact, auc=0.56, brier=0.19)
     db_session.add_all([active, candidate])
