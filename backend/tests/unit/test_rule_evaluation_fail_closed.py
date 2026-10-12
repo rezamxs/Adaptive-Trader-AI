@@ -92,3 +92,14 @@ def test_documented_sma50_expression_uses_sma50_feature():
     )
     assert direction == "BUY"
     assert triggered == ["r1"]
+
+
+
+def test_generic_ma_expression_fails_closed_because_type_is_ambiguous():
+    rule = _rule("MA Buy", [{"indicator": "MA", "operator": ">", "threshold": "Price > MA(50)"}])
+    direction, _, triggered = SignalGenerator.evaluate_rules(
+        pd.Series({"dist_ema_21": 0.5, "dist_sma_50": 0.5}),
+        [rule], symbol="XAUUSD", timeframe="M1"
+    )
+    assert direction == "HOLD"
+    assert triggered == []
