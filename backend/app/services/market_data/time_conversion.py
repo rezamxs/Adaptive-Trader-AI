@@ -1,7 +1,9 @@
-"""Time conversion and validation utilities for MetaTrader 5 market data.
-Provides verifiable server timezone conversion, future timestamp protection, and tick staleness auditing.
+"""UTC conversion and freshness validation for MetaTrader 5 Unix timestamps.
+
+The MetaTrader5 Python API exposes tick and bar times as Unix epoch seconds. These
+values are already UTC and must not be adjusted by the broker's displayed timezone.
 """
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional, Tuple
 from dataclasses import dataclass
 
@@ -17,13 +19,10 @@ class TimestampValidationResult:
 
 
 class MT5TimeConverter:
-    """Manages time conversion between MT5 broker server time and UTC with strict validation.
-    
-    Guarantees:
-    - Never uses an unverified arbitrary offset without proof.
-    - Strictly rejects future timestamps (negative age beyond skew tolerance).
-    - Detects broker server timezone offset adaptively from verified live ticks if not explicitly configured.
-    - Fails closed when timezone contract cannot be verified.
+    """Converts MT5 Unix epoch seconds directly to aware UTC datetimes.
+
+    Broker display-time offsets do not apply to Unix epoch timestamps returned by
+    MetaTrader5. Offset-related methods remain only for backward compatibility.
     """
 
     DEFAULT_MAX_STALENESS_SECONDS: float = 120.0
@@ -35,11 +34,64 @@ class MT5TimeConverter:
         max_staleness_seconds: float = DEFAULT_MAX_STALENESS_SECONDS,
         max_future_tolerance_seconds: float = DEFAULT_MAX_FUTURE_TOLERANCE_SECONDS,
     ):
+        # Kept for compatibility; epoch timestamps always use UTC.
         self._explicit_offset_seconds = explicit_offset_seconds
-        self._detected_offset_seconds: Optional[int] = None
-        self._offset_source: str = "EXPLICIT" if explicit_offset_seconds is not None else "UNSET"
+        self._detected_offset_seconds: Optional[int] = 0
+        self._offset_source = "MT5_UNIX_EPOCH_UTC"
         self.max_staleness_seconds = max_staleness_seconds
         self.max_future_tolerance_seconds = max_future_tolerance_seconds
+
+    @property
+    def server_offset_seconds(self) -> Optional[int]:
+        """Returns zero because MT5 Unix epoch timestamps are already UTC."""
+        return 0
+
+    @property
+    def offset_source(self) -> str:
+        """Reports the MT5 Unix-epoch contract, not a broker-local offset."""
+        return "MT5_UNIX_EPOCH_UTC"
+
+    def set_explicit_offset_hours(self, hours: float) -> None:
+        """Reject offset settings because MT5 epoch values must not be shifted."""
+        raise ValueError(
+            "MT5 Unix epoch timestamps are already UTC; broker display offsets must not be applied."
+        )
+
+    def clear_offset(self) -> None:
+        """Reset legacy offset state without changing UTC timestamp semantics."""
+        self._explicit_offset_seconds = None
+        self._detected_offset_seconds = 0
+        self._offset_source = "MT5_UNIX_EPOCH_UTC"
+
+    def detect_and_set_offset_from_live_tick(
+        self,
+        raw_tick_time: int,
+        now_utc: Optional[datetime] = None,
+        max_clock_skew_seconds: float = 60.0
+    ) -> Tuple[bool, Optional[int], str]:
+        """Legacy compatibility method; epoch timestamps need no broker offset."""
+        try:
+            datetime.fromtimestamp(raw_tick_time, tz=timezone.utc)
+        except (TypeError, ValueError, OverflowError, OSError) as exc:
+            return False, None, f"INVALID_UNIX_EPOCH_TIMESTAMP: {exc}"
+        self._detected_offset_seconds = 0
+        self._offset_source = "MT5_UNIX_EPOCH_UTC"
+        return True, 0, "MT5 Unix epoch timestamp interpreted as UTC; no broker offset applied."
+
+    def raw_to_utc(
+        self,
+        raw_seconds: int,
+        require_verified_offset: bool = True
+    ) -> Tuple[Optional[datetime], str]:
+        """Converts Unix epoch seconds to UTC without broker-time adjustment.
+
+        The require_verified_offset parameter remains for compatibility and is ignored.
+        """
+        try:
+            dt = datetime.fromtimestamp(raw_seconds, tz=timezone.utc)
+            return dt, "MT5_UNIX_EPOCH_UTC"
+        except (TypeError, ValueError, OverflowError, OSError) as exc:
+            return None, f"CONVERSION_ERROR: {exc}"
 
     @property
     def server_offset_seconds(self) -> Optional[int]:
