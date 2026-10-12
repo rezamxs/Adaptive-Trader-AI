@@ -54,7 +54,9 @@ class SignalManager:
         active_model_artifact = self.model_registry.load_active_model_artifact()
 
         # 3. Evaluate Rule logic
-        rule_dir, rule_str, triggered_rules = SignalGenerator.evaluate_rules(latest_bar, approved_rules)
+        rule_dir, rule_str, triggered_rules = SignalGenerator.evaluate_rules(
+            latest_bar, approved_rules, symbol=symbol, timeframe=timeframe.value
+        )
 
         # 4. Evaluate Model logic
         model_dir, model_prob = SignalGenerator.evaluate_model(latest_bar, active_model_artifact)
