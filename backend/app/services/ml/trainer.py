@@ -59,16 +59,27 @@ class ModelTrainer:
         train_prob = model.predict_proba(X_train)
         train_metrics = ModelEvaluator.evaluate(y_train, train_pred, train_prob)
 
-        # 3. Evaluate on Independent Out-of-Time Test partition
+        # 3. Evaluate on held-out temporal validation partition. This partition is
+        # distinct from train and test and is required for model-governance review.
+        val_pred = model.predict(X_val) if len(X_val) > 0 else np.array([])
+        val_prob = model.predict_proba(X_val) if len(X_val) > 0 else np.array([])
+        validation_metrics = (
+            ModelEvaluator.evaluate(y_val, val_pred, val_prob) if len(X_val) > 0 else {}
+        )
+        validation_metrics["sample_count"] = int(len(y_val))
+
+        # 4. Evaluate on Independent Out-of-Time Test partition
         test_pred = model.predict(X_test) if len(X_test) > 0 else np.array([])
         test_prob = model.predict_proba(X_test) if len(X_test) > 0 else np.array([])
         test_metrics = ModelEvaluator.evaluate(y_test, test_pred, test_prob) if len(X_test) > 0 else {}
 
-        # 4. Compute Calibration Metrics on Test Set
+        test_metrics["sample_count"] = int(len(y_test))
+
+        # 5. Compute Calibration Metrics on Test Set
         prob_pos_test = test_prob[:, 1] if test_prob.ndim == 2 else test_prob
         calibration_curve = ModelEvaluator.calculate_calibration_curve(y_test, prob_pos_test) if len(y_test) > 0 else []
 
-        # 5. Serialize Artifact
+        # 6. Serialize Artifact
         model_id = f"model_{algorithm[:6]}_{uuid.uuid4().hex[:8]}"
         artifact_dir = settings.ARTIFACTS_MODELS_DIR
         artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -82,6 +93,7 @@ class ModelTrainer:
             "feature_names": feature_names,
             "hyperparameters": hyperparameters,
             "dataset_version_tag": dataset_version_tag,
+            "validation_metrics": validation_metrics,
             "test_metrics": test_metrics,
         }
         joblib.dump(artifact_payload, artifact_path)
@@ -96,6 +108,7 @@ class ModelTrainer:
                 features_used=feature_names,
                 target_name=target_name,
                 train_metrics=train_metrics,
+                validation_metrics=validation_metrics,
                 test_metrics=test_metrics,
                 calibration_metrics={"bins": calibration_curve},
                 walk_forward_metrics={},
@@ -111,6 +124,7 @@ class ModelTrainer:
             "status": "candidate",
             "artifact_path": str(artifact_path),
             "train_metrics": train_metrics,
+            "validation_metrics": validation_metrics,
             "test_metrics": test_metrics,
             "calibration_curve": calibration_curve,
             "features_used": feature_names,
