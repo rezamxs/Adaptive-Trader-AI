@@ -208,7 +208,9 @@ class MarketMonitoringWorker:
             return "FUTURE_TICK_TIMESTAMP", (
                 f"Quote timestamp is {-age_seconds:.1f}s in the future; freshness cannot be verified."
             )
-        if not quote.is_stale and age_seconds <= settings.WORKER_STALE_TICK_SECONDS:
+        if quote.is_stale:
+            return "NO_RECENT_TICK", "Provider marked the quote stale; market readiness is denied."
+        if age_seconds <= settings.WORKER_STALE_TICK_SECONDS:
             return "MARKET_OPEN_DATA_FRESH", f"Market is open with live quotes (tick age {age_seconds:.1f}s)."
         
         # Check if UTC weekday falls in weekend session closure
