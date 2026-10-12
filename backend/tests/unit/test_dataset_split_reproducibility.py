@@ -64,12 +64,12 @@ def test_buy_labels_use_each_historical_candle_spread():
         "low": [100.0, 100.5, 100.5],
         "close": [100.0, 101.0, 100.5],
         "atr_14": [1.0, 1.0, 1.0],
-        "spread": [0, 100, 0],
+        "spread": [100, 0, 0],
     }, index=index)
     labels = BarrierLabeler.label_buy_barrier(
         df, tp_atr_mult=1.0, sl_atr_mult=1.0,
         max_horizon_bars=1, spread_points=0, point_value=0.01,
     )
-    # A spread of 100 points is $1 at point_value=.01; the next high is
+    # A spread of 100 points on the entry bar is $1 at point_value=.01; the next high is
     # insufficient to hit the $2 TP barrier after paying that spread.
     assert labels.iloc[0] == 0
