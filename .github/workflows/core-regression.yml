@@ -23,6 +23,7 @@ jobs:
         run: |
           python -m compileall -q backend migrations
           python -c "import backend.app.main; from backend.app.api.v1.endpoints import backtest, documents, ml, signals"
+          DATABASE_URL=sqlite:///./migration-smoke.db python -m alembic upgrade head
       - name: Run focused core regression suite
         run: >-
           python -m pytest
