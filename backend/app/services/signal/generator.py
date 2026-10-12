@@ -129,17 +129,27 @@ class SignalGenerator:
         if not model or not feat_names:
             return None, 0.0
 
-        raw_vec = np.array([latest_bar_features.get(f, 0.0) for f in feat_names]).reshape(1, -1)
-        scaled_vec = scaler.transform(raw_vec) if scaler else raw_vec
-
-        # Training class 1 means BUY reaches TP before SL; class 0 means that
-        # BUY setup fails or expires. A low class-1 probability is not a SELL label.
+        if not np.isfinite(prob_threshold) or not 0.0 <= prob_threshold <= 1.0:
+            return None, 0.0
         try:
+            raw_values = []
+            for feature_name in feat_names:
+                value = float(latest_bar_features.get(feature_name, float("nan")))
+                if not np.isfinite(value):
+                    return None, 0.0
+                raw_values.append(value)
+            raw_vec = np.asarray(raw_values, dtype=float).reshape(1, -1)
+            scaled_vec = scaler.transform(raw_vec) if scaler else raw_vec
+
+            # Training class 1 means BUY reaches TP before SL; class 0 means that
+            # BUY setup fails or expires. A low class-1 probability is not a SELL label.
             proba = model.predict_proba(scaled_vec)
             if getattr(proba, "ndim", 0) != 2 or proba.shape[0] != 1:
                 return None, 0.0
 
             classes = getattr(model, "classes_", None)
+            if classes is None:
+                classes = getattr(getattr(model, "model", None), "classes_", None)
             if classes is not None:
                 class_labels = list(classes)
                 if 1 not in class_labels:
