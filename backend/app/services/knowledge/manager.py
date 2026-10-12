@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import settings
 from backend.app.core.logging import logger, log_security_event
 from backend.app.models.document import Document
+from backend.app.models.knowledge_chunk import KnowledgeChunk
 from backend.app.models.rule import TradingRule
 from backend.app.models.audit_log import AuditLog
 from backend.app.schemas.rule_schema import ApprovalStatus, RuleApprovalUpdate, TradingRuleCreate
@@ -39,16 +40,17 @@ class KnowledgeManager:
         if file_size > 250 * 1024 * 1024:
             raise ValueError("File exceeds maximum allowed size of 250MB.")
 
-        # Save to raw storage
-        ext = Path(file_name).suffix.lower()
-        storage_path = settings.DATA_RAW_DIR / f"{document_id}_{file_name}"
+        # Keep uploads inside the raw-data directory; never trust path components from a filename.
+        safe_file_name = Path(file_name).name
+        ext = Path(safe_file_name).suffix.lower()
+        storage_path = settings.DATA_RAW_DIR / f"{document_id}_{safe_file_name}"
         storage_path.parent.mkdir(parents=True, exist_ok=True)
         with open(storage_path, "wb") as f:
             f.write(file_bytes)
 
         # Parse file
         try:
-            full_text, pages_count, page_chunks = DocumentParser.parse_file(file_name, file_bytes)
+            full_text, pages_count, page_chunks = DocumentParser.parse_file(safe_file_name, file_bytes)
             status = "completed"
             error_msg = None
         except Exception as e:
@@ -62,7 +64,7 @@ class KnowledgeManager:
         # Create Document record
         doc_record = Document(
             document_id=document_id,
-            file_name=file_name,
+            file_name=safe_file_name,
             file_type=ext.lstrip("."),
             file_size_bytes=file_size,
             source_description=source_description or "Uploaded knowledge document",
@@ -75,9 +77,49 @@ class KnowledgeManager:
         self.db.commit()
         self.db.refresh(doc_record)
 
-        # Extract rules
+        # Persist searchable evidence chunks before extracting rules. Retrieval reads
+        # KnowledgeChunk, so saving only Document.raw_text would make uploads invisible.
+        created_chunks: List[KnowledgeChunk] = []
         created_rules: List[TradingRule] = []
         if status == "completed" and page_chunks:
+            for index, part in enumerate(page_chunks, start=1):
+                if not isinstance(part, dict):
+                    continue
+                chunk_text = str(part.get("text", "")).strip()
+                if not chunk_text:
+                    continue
+                sheet_name = part.get("sheet")
+                page_value = part.get("page", index)
+                try:
+                    page_number = int(page_value) if page_value is not None else None
+                except (TypeError, ValueError):
+                    page_number = None
+                if sheet_name:
+                    location_type = "sheet"
+                    location_reference = f"Sheet: {str(sheet_name)[:100]}"
+                else:
+                    location_type = "page"
+                    location_reference = f"Page {page_number or index}"
+                first_line = next((line.strip() for line in chunk_text.splitlines() if line.strip()), "")
+                title = first_line[:255] or safe_file_name
+                chunk = KnowledgeChunk(
+                    chunk_id=f"chunk_{uuid.uuid4().hex[:16]}",
+                    document_id=document_id,
+                    source_file=safe_file_name,
+                    location_type=location_type,
+                    location_reference=location_reference,
+                    page_number=page_number,
+                    title=title,
+                    content=chunk_text,
+                    key_concepts=[],
+                    parameters={},
+                    exceptions_and_limits=[],
+                )
+                self.db.add(chunk)
+                created_chunks.append(chunk)
+            self.db.commit()
+            self.retriever.refresh()
+
             rule_creates = RuleExtractor.extract_from_pages(document_id, page_chunks)
             for rc in rule_creates:
                 rule_id = f"rule_{uuid.uuid4().hex[:8]}"
@@ -111,7 +153,7 @@ class KnowledgeManager:
             actor="USER",
             details={
                 "document_id": document_id,
-                "file_name": file_name,
+                "file_name": safe_file_name,
                 "rules_extracted": len(created_rules),
             }
         )
