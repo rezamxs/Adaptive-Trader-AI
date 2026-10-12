@@ -77,8 +77,13 @@ class SignalManager:
             return None
 
         # 5. Idempotency Check
-        idempotency_key = f"{symbol}_{timeframe.value}_{bar_time_dt.strftime('%Y%m%d%H%M')}_{final_direction}"
-        existing = self.db.query(TradeSignal).filter_by(idempotency_key=idempotency_key).first()
+        idempotency_key = f"{symbol}_{timeframe.value}_{bar_time_dt.strftime('%Y%m%d%H%M')}"
+        # Older records included direction in the key; check both formats during transition.
+        existing = self.db.query(TradeSignal).filter(
+            TradeSignal.idempotency_key.in_(
+                (idempotency_key, f"{idempotency_key}_BUY", f"{idempotency_key}_SELL")
+            )
+        ).first()
         if existing:
             logger.info(f"Signal with key {idempotency_key} already recorded. Skipping duplicate.")
             return existing
