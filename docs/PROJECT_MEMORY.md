@@ -303,3 +303,70 @@ For each material project event, add:
 - what is proven, what is not proven, risks/blockers, and next action.
 
 Preserve history when a status changes. Do not silently overwrite a failed result with a later success without retaining enough context to understand the correction. Never include credentials or secrets.
+
+---
+
+## 13. Second verification pass — 2026-10-13
+
+This section records a second pass against the current GitHub state and the project/library reports available during this session. It supplements earlier sections and preserves discrepancies rather than silently choosing one version.
+
+### Current GitHub state — verified now
+
+- Repository default branch: `main`.
+- PR #1: `OPEN`, `DRAFT`, not merged; base branch `main`.
+- PR head branch: `fix/core-correctness-audit`.
+- PR base SHA: `f60ed647956068c6d6423846dd93399a09ec682a`.
+- PR head SHA at this check: `88bfc9eef8a25790d835670697681fd5e4775cdf`, the commit that updated this memory file.
+- PR is reported mergeable, but this does not mean it should be merged.
+- A GitHub Actions workflow run associated with this head was found: run ID `38311139568`, workflow `Core Regression Tests`, conclusion `success`.
+- The combined commit-status endpoint returned no status entries. The workflow run above is the direct evidence available for the current head; do not infer that every CI job or the full test suite ran.
+- The PR description states that 58 focused regression/security tests passed, compilation/import smoke checks passed, and a fresh SQLite Alembic upgrade passed. It explicitly says the complete repository test suite is **not claimed as passing**. It also says Windows/Python 3.14 and real the configured broker/MT5 symbol economics, account history, quote freshness, margin calculation, and demo execution remain to be verified locally.
+- Therefore, the older report of 175/175 tests passing conflicts with the current PR's narrower validation statement. Preserve the 175-test figure as an older reported result only; do not present it as current verified evidence until its exact commit, command, and raw output are recovered and reconciled.
+
+### Additional knowledge-ingestion evidence recovered from project history
+
+A prior QA report described:
+- approximately 99.6% coverage of textual educational content;
+- 318 knowledge chunks;
+- the cover page of a price-action PDF excluded from the extracted text;
+- 11 Python scripts inside a ZIP not ingested;
+- `semantic-fixtures.yaml` truncated after 50,000 characters;
+- remaining retrieval quality problems caused in part by coarse chunking/length bias, including questions about POC/Delta and slippage.
+
+These are historical report claims, not a fresh count of the current database. They mean “all educational material fully ingested” must not be stated without qualification. Check whether the cover page, ZIP scripts, and truncated YAML are required knowledge sources. If they are, repair ingestion and add source-coverage tests; otherwise document the exclusions and their rationale.
+
+### Strategy-source and database count discrepancies
+
+Project reports have used several different counts:
+- one report said six source documents were read and six structured rules were stored as `pending`, with 55 tests passing and strategy-related documentation created;
+- another report described 47 rules pending;
+- other notes describe six education documents and 318 knowledge chunks.
+
+These figures measure different things and may come from different revisions. Do not treat them as equivalent. Reconcile them by listing source documents, document IDs, extracted rules by status, duplicate/unsupported rules, and persisted chunks from the current database. Preserve the exact database snapshot and commit used for the count.
+
+### Earlier repository audit evidence and limits
+
+A prior read-only review reported inspecting 144 tracked files at commit `f60ed647956068c6d6423846dd93399a09ec682a`. It confirmed the broad code/module structure but did not run the Windows test suite or independently verify the local dataset, UTC timestamps, local database, `.env`, live MT5 connection, or complete end-to-end execution.
+
+That review also reported:
+- the tracked `data/processed` directory contained only `.gitkeep`, so a processed dataset/spec artifact was not present in that repository snapshot;
+- a Stage C report expected 94,926 rows while another artifact/report showed 94,927;
+- the KnowledgeChunk persistence/insertion path was incomplete in that snapshot.
+
+The current PR description says knowledge-ingestion chunks are now persisted and focused tests cover ingestion chunks. This is evidence of an intended fix and a focused test, not proof that all old dataset artifacts/count mismatches are resolved. Check the current implementation, migration/database, and test output at the current HEAD before closing these items.
+
+### Limits of the five-chat extraction
+
+The user identified five chats titled `تعریف و آموزش ماشین لرنینگ` as the source set. During this second pass, the available project conversation summaries and saved reports were searchable, but the five complete raw chat transcripts were not exposed as individual readable files in the current file search. Therefore:
+- this memory file consolidates the available summaries, reports, project plan, and GitHub evidence;
+- it must **not** be described as a verified, message-by-message extraction of all five complete transcripts;
+- if the raw chat text becomes available as project files or exports, compare it against this memory file and add any missing decisions, commands, commits, failures, and test outputs.
+
+### Updated priority list after this verification
+
+1. Resolve the conflict between the historical 175-test claim and the current PR's explicitly narrower 58-test CI scope.
+2. Reconcile source-document/rule/chunk counts and the exclusions listed above.
+3. Verify whether the earlier Stage C row-count mismatch and missing processed artifacts were corrected.
+4. Independently test MT5 timestamp/freshness and broker symbol economics on Windows in read-only mode.
+5. Continue Phase O strategy extraction only with the original source document accessible; keep all extracted rules unapproved.
+6. Keep PR #1 open and draft until the user explicitly chooses otherwise. Do not enable demo execution or send orders.
