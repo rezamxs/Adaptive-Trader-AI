@@ -126,6 +126,27 @@ def test_executor_rejects_signal_when_stop_loss_is_invalid_at_current_price(
     assert db_session.query(DemoOrder).count() == 0
 
 
+def test_executor_rejects_volume_that_exceeds_current_risk_limit(
+    db_session, sample_approved_signal, monkeypatch
+):
+    """A stored approval cannot send more volume than current risk permits."""
+    monkeypatch.setattr(settings, "EXECUTION_MODE", ExecutionMode.DEMO_TRADING)
+    monkeypatch.setattr(settings, "DEMO_TRADING_ENABLED", True)
+
+    # The wider stop makes 0.10 lots exceed the current risk budget.
+    sample_approved_signal.stop_loss = 1.0000
+    db_session.commit()
+
+    provider = MockMarketDataProvider(is_demo_account=True)
+    executor = DemoTradingExecutor(db_session, provider)
+    success, order, msg = executor.execute_demo_signal(sample_approved_signal)
+
+    assert success is False
+    assert order is None
+    assert "current risk permits at most" in msg
+    assert db_session.query(DemoOrder).count() == 0
+
+
 def test_order_idempotency_prevents_duplicate_dispatch(db_session, sample_approved_signal, monkeypatch):
     """Verify order idempotency prevents duplicate fills on same signal."""
     monkeypatch.setattr(settings, "EXECUTION_MODE", ExecutionMode.DEMO_TRADING)
