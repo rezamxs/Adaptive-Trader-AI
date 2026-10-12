@@ -20,6 +20,7 @@ class MLModelRecord(Base):
     
     # Validation & Evaluation Metrics
     train_metrics: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    validation_metrics: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     test_metrics: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     calibration_metrics: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     walk_forward_metrics: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
