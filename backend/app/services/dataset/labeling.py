@@ -30,9 +30,21 @@ class BarrierLabeler:
         low_prices = df["low"].values
         atrs = df[atr_col].values if atr_col in df.columns else np.full(n, 0.0010)
 
-        spread_cost = spread_points * point_value
+        # Prefer historical per-bar spread, available in MT5 rates, over today's
+        # broker spread. This avoids labeling all history with the current spread.
+        if "spread" in df.columns:
+            try:
+                historical_spreads = pd.to_numeric(df["spread"], errors="coerce").to_numpy(dtype=float)
+            except (TypeError, ValueError):
+                historical_spreads = np.full(n, float(spread_points))
+        else:
+            historical_spreads = np.full(n, float(spread_points))
 
         for i in range(n - max_horizon_bars):
+            bar_spread = historical_spreads[i]
+            if not np.isfinite(bar_spread) or bar_spread < 0:
+                bar_spread = float(spread_points)
+            spread_cost = bar_spread * point_value
             entry_price = close_prices[i] + spread_cost  # Pay ask price to buy
             atr = atrs[i]
             if np.isnan(atr) or atr <= 0:
