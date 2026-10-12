@@ -24,6 +24,8 @@ from backend.app.services.market_data.base import (
     SymbolInfo,
     AccountDetails,
 )
+from backend.app.services.market_data.time_conversion import MT5TimeConverter
+
 
 # Global re-entrant lock to serialize all C-extension MetaTrader 5 API calls safely
 _mt5_lock = threading.RLock()
@@ -48,6 +50,9 @@ class MT5MarketDataProvider(IMarketDataProvider):
     def __init__(self, terminal_path: Optional[str] = None):
         self.terminal_path = terminal_path or settings.MT5_PATH
         self._connected = False
+        self.time_converter = MT5TimeConverter(
+            max_staleness_seconds=settings.WORKER_STALE_TICK_SECONDS
+        )
 
     def connect(self) -> bool:
         """Initializes MT5 terminal connection safely with thread synchronization."""
@@ -68,6 +73,19 @@ class MT5MarketDataProvider(IMarketDataProvider):
                 self._connected = True
                 term_info = mt5.terminal_info()
                 logger.info(f"Connected to MT5 terminal at {getattr(term_info, 'path', 'N/A')}")
+
+                # Attempt adaptive verification of server timezone offset if worker symbol tick is available
+                try:
+                    init_tick = mt5.symbol_info_tick(settings.WORKER_SYMBOL)
+                    if init_tick:
+                        ok, _, reason = self.time_converter.detect_and_set_offset_from_live_tick(init_tick.time)
+                        if ok:
+                            logger.info(f"MT5 server timezone verified: {reason}")
+                        else:
+                            logger.warning(f"Could not automatically verify MT5 server timezone: {reason}")
+                except Exception as tz_err:
+                    logger.warning(f"Exception during MT5 timezone detection: {tz_err}")
+
                 return True
             except Exception as e:
                 logger.error(f"Exception during MT5 connect: {e}")
@@ -163,7 +181,7 @@ class MT5MarketDataProvider(IMarketDataProvider):
             return mt5.symbol_info_tick(symbol)
 
     def get_current_quote(self, symbol: str, max_staleness_seconds: int = 120) -> Optional[Quote]:
-        """Gets current Bid and Ask quote with staleness validation."""
+        """Gets current Bid and Ask quote with staleness validation and verified timezone adjustment."""
         with _mt5_lock:
             if not self.is_connected():
                 return None
@@ -172,10 +190,25 @@ class MT5MarketDataProvider(IMarketDataProvider):
             if not tick:
                 return None
 
-            tick_dt = datetime.fromtimestamp(tick.time, tz=timezone.utc)
             now_utc = datetime.now(timezone.utc)
-            age_seconds = (now_utc - tick_dt).total_seconds()
-            is_stale = age_seconds > max_staleness_seconds
+
+            # If timezone offset is not yet verified, attempt verification with this live tick
+            if self.time_converter.server_offset_seconds is None:
+                self.time_converter.detect_and_set_offset_from_live_tick(tick.time, now_utc=now_utc)
+
+            # Convert raw MT5 broker timestamp to true UTC
+            tick_dt, _ = self.time_converter.raw_to_utc(tick.time, require_verified_offset=False)
+            if tick_dt is None:
+                return None
+
+            val_res = self.time_converter.validate_timestamp(
+                tick_dt,
+                now_utc=now_utc,
+                max_staleness_seconds=max_staleness_seconds,
+            )
+
+            # Marked stale if validation fails or broker offset is unverified
+            is_stale = (not val_res.is_valid) or (self.time_converter.server_offset_seconds is None)
 
             sym_info = mt5.symbol_info(symbol)
             point = sym_info.point if sym_info else 0.0001
@@ -197,7 +230,7 @@ class MT5MarketDataProvider(IMarketDataProvider):
         count: int = 500,
         start_pos: int = 0
     ) -> List[Candle]:
-        """Fetches historical candles chronologically under thread lock."""
+        """Fetches historical candles chronologically under thread lock with verified UTC timestamps."""
         with _mt5_lock:
             if not self.is_connected():
                 return []
@@ -212,8 +245,11 @@ class MT5MarketDataProvider(IMarketDataProvider):
             total = len(rates)
             for i, r in enumerate(rates):
                 is_closed = True if (start_pos > 0 or i < total - 1) else False
+                candle_time, _ = self.time_converter.raw_to_utc(r['time'], require_verified_offset=False)
+                if candle_time is None:
+                    continue
                 candles.append(Candle(
-                    time=datetime.fromtimestamp(r['time'], tz=timezone.utc),
+                    time=candle_time,
                     open=float(r['open']),
                     high=float(r['high']),
                     low=float(r['low']),

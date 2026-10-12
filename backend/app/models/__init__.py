@@ -1,5 +1,6 @@
 """Export all database models."""
 from backend.app.models.document import Document
+from backend.app.models.knowledge_chunk import KnowledgeChunk
 from backend.app.models.rule import TradingRule
 from backend.app.models.dataset import DatasetVersion
 from backend.app.models.ml_model import MLModelRecord
@@ -12,6 +13,7 @@ from backend.app.models.worker_cycle import WorkerCycleRecord
 
 __all__ = [
     "Document",
+    "KnowledgeChunk",
     "TradingRule",
     "DatasetVersion",
     "MLModelRecord",

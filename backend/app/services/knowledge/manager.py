@@ -15,6 +15,7 @@ from backend.app.models.audit_log import AuditLog
 from backend.app.schemas.rule_schema import ApprovalStatus, RuleApprovalUpdate, TradingRuleCreate
 from backend.app.services.knowledge.parsers import DocumentParser
 from backend.app.services.knowledge.extractor import RuleExtractor
+from backend.app.services.knowledge.retriever import KnowledgeRetriever
 
 
 class KnowledgeManager:
@@ -22,6 +23,7 @@ class KnowledgeManager:
 
     def __init__(self, db: Session):
         self.db = db
+        self.retriever = KnowledgeRetriever(db)
 
     def ingest_document(
         self,
@@ -33,9 +35,9 @@ class KnowledgeManager:
         document_id = f"doc_{uuid.uuid4().hex[:12]}"
         file_size = len(file_bytes)
 
-        # Validate file size (max 25MB)
-        if file_size > 25 * 1024 * 1024:
-            raise ValueError("File exceeds maximum allowed size of 25MB.")
+        # Validate file size (max 250MB to support large trading course books)
+        if file_size > 250 * 1024 * 1024:
+            raise ValueError("File exceeds maximum allowed size of 250MB.")
 
         # Save to raw storage
         ext = Path(file_name).suffix.lower()
@@ -191,3 +193,22 @@ class KnowledgeManager:
                         })
 
         return conflicts
+
+    def retrieve_knowledge(
+        self,
+        query: str,
+        top_k: int = 5,
+        source_file: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Searches knowledge chunks and returns structured, source-cited results."""
+        return self.retriever.search(query=query, top_k=top_k, source_file=source_file)
+
+    def query_knowledge_grounded(
+        self,
+        query: str,
+        top_k: int = 5,
+        source_file: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Queries knowledge base with strict grounding and zero-hallucination verification."""
+        return self.retriever.query_with_grounding(query=query, top_k=top_k, source_file=source_file)
+

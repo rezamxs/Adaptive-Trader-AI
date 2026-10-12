@@ -31,11 +31,18 @@ class DatasetPipeline:
         sl_mult: float = 1.0,
         train_ratio: float = 0.70,
         test_ratio: float = 0.15,
-        version_prefix: str = "ds"
+        version_prefix: str = "ds",
+        spread_points: Optional[int] = None,
+        point_value: Optional[float] = None
     ) -> Dict[str, Any]:
         """Builds an ML-ready dataset with strict temporal separation and purging."""
         if len(raw_df) < settings.MIN_DATA_POINTS_REQUIRED:
             raise ValueError(f"Insufficient data: {len(raw_df)} bars provided, minimum required is {settings.MIN_DATA_POINTS_REQUIRED}.")
+
+        # Symbol-aware point value and spread defaults
+        is_gold = "XAU" in symbol.upper() or "GOLD" in symbol.upper()
+        effective_point = point_value if point_value is not None else (0.01 if is_gold else 0.00001)
+        effective_spread = spread_points if spread_points is not None else (17 if is_gold else 15)
 
         # 1. Feature Engineering (purely backward-looking)
         df_feat, feature_names = FeatureEngineer.transform(raw_df)
@@ -45,7 +52,9 @@ class DatasetPipeline:
             df_feat,
             tp_atr_mult=tp_mult,
             sl_atr_mult=sl_mult,
-            max_horizon_bars=horizon_bars
+            max_horizon_bars=horizon_bars,
+            spread_points=effective_spread,
+            point_value=effective_point
         )
         df_feat["target"] = target_series
 
@@ -99,6 +108,8 @@ class DatasetPipeline:
             "positive_label_count": int(target_counts.get(1, 0)),
             "negative_label_count": int(target_counts.get(0, 0)),
             "positive_rate": round(positive_rate, 4),
+            "spread_points": effective_spread,
+            "point_value": effective_point,
         }
 
         # 8. Record in DB if session available
@@ -114,7 +125,7 @@ class DatasetPipeline:
                 end_time=end_t,
                 total_bars=n_clean,
                 features_list=feature_names,
-                target_definition=f"BUY TP({tp_mult}*ATR) before SL({sl_mult}*ATR) within {horizon_bars} bars",
+                target_definition=f"BUY TP({tp_mult}*ATR) before SL({sl_mult}*ATR) within {horizon_bars} bars [spread={effective_spread}pts, pt={effective_point}]",
                 target_stats=target_stats,
                 file_path=str(save_path),
             )
