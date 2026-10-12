@@ -72,6 +72,10 @@ class PositionSizer:
             return False, 0.0, "Broker volume limits are invalid."
 
         step_precision = max(0, -Decimal(str(step)).normalize().as_tuple().exponent)
+        effective_max_lot = math.floor((max_lot / step) + 1e-12) * step
+        effective_max_lot = round(effective_max_lot, step_precision)
+        if effective_max_lot < min_lot:
+            return False, 0.0, "Broker maximum volume cannot satisfy minimum volume and step constraints."
         quantized_lots = math.floor((raw_lots / step) + 1e-12) * step
         quantized_lots = round(quantized_lots, step_precision)
 
@@ -83,7 +87,7 @@ class PositionSizer:
             quantized_lots = min_lot
 
         # Clip to max_lot
-        final_lots = min(max_lot, quantized_lots)
+        final_lots = min(effective_max_lot, quantized_lots)
         final_lots = round(final_lots, step_precision)
 
         # POST-ROUNDING VERIFICATION:
