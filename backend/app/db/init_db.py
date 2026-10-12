@@ -25,6 +25,16 @@ def init_db(db: Session = None) -> None:
                 if "updated_at" not in columns:
                     conn.execute(text("ALTER TABLE worker_cycle_records ADD COLUMN updated_at DATETIME"))
                     conn.commit()
+
+        # SQLite does not add new ORM fields to an existing table through create_all.
+        # Keep existing local databases compatible with ML validation metrics.
+        if engine.dialect.name == "sqlite" and "ml_models" in inspect(engine).get_table_names():
+            ml_columns = [col["name"] for col in inspect(engine).get_columns("ml_models")]
+            if "validation_metrics" not in ml_columns:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("ALTER TABLE ml_models ADD COLUMN validation_metrics JSON NOT NULL DEFAULT '{}'")
+                    )
     except Exception as e:
         logger.warning(f"Schema check error (non-fatal): {e}")
 
