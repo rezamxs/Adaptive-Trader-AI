@@ -1,0 +1,35 @@
+name: Core Regression Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, fix/core-correctness-audit]
+  workflow_dispatch:
+
+jobs:
+  core-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install package and development dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Run focused core regression suite
+        run: >-
+          python -m pytest
+          backend/tests/unit/test_signal_model_semantics.py
+          backend/tests/unit/test_position_sizer_tick_value.py
+          backend/tests/unit/test_risk_quote_freshness.py
+          backend/tests/unit/test_backtest_realistic.py
+          backend/tests/unit/test_model_promotion_governance.py
+          backend/tests/unit/test_mt5_time_conversion_utc.py
+          backend/tests/unit/test_rule_evaluation_fail_closed.py
+          backend/tests/unit/test_worker_freshness_guards.py
+          backend/tests/unit/test_knowledge_ingestion_chunks.py
+          backend/tests/unit/test_dataset_split_reproducibility.py
+          -q
