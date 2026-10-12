@@ -1,5 +1,6 @@
 """Machine Learning and Model Training Endpoints."""
 from typing import Any, Dict, Optional
+import math
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -62,6 +63,12 @@ def train_model(req: TrainModelRequest, db: Session = Depends(get_db)):
 
     if symbol_info is None:
         raise HTTPException(status_code=503, detail=f"MT5 did not return broker specifications for {req.symbol}.")
+    if (
+        not math.isfinite(float(symbol_info.point))
+        or float(symbol_info.point) <= 0
+        or int(symbol_info.spread) < 0
+    ):
+        raise HTTPException(status_code=503, detail=f"MT5 returned invalid point/spread data for {req.symbol}.")
 
     if len(df_raw) < 100:
         raise HTTPException(status_code=400, detail="Insufficient bars to build training dataset.")
@@ -93,6 +100,7 @@ def train_model(req: TrainModelRequest, db: Session = Depends(get_db)):
     return {
         "model_id": train_res["model_id"],
         "status": train_res["status"],
+        "validation_metrics": train_res["validation_metrics"],
         "test_metrics": train_res["test_metrics"],
         "features_count": len(train_res["features_used"]),
     }
