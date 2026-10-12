@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 import pandas as pd
+import math
 import numpy as np
 
 from backend.app.db.session import get_db
@@ -68,8 +69,42 @@ def execute_backtest(req: RunBacktestRequest, db: Session = Depends(get_db)):
     if symbol_info is None:
         raise HTTPException(status_code=503, detail=f"MT5 did not return broker specifications for {req.symbol}.")
 
+    try:
+        point_value = float(symbol_info.point)
+        tick_size = float(symbol_info.tick_size)
+        tick_value = float(symbol_info.tick_value)
+        contract_size = float(symbol_info.trade_contract_size)
+        volume_step = float(symbol_info.volume_step)
+        min_lot = float(symbol_info.volume_min)
+        max_lot = float(symbol_info.volume_max)
+    except (TypeError, ValueError, OverflowError):
+        raise HTTPException(status_code=503, detail=f"MT5 returned invalid broker specifications for {req.symbol}.")
+
+    if (
+        not all(math.isfinite(value) and value > 0 for value in
+                (point_value, tick_size, tick_value, contract_size, volume_step, min_lot, max_lot))
+        or max_lot < min_lot
+    ):
+        raise HTTPException(
+            status_code=503,
+            detail=f"MT5 tick economics or volume limits are invalid for {req.symbol}; refusing inaccurate backtest.",
+        )
+
     if len(df_raw) < 50:
         raise HTTPException(status_code=400, detail="Insufficient bars to run backtest.")
+
+    if req.spread_points is None:
+        historical_spread = (
+            pd.to_numeric(df_raw["spread"], errors="coerce").dropna()
+            if "spread" in df_raw.columns else pd.Series(dtype=float)
+        )
+        effective_spread_points = (
+            max(0, int(round(float(historical_spread.median()))))
+            if not historical_spread.empty
+            else max(0, int(symbol_info.spread))
+        )
+    else:
+        effective_spread_points = req.spread_points
 
     # 1. Transform features
     df_feat, _ = FeatureEngineer.transform(df_raw)
@@ -103,16 +138,16 @@ def execute_backtest(req: RunBacktestRequest, db: Session = Depends(get_db)):
         symbol=req.symbol,
         timeframe=req.timeframe.value,
         initial_balance=req.initial_balance,
-        spread_points=(max(0, int(symbol_info.spread)) if req.spread_points is None else req.spread_points),
+        spread_points=effective_spread_points,
         slippage_points=req.slippage_points,
         commission_per_lot=req.commission_per_lot,
-        point_value=float(symbol_info.point),
-        contract_size=float(symbol_info.trade_contract_size),
-        tick_size=float(symbol_info.tick_size),
-        tick_value=float(symbol_info.tick_value),
-        lot_step=float(symbol_info.volume_step),
-        min_lot=float(symbol_info.volume_min),
-        max_lot=float(symbol_info.volume_max),
+        point_value=point_value,
+        contract_size=contract_size,
+        tick_size=tick_size,
+        tick_value=tick_value,
+        lot_step=volume_step,
+        min_lot=min_lot,
+        max_lot=max_lot,
         db=db,
     )
     bt_res = engine.run(df_feat, signals, strategy_name=req.strategy_name)
@@ -121,7 +156,7 @@ def execute_backtest(req: RunBacktestRequest, db: Session = Depends(get_db)):
     stress_res = BacktestStressTester.run_stress_scenarios(
         df_feat, signals, symbol=req.symbol, timeframe=req.timeframe.value,
         initial_balance=req.initial_balance,
-        base_spread_points=(max(0, int(symbol_info.spread)) if req.spread_points is None else req.spread_points),
+        base_spread_points=effective_spread_points,
         point_value=float(symbol_info.point),
         contract_size=float(symbol_info.trade_contract_size),
         tick_size=float(symbol_info.tick_size),
