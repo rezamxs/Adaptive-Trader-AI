@@ -273,14 +273,29 @@ class MT5MarketDataProvider(IMarketDataProvider):
             is_stale = not val_res.is_valid
 
             sym_info = mt5.symbol_info(symbol)
-            point = sym_info.point if sym_info else 0.0001
-            spread_points = int(round((tick.ask - tick.bid) / (point or 0.0001)))
+            if sym_info is None:
+                logger.warning(f"MT5 symbol specifications are unavailable for {symbol}.")
+                return None
+            try:
+                point = float(sym_info.point)
+                bid = float(tick.bid)
+                ask = float(tick.ask)
+            except (TypeError, ValueError, OverflowError):
+                return None
+            if (
+                not math.isfinite(point) or point <= 0
+                or not math.isfinite(bid) or not math.isfinite(ask)
+                or bid <= 0 or ask < bid
+            ):
+                logger.warning(f"MT5 returned invalid quote/specification values for {symbol}.")
+                return None
+            spread_points = int(round((ask - bid) / point))
 
             return Quote(
                 symbol=symbol,
                 time=tick_dt,
-                bid=tick.bid,
-                ask=tick.ask,
+                bid=bid,
+                ask=ask,
                 spread_points=spread_points,
                 is_stale=is_stale,
             )
