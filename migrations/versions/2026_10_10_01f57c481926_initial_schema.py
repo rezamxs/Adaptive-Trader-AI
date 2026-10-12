@@ -29,5 +29,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop the tables owned by this initial application schema."""
-    Base.metadata.drop_all(bind=op.get_bind())
+    """Keep downgrade non-destructive for databases that predate this migration.
+
+    The upgrade uses create_all against existing databases. We cannot safely infer
+    which tables were created by this revision, so dropping metadata here could erase
+    user data.
+    """
+    pass
