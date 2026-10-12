@@ -2,6 +2,7 @@
 Handles MT5 terminal connection, symbol specs, candles, and staleness checks.
 """
 import threading
+import math
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import pandas as pd
@@ -127,6 +128,78 @@ class MT5MarketDataProvider(IMarketDataProvider):
                 trade_mode=acc.trade_mode,
                 is_demo=(acc.trade_mode == MT5_ACCOUNT_TRADE_MODE_DEMO),
             )
+
+    def get_open_positions_count(self) -> Optional[int]:
+        """Return account-wide open positions count, or None if MT5 cannot verify it."""
+        with _mt5_lock:
+            if not self.is_connected():
+                return None
+            positions = mt5.positions_get()
+            if positions is None:
+                logger.error(f"MT5 positions_get failed: {mt5.last_error()}")
+                return None
+            return len(positions)
+
+    def get_daily_loss_percent(self) -> Optional[float]:
+        """Estimate current-day equity drawdown from UTC-day deal cash flows.
+
+        Any cash movement reported by MT5 is included when reconstructing the
+        day's starting balance. If account or deal history cannot be verified,
+        return None so risk checks can fail closed.
+        """
+        with _mt5_lock:
+            if not self.is_connected():
+                return None
+            account = mt5.account_info()
+            if account is None:
+                return None
+
+            now_utc = datetime.now(timezone.utc)
+            day_start_utc = datetime(
+                now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc
+            )
+            deals = mt5.history_deals_get(day_start_utc, now_utc)
+            if deals is None:
+                logger.error(f"MT5 deal history unavailable for daily drawdown: {mt5.last_error()}")
+                return None
+
+            day_cash_flow = 0.0
+            for deal in deals:
+                day_cash_flow += (
+                    float(getattr(deal, "profit", 0.0) or 0.0)
+                    + float(getattr(deal, "commission", 0.0) or 0.0)
+                    + float(getattr(deal, "swap", 0.0) or 0.0)
+                    + float(getattr(deal, "fee", 0.0) or 0.0)
+                )
+
+            start_balance = float(account.balance) - day_cash_flow
+            equity = float(account.equity)
+            if (
+                not math.isfinite(start_balance)
+                or not math.isfinite(equity)
+                or start_balance <= 0.0
+            ):
+                return None
+            return max(0.0, (start_balance - equity) / start_balance * 100.0)
+
+    def calculate_order_margin(
+        self, symbol: str, direction: str, volume: float, price: float
+    ) -> Optional[float]:
+        """Ask MT5 for broker-calculated initial margin in the account deposit currency."""
+        with _mt5_lock:
+            if not self.is_connected():
+                return None
+            if direction not in {"BUY", "SELL"} or volume <= 0 or price <= 0:
+                return None
+            order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
+            margin = mt5.order_calc_margin(order_type, symbol, float(volume), float(price))
+            if margin is None:
+                logger.warning(f"MT5 margin calculation unavailable for {symbol}: {mt5.last_error()}")
+                return None
+            value = float(margin)
+            if not math.isfinite(value) or value < 0.0:
+                return None
+            return value
 
     def get_symbols(self) -> List[str]:
         """Retrieves list of all available symbol names."""
