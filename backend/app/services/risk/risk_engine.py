@@ -50,6 +50,26 @@ class RiskEngine:
         if quote is None or quote.is_stale:
             return False, 0.0, "REJECTED_STALE_DATA: Market quote is stale or unavailable."
 
+        # Independently validate freshness. A provider's is_stale flag can be wrong.
+        quote_time = getattr(quote, "time", None)
+        if (
+            not isinstance(quote_time, datetime)
+            or quote_time.tzinfo is None
+            or quote_time.utcoffset() is None
+        ):
+            return False, 0.0, "REJECTED_INVALID_QUOTE_TIME: Quote timestamp must be timezone-aware."
+
+        age_seconds = (datetime.now(timezone.utc) - quote_time.astimezone(timezone.utc)).total_seconds()
+        if age_seconds < -5.0:
+            return False, 0.0, (
+                f"REJECTED_FUTURE_DATA: Quote timestamp is {-age_seconds:.1f}s in the future."
+            )
+        if age_seconds > settings.WORKER_STALE_TICK_SECONDS:
+            return False, 0.0, (
+                f"REJECTED_STALE_DATA: Quote age {age_seconds:.1f}s exceeds "
+                f"{settings.WORKER_STALE_TICK_SECONDS}s."
+            )
+
         # 3. SPREAD FILTER
         if quote.spread_points > settings.MAX_ALLOWED_SPREAD_POINTS:
             return False, 0.0, f"REJECTED_HIGH_SPREAD: Current spread ({quote.spread_points} pts) exceeds maximum permitted ({settings.MAX_ALLOWED_SPREAD_POINTS} pts)."
