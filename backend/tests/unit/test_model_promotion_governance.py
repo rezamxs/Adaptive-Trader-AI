@@ -35,7 +35,23 @@ def _write_artifact(path):
     )
 
 
-def _model(model_id, artifact_path, *, status="candidate", auc=0.55, brier=0.20):
+def _passing_walk_forward_metrics():
+    return {
+        "fold_count": 5,
+        "trade_count": 50,
+        "net_profit": 150.0,
+        "profit_factor": 1.25,
+        "max_drawdown_percent": 4.0,
+        "spread_costs_included": True,
+        "slippage_costs_included": True,
+        "commission_costs_included": True,
+    }
+
+
+def _model(
+    model_id, artifact_path, *, status="candidate", auc=0.55, brier=0.20,
+    walk_forward_metrics=None,
+):
     return MLModelRecord(
         model_id=model_id,
         dataset_version_tag="test-dataset-v1",
@@ -47,7 +63,7 @@ def _model(model_id, artifact_path, *, status="candidate", auc=0.55, brier=0.20)
         validation_metrics={"roc_auc": auc, "brier_score": brier, "sample_count": 50},
         test_metrics={"roc_auc": auc, "brier_score": brier, "sample_count": 50},
         calibration_metrics={},
-        walk_forward_metrics={},
+        walk_forward_metrics=(walk_forward_metrics if walk_forward_metrics is not None else {}),
         status=status,
         artifact_path=str(artifact_path),
     )
@@ -75,6 +91,33 @@ def test_promotion_rejects_missing_or_invalid_metrics(db_session, tmp_path):
     db_session.commit()
 
     with pytest.raises(ModelGovernanceError, match="validation and test partitions"):
+        ModelRegistry(db_session).promote_candidate(candidate.model_id)
+
+
+def test_promotion_rejects_missing_walk_forward_backtest(db_session, tmp_path):
+    artifact = tmp_path / "no-walk-forward.joblib"
+    _write_artifact(artifact)
+    candidate = _model("no-walk-forward", artifact)
+    db_session.add(candidate)
+    db_session.commit()
+
+    with pytest.raises(ModelGovernanceError, match="Walk-forward backtest evidence is missing"):
+        ModelRegistry(db_session).promote_candidate(candidate.model_id)
+
+    db_session.refresh(candidate)
+    assert candidate.status == "candidate"
+
+
+def test_promotion_rejects_walk_forward_without_costs(db_session, tmp_path):
+    artifact = tmp_path / "no-costs.joblib"
+    _write_artifact(artifact)
+    metrics = _passing_walk_forward_metrics()
+    metrics["slippage_costs_included"] = False
+    candidate = _model("no-costs", artifact, walk_forward_metrics=metrics)
+    db_session.add(candidate)
+    db_session.commit()
+
+    with pytest.raises(ModelGovernanceError, match="must include spread, slippage, and commission"):
         ModelRegistry(db_session).promote_candidate(candidate.model_id)
 
 
@@ -114,7 +157,10 @@ def test_promotion_archives_previous_active_after_all_gates_pass(db_session, tmp
     candidate_artifact = tmp_path / "candidate2.joblib"
     _write_artifact(candidate_artifact)
     active = _model("active-model-2", active_artifact, status="active", auc=0.53, brier=0.20)
-    candidate = _model("better-model", candidate_artifact, auc=0.56, brier=0.19)
+    candidate = _model(
+        "better-model", candidate_artifact, auc=0.56, brier=0.19,
+        walk_forward_metrics=_passing_walk_forward_metrics(),
+    )
     db_session.add_all([active, candidate])
     db_session.commit()
     monkeypatch.setattr("backend.app.services.ml.registry.log_security_event", lambda *args, **kwargs: None)
