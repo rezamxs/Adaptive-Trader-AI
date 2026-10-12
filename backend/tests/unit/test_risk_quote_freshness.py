@@ -76,3 +76,18 @@ def test_naive_timestamp_rejected():
         assert "REJECTED_INVALID_QUOTE_TIME" in reason
     finally:
         session.close()
+
+
+
+def test_missing_account_risk_context_is_rejected_by_default():
+    session, account, info = _case()
+    try:
+        quote = Quote(
+            symbol="EURUSD", time=datetime.now(timezone.utc),
+            bid=1.1000, ask=1.1001, spread_points=10, is_stale=False,
+        )
+        approved, lots, reason = _assess(session, account, info, quote)
+        assert not approved and lots == 0.0
+        assert "REJECTED_RISK_CONTEXT_UNAVAILABLE" in reason
+    finally:
+        session.close()
