@@ -22,7 +22,7 @@ def test_ingestion_persists_searchable_chunks_and_sanitizes_filename(tmp_path, m
         with Session(engine) as db:
             manager = KnowledgeManager(db)
             document, _ = manager.ingest_document(
-                r"..\\outside\\lesson.txt",
+                r"..\outside\lesson.txt",
                 b"Slippage is the difference between expected order price and execution price.",
             )
 
