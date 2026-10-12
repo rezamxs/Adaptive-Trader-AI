@@ -1,12 +1,11 @@
 """Machine Learning and Model Training Endpoints."""
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.app.db.session import get_db
 from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
-from backend.app.services.market_data.mock_provider import MockMarketDataProvider
 from backend.app.services.market_data.base import TimeFrame
 from backend.app.services.dataset.pipeline import DatasetPipeline
 from backend.app.services.ml.trainer import ModelTrainer
@@ -17,11 +16,11 @@ router = APIRouter()
 
 
 class TrainModelRequest(BaseModel):
-    symbol: str = "EURUSD"
+    symbol: str = Field(default="EURUSD", min_length=1, max_length=32)
     timeframe: TimeFrame = TimeFrame.M15
     algorithm: str = "logistic_regression"  # logistic_regression, random_forest, baseline
-    bars_count: int = 300
-    horizon_bars: int = 15
+    bars_count: int = Field(default=300, ge=100, le=100000)
+    horizon_bars: int = Field(default=15, ge=1, le=1000)
 
 
 class PromoteModelRequest(BaseModel):
@@ -50,12 +49,19 @@ def train_model(req: TrainModelRequest, db: Session = Depends(get_db)):
     """Trains a new candidate model on historical data with strict temporal splitting."""
     provider = MT5MarketDataProvider()
     if not provider.connect():
-        provider = MockMarketDataProvider()
+        raise HTTPException(
+            status_code=503,
+            detail="MT5 is unavailable; model training with synthetic fallback data is disabled.",
+        )
 
     try:
         df_raw = provider.get_historical_dataframe(req.symbol, req.timeframe, count=req.bars_count)
+        symbol_info = provider.get_symbol_info(req.symbol)
     finally:
         provider.disconnect()
+
+    if symbol_info is None:
+        raise HTTPException(status_code=503, detail=f"MT5 did not return broker specifications for {req.symbol}.")
 
     if len(df_raw) < 100:
         raise HTTPException(status_code=400, detail="Insufficient bars to build training dataset.")
@@ -67,7 +73,9 @@ def train_model(req: TrainModelRequest, db: Session = Depends(get_db)):
             df_raw,
             symbol=req.symbol,
             timeframe=req.timeframe.value,
-            horizon_bars=req.horizon_bars
+            horizon_bars=req.horizon_bars,
+            spread_points=max(0, int(symbol_info.spread)),
+            point_value=float(symbol_info.point),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Dataset construction failed: {str(e)}")
