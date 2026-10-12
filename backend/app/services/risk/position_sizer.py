@@ -23,6 +23,16 @@ class PositionSizer:
         Returns:
             (is_approved, calculated_lots, reason_or_status)
         """
+        try:
+            numeric_inputs = (
+                float(equity), float(entry_price), float(stop_loss),
+                float(risk_percent), float(max_allowed_risk_percent),
+            )
+        except (TypeError, ValueError, OverflowError):
+            return False, 0.0, "Risk sizing inputs must be numeric."
+        if not all(math.isfinite(value) for value in numeric_inputs):
+            return False, 0.0, "Risk sizing inputs must be finite."
+        equity, entry_price, stop_loss, risk_percent, max_allowed_risk_percent = numeric_inputs
         if equity <= 0:
             return False, 0.0, "Account equity is zero or negative."
 
