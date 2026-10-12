@@ -33,6 +33,14 @@ dev = [
     "ruff>=0.3.0",
 ]
 
+# Only the backend is an installable Python package. The other top-level
+# directories contain datasets, logs, static frontend files, or artifacts.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend", "backend.*"]
+exclude = ["backend.tests", "backend.tests.*"]
+namespaces = true
+
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["backend/tests"]
