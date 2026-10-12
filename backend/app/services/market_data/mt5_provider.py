@@ -74,17 +74,8 @@ class MT5MarketDataProvider(IMarketDataProvider):
                 term_info = mt5.terminal_info()
                 logger.info(f"Connected to MT5 terminal at {getattr(term_info, 'path', 'N/A')}")
 
-                # Attempt adaptive verification of server timezone offset if worker symbol tick is available
-                try:
-                    init_tick = mt5.symbol_info_tick(settings.WORKER_SYMBOL)
-                    if init_tick:
-                        ok, _, reason = self.time_converter.detect_and_set_offset_from_live_tick(init_tick.time)
-                        if ok:
-                            logger.info(f"MT5 server timezone verified: {reason}")
-                        else:
-                            logger.warning(f"Could not automatically verify MT5 server timezone: {reason}")
-                except Exception as tz_err:
-                    logger.warning(f"Exception during MT5 timezone detection: {tz_err}")
+                # MT5 Python API timestamps are Unix epoch seconds in UTC.
+                # Do not infer or subtract broker chart/display timezone offsets.
 
                 return True
             except Exception as e:
@@ -181,7 +172,7 @@ class MT5MarketDataProvider(IMarketDataProvider):
             return mt5.symbol_info_tick(symbol)
 
     def get_current_quote(self, symbol: str, max_staleness_seconds: int = 120) -> Optional[Quote]:
-        """Gets current Bid and Ask quote with staleness validation and verified timezone adjustment."""
+        """Gets Bid/Ask with UTC epoch conversion and staleness validation."""
         with _mt5_lock:
             if not self.is_connected():
                 return None
@@ -192,13 +183,11 @@ class MT5MarketDataProvider(IMarketDataProvider):
 
             now_utc = datetime.now(timezone.utc)
 
-            # If timezone offset is not yet verified, attempt verification with this live tick
-            if self.time_converter.server_offset_seconds is None:
-                self.time_converter.detect_and_set_offset_from_live_tick(tick.time, now_utc=now_utc)
-
-            # Convert raw MT5 broker timestamp to true UTC
-            tick_dt, _ = self.time_converter.raw_to_utc(tick.time, require_verified_offset=False)
-            if tick_dt is None:
+            # MT5 tick.time is Unix epoch seconds and is already UTC.
+            try:
+                tick_dt = datetime.fromtimestamp(tick.time, tz=timezone.utc)
+            except (TypeError, ValueError, OverflowError, OSError) as exc:
+                logger.warning(f"Invalid MT5 tick timestamp for {symbol}: {exc}")
                 return None
 
             val_res = self.time_converter.validate_timestamp(
@@ -207,8 +196,8 @@ class MT5MarketDataProvider(IMarketDataProvider):
                 max_staleness_seconds=max_staleness_seconds,
             )
 
-            # Marked stale if validation fails or broker offset is unverified
-            is_stale = (not val_res.is_valid) or (self.time_converter.server_offset_seconds is None)
+            # Freshness is determined by timestamp validation, not broker timezone guesses.
+            is_stale = not val_res.is_valid
 
             sym_info = mt5.symbol_info(symbol)
             point = sym_info.point if sym_info else 0.0001
@@ -230,7 +219,7 @@ class MT5MarketDataProvider(IMarketDataProvider):
         count: int = 500,
         start_pos: int = 0
     ) -> List[Candle]:
-        """Fetches historical candles chronologically under thread lock with verified UTC timestamps."""
+        """Fetches historical candles chronologically using MT5 UTC epoch timestamps."""
         with _mt5_lock:
             if not self.is_connected():
                 return []
@@ -245,8 +234,10 @@ class MT5MarketDataProvider(IMarketDataProvider):
             total = len(rates)
             for i, r in enumerate(rates):
                 is_closed = True if (start_pos > 0 or i < total - 1) else False
-                candle_time, _ = self.time_converter.raw_to_utc(r['time'], require_verified_offset=False)
-                if candle_time is None:
+                try:
+                    candle_time = datetime.fromtimestamp(r['time'], tz=timezone.utc)
+                except (TypeError, ValueError, OverflowError, OSError) as exc:
+                    logger.warning(f"Skipping candle with invalid MT5 timestamp for {symbol}: {exc}")
                     continue
                 candles.append(Candle(
                     time=candle_time,
