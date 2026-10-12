@@ -113,6 +113,37 @@ class SignalGenerator:
         return "HOLD", 0.0, triggered
 
     @staticmethod
+    def resolve_consensus(
+        rule_direction: str,
+        rule_strength: float,
+        model_direction: Optional[str],
+        model_strength: float,
+        approved_rule_count: int,
+    ) -> Tuple[str, float]:
+        """Resolve rules and the current one-sided BUY-success model safely.
+
+        BUY rules require model BUY agreement when a model produces a directional
+        result. SELL may use an approved SELL rule when the BUY-only model is
+        neutral, because low BUY-success probability is not evidence of a SELL.
+        A direct model/rule conflict always remains HOLD.
+        """
+        if rule_direction in {"BUY", "SELL"}:
+            if model_direction == rule_direction:
+                return rule_direction, float(model_strength)
+            if model_direction is None:
+                return rule_direction, float(rule_strength)
+            if rule_direction == "SELL" and model_direction == "HOLD":
+                return "SELL", float(rule_strength)
+            return "HOLD", 0.0
+
+        if (
+            approved_rule_count == 0
+            and model_direction == "BUY"
+        ):
+            return "BUY", float(model_strength)
+        return "HOLD", 0.0
+
+    @staticmethod
     def evaluate_model(
         latest_bar_features: pd.Series,
         model_artifact: Optional[Dict[str, Any]],
