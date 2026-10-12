@@ -54,3 +54,40 @@ def test_missing_positive_class_fails_closed():
     )
     assert direction is None
     assert confidence == 0.0
+
+
+
+def test_approved_sell_rule_can_act_when_buy_only_model_is_neutral():
+    direction, confidence = SignalGenerator.resolve_consensus(
+        rule_direction="SELL",
+        rule_strength=1.0,
+        model_direction="HOLD",
+        model_strength=0.20,
+        approved_rule_count=2,
+    )
+    assert direction == "SELL"
+    assert confidence == 1.0
+
+
+def test_model_buy_conflict_blocks_approved_sell_rule():
+    direction, confidence = SignalGenerator.resolve_consensus(
+        rule_direction="SELL",
+        rule_strength=1.0,
+        model_direction="BUY",
+        model_strength=0.80,
+        approved_rule_count=2,
+    )
+    assert direction == "HOLD"
+    assert confidence == 0.0
+
+
+def test_low_buy_probability_never_creates_sell_without_sell_rule():
+    direction, confidence = SignalGenerator.resolve_consensus(
+        rule_direction="HOLD",
+        rule_strength=0.0,
+        model_direction="HOLD",
+        model_strength=0.20,
+        approved_rule_count=0,
+    )
+    assert direction == "HOLD"
+    assert confidence == 0.0
