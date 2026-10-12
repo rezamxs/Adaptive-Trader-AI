@@ -186,7 +186,9 @@ class RealisticBacktestEngine:
                             stop_loss = entry_price - (sl_atr_mult * atr)
                             take_profit = entry_price + (tp_atr_mult * atr)
                         else:
-                            entry_price = next_open - slippage_cost
+                            # Model spread symmetrically: short entries must pay
+                            # the same cost as long entries, in the opposite direction.
+                            entry_price = next_open - spread_cost - slippage_cost
                             stop_loss = entry_price + (sl_atr_mult * atr)
                             take_profit = entry_price - (tp_atr_mult * atr)
 
@@ -202,7 +204,48 @@ class RealisticBacktestEngine:
                             "take_profit": take_profit,
                         }
 
-        # 3. Calculate Performance Metrics
+        # 3. Liquidate any position still open at the final available close.
+        # Omitting it biases trade count and PnL when the data ends before TP/SL.
+        if open_trade is not None and n_bars > 0:
+            final_idx = n_bars - 1
+            direction = open_trade["direction"]
+            vol = open_trade["volume"]
+            exit_price = float(closes[final_idx])
+            slippage_cost = self.slippage_points * self.point_value
+            if direction == "BUY":
+                exit_price -= slippage_cost
+            else:
+                exit_price += slippage_cost
+
+            points = (
+                (exit_price - open_trade["entry_price"]) / self.point_value
+                if direction == "BUY"
+                else (open_trade["entry_price"] - exit_price) / self.point_value
+            )
+            gross_pnl = points * (self.point_value * self.contract_size * vol)
+            commission = self.commission_per_lot * vol
+            net_pnl = gross_pnl - commission
+            balance += net_pnl
+            trades.append({
+                "trade_id": f"t_{len(trades)+1}",
+                "direction": direction,
+                "volume": float(vol),
+                "entry_time": str(open_trade["entry_time"]),
+                "entry_price": float(round(open_trade["entry_price"], 5)),
+                "exit_time": str(times[final_idx]),
+                "exit_price": float(round(exit_price, 5)),
+                "take_profit": float(round(open_trade["take_profit"], 5)),
+                "stop_loss": float(round(open_trade["stop_loss"], 5)),
+                "holding_bars": int(max(0, final_idx - open_trade["entry_bar_idx"])),
+                "exit_reason": "END_OF_DATA",
+                "gross_profit": float(round(gross_pnl, 2)),
+                "commission": float(round(commission, 2)),
+                "net_profit": float(round(net_pnl, 2)),
+                "balance_after": float(round(balance, 2)),
+            })
+            open_trade = None
+
+        # 4. Calculate Performance Metrics
         metrics = BacktestMetrics.calculate(trades, initial_balance=self.initial_balance)
 
         assumptions = {
@@ -212,6 +255,8 @@ class RealisticBacktestEngine:
             "risk_per_trade_pct": self.risk_per_trade_pct,
             "lot_step": self.lot_step,
             "min_lot": self.min_lot,
+            "point_value": self.point_value,
+            "contract_size": self.contract_size,
             "execution_delay_bars": 1,
             "same_bar_collision_policy": "CONSERVATIVE_STOP_LOSS",
         }
