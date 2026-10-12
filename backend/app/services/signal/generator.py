@@ -14,50 +14,101 @@ class SignalGenerator:
     @staticmethod
     def evaluate_rules(
         latest_bar_features: pd.Series,
-        approved_rules: List[TradingRule]
+        approved_rules: List[TradingRule],
+        symbol: Optional[str] = None,
+        timeframe: Optional[str] = None,
     ) -> Tuple[str, float, List[str]]:
-        """Evaluates approved rules on the latest bar features.
-        
-        Returns:
-            (direction, strength, triggered_rule_ids)
+        """Evaluate approved rules; malformed or out-of-scope rules fail closed.
+
+        Only RSI and EMA-distance conditions are currently supported. Every
+        condition must be recognized and satisfied before a rule can vote.
         """
-        triggered = []
+        triggered: List[str] = []
         buy_votes = 0
         sell_votes = 0
+        supported_operators = {
+            "<": lambda left, right: left < right,
+            "<=": lambda left, right: left <= right,
+            ">": lambda left, right: left > right,
+            ">=": lambda left, right: left >= right,
+            "==": lambda left, right: left == right,
+            "!=": lambda left, right: left != right,
+        }
 
-        for r in approved_rules:
-            # Check conditions
-            is_rule_active = True
-            for cond in r.conditions:
-                indicator = cond.get("indicator")
-                op = cond.get("operator")
-                thresh = cond.get("threshold")
+        def scope_matches(scope: Any, requested: Optional[str]) -> bool:
+            if not scope or requested is None:
+                return True
+            if not isinstance(scope, (list, tuple, set)):
+                return False
+            values = {str(item).strip().upper() for item in scope}
+            return bool(values.intersection({"*", "ALL", "ANY"}) or str(requested).strip().upper() in values)
+
+        for rule in approved_rules:
+            if not scope_matches(getattr(rule, "symbol_scope", None), symbol):
+                continue
+            if not scope_matches(getattr(rule, "timeframe_scope", None), timeframe):
+                continue
+
+            conditions = getattr(rule, "conditions", None)
+            if not isinstance(conditions, list) or not conditions:
+                continue
+
+            rule_active = True
+            for condition in conditions:
+                if not isinstance(condition, dict):
+                    rule_active = False
+                    break
+
+                indicator = str(condition.get("indicator", "")).strip().upper()
+                operator = str(condition.get("operator", "")).strip()
+                if operator not in supported_operators:
+                    rule_active = False
+                    break
 
                 if indicator == "RSI":
-                    rsi_val = latest_bar_features.get("rsi_14", 50.0)
-                    if op == "<" and not (rsi_val < float(thresh)):
-                        is_rule_active = False
-                    elif op == ">" and not (rsi_val > float(thresh)):
-                        is_rule_active = False
-
+                    feature_name = "rsi_14"
                 elif indicator == "EMA":
-                    dist = latest_bar_features.get("dist_ema_21", 0.0)
-                    if op == ">" and dist <= 0:
-                        is_rule_active = False
-                    elif op == "<" and dist >= 0:
-                        is_rule_active = False
+                    feature_name = "dist_ema_21"
+                else:
+                    # Unknown indicators must not silently become true conditions.
+                    rule_active = False
+                    break
 
-            if is_rule_active and len(r.conditions) > 0:
-                triggered.append(r.rule_id)
-                if r.category == "entry":
-                    if "buy" in r.name.lower() or "خرید" in r.name:
-                        buy_votes += 1
-                    elif "sell" in r.name.lower() or "فروش" in r.name:
-                        sell_votes += 1
+                try:
+                    threshold = float(condition["threshold"])
+                    value = float(latest_bar_features.get(feature_name, float("nan")))
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    rule_active = False
+                    break
+
+                if not np.isfinite(threshold) or not np.isfinite(value):
+                    rule_active = False
+                    break
+
+                try:
+                    condition_passes = supported_operators[operator](value, threshold)
+                except Exception:
+                    condition_passes = False
+                if not condition_passes:
+                    rule_active = False
+                    break
+
+            if not rule_active:
+                continue
+
+            triggered.append(rule.rule_id)
+            if str(getattr(rule, "category", "")).lower() != "entry":
+                continue
+
+            rule_name = str(getattr(rule, "name", "")).lower()
+            if "buy" in rule_name or "خرید" in rule_name:
+                buy_votes += 1
+            elif "sell" in rule_name or "فروش" in rule_name:
+                sell_votes += 1
 
         if buy_votes > sell_votes:
             return "BUY", 1.0, triggered
-        elif sell_votes > buy_votes:
+        if sell_votes > buy_votes:
             return "SELL", 1.0, triggered
         return "HOLD", 0.0, triggered
 
