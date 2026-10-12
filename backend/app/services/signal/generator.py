@@ -1,5 +1,6 @@
 """Signal Generator synthesizing approved trading rules and active ML model inference."""
 from datetime import datetime
+import re
 from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 import numpy as np
@@ -61,21 +62,44 @@ class SignalGenerator:
 
                 indicator = str(condition.get("indicator", "")).strip().upper()
                 operator = str(condition.get("operator", "")).strip()
+                raw_threshold = condition.get("threshold")
                 if operator not in supported_operators:
                     rule_active = False
                     break
 
                 if indicator == "RSI":
                     feature_name = "rsi_14"
-                elif indicator == "EMA":
+                elif indicator in {"EMA", "SMA"}:
                     feature_name = "dist_ema_21"
+                    # RuleExtractor may encode a moving-average condition as text,
+                    # e.g. "Price > EMA(21)". Parse only known periods explicitly.
+                    if isinstance(raw_threshold, str):
+                        expression = re.sub(r"\s+", "", raw_threshold).lower()
+                        match = re.fullmatch(r"(?:price|close)(>|<)(ema|sma)\((\d+)\)", expression)
+                        if not match:
+                            rule_active = False
+                            break
+                        expression_operator, average_type, period_text = match.groups()
+                        period = int(period_text)
+                        if average_type == "ema" and period in {9, 21}:
+                            feature_name = f"dist_ema_{period}"
+                        elif average_type == "sma" and period == 50:
+                            feature_name = "dist_sma_50"
+                        else:
+                            # Never substitute another moving-average period.
+                            rule_active = False
+                            break
+                        operator = expression_operator
+                        raw_threshold = 0.0
+                    elif indicator == "SMA":
+                        feature_name = "dist_sma_50"
                 else:
                     # Unknown indicators must not silently become true conditions.
                     rule_active = False
                     break
 
                 try:
-                    threshold = float(condition["threshold"])
+                    threshold = float(raw_threshold)
                     value = float(latest_bar_features.get(feature_name, float("nan")))
                 except (KeyError, TypeError, ValueError, OverflowError):
                     rule_active = False
