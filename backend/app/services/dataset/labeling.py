@@ -23,6 +23,13 @@ class BarrierLabeler:
         1: Take Profit reached strictly before Stop Loss within horizon.
         0: Stop Loss hit first, same-bar collision, or horizon expired without reaching TP.
         """
+        if max_horizon_bars < 1:
+            raise ValueError("max_horizon_bars must be at least 1.")
+        if not np.isfinite(point_value) or point_value <= 0:
+            raise ValueError("point_value must be finite and positive.")
+        if spread_points < 0:
+            raise ValueError("spread_points must not be negative.")
+
         n = len(df)
         labels = np.full(n, fill_value=np.nan)
         close_prices = df["close"].values
