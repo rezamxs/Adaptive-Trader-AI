@@ -25,7 +25,9 @@ class SignalManager:
         self.data_provider = data_provider
         self.knowledge_mgr = KnowledgeManager(db)
         self.model_registry = ModelRegistry(db)
-        self.risk_engine = RiskEngine(db)
+        self.risk_engine = RiskEngine(
+            db, margin_estimator=getattr(data_provider, "calculate_order_margin", None)
+        )
 
     def process_latest_bar(
         self,
@@ -104,6 +106,20 @@ class SignalManager:
         quote = self.data_provider.get_current_quote(symbol)
 
         is_approved, calculated_lots, risk_reason = False, 0.0, "Risk evaluation unfulfilled"
+        open_trades_count: Optional[int] = None
+        daily_loss_percent: Optional[float] = None
+        try:
+            positions_reader = getattr(self.data_provider, "get_open_positions_count", None)
+            loss_reader = getattr(self.data_provider, "get_daily_loss_percent", None)
+            if callable(positions_reader):
+                open_trades_count = positions_reader()
+            if callable(loss_reader):
+                daily_loss_percent = loss_reader()
+        except Exception as context_error:
+            logger.warning(f"Unable to verify account risk context for {symbol}: {context_error}")
+            open_trades_count = None
+            daily_loss_percent = None
+
         if account and symbol_info and quote:
             is_approved, calculated_lots, risk_reason = self.risk_engine.assess_signal(
                 symbol=symbol,
@@ -114,9 +130,11 @@ class SignalManager:
                 account=account,
                 symbol_info=symbol_info,
                 quote=quote,
-                open_trades_count=0,
-                daily_loss_percent=0.0
+                open_trades_count=open_trades_count,
+                daily_loss_percent=daily_loss_percent,
             )
+        else:
+            risk_reason = "REJECTED_RISK_CONTEXT_UNAVAILABLE: Account, symbol specification, or quote is unavailable."
 
         # 8. Create and persist TradeSignal
         signal_id = f"sig_{uuid.uuid4().hex[:10]}"
