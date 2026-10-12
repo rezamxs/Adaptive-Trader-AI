@@ -73,3 +73,14 @@ def test_buy_labels_use_each_historical_candle_spread():
     # A spread of 100 points on the entry bar is $1 at point_value=.01; the next high is
     # insufficient to hit the $2 TP barrier after paying that spread.
     assert labels.iloc[0] == 0
+
+
+
+def test_dataset_pipeline_rejects_unsorted_or_duplicate_timestamps():
+    raw = _bars(600).iloc[::-1]
+    try:
+        DatasetPipeline().build_dataset(raw, symbol="XAUUSD", timeframe="M1", horizon_bars=10)
+    except ValueError as exc:
+        assert "ascending order" in str(exc)
+    else:
+        raise AssertionError("Unsorted market data must not be split as a temporal dataset")
