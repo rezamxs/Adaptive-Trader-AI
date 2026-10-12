@@ -115,12 +115,24 @@ class RuleExtractor:
             else:
                 conditions.append({"indicator": "RSI", "operator": "CROSSES", "threshold": 50})
 
-        # Moving Average detection
-        ma_match = re.search(r'(?:ma|ema|sma|میانگین)\s*(\d+)', lower_text)
+        # Moving Average detection. Preserve type and period so the evaluator
+        # never silently substitutes EMA(21) for a different moving average.
+        ma_match = re.search(r'(ema|sma|ma|میانگین)\s*(\d+)', lower_text)
         if ma_match:
-            period = int(ma_match.group(1))
+            average_type = ma_match.group(1)
+            period = int(ma_match.group(2))
             parameters["ma_period"] = period
-            conditions.append({"indicator": "EMA", "operator": ">", "threshold": f"Price > EMA({period})"})
+            if average_type in {"sma", "میانگین"}:
+                indicator = "SMA"
+                expression_type = "SMA"
+            else:
+                indicator = "EMA"
+                expression_type = "EMA"
+            conditions.append({
+                "indicator": indicator,
+                "operator": ">",
+                "threshold": f"Price > {expression_type}({period})",
+            })
 
         # Symbols detection
         detected_symbols = []
