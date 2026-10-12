@@ -1,6 +1,7 @@
 """Model Governance, Versioning, and Controlled Promotion Workflow."""
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import math
 import joblib
 from sqlalchemy.orm import Session
 
@@ -13,8 +14,25 @@ from backend.app.models.audit_log import AuditLog
 class ModelRegistry:
     """Oversees model promotions, audits, artifact loading, and lifecycle state."""
 
+    # Keep these gates aligned with the minimum evidence accepted by compare_models.
+    MIN_PROMOTION_ROC_AUC = 0.52
+    MAX_PROMOTION_BRIER_SCORE = 0.25
+
     def __init__(self, db: Session):
         self.db = db
+
+    @staticmethod
+    def _metric_value(metrics: Any, key: str) -> Optional[float]:
+        """Return a finite probability/score in [0, 1], or None when invalid."""
+        if not isinstance(metrics, dict) or key not in metrics:
+            return None
+        try:
+            value = float(metrics[key])
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+            return None
+        return value
 
     def get_active_model_record(self) -> Optional[MLModelRecord]:
         """Returns the currently active MLModelRecord, if any."""
@@ -58,17 +76,27 @@ class ModelRegistry:
             "recommendation": "UNKNOWN",
         }
 
-        cand_auc = candidate.test_metrics.get("roc_auc", 0.5)
-        cand_brier = candidate.test_metrics.get("brier_score", 0.25)
+        cand_auc = self._metric_value(candidate.test_metrics, "roc_auc")
+        cand_brier = self._metric_value(candidate.test_metrics, "brier_score")
+
+        if cand_auc is None or cand_brier is None:
+            comparison["recommendation"] = (
+                "INSUFFICIENT_EVIDENCE: Candidate ROC-AUC or Brier score is missing or invalid."
+            )
+            return comparison
 
         if active:
-            act_auc = active.test_metrics.get("roc_auc", 0.5)
-            if cand_auc > act_auc and cand_brier <= 0.25:
+            act_auc = self._metric_value(active.test_metrics, "roc_auc")
+            if act_auc is None:
+                comparison["recommendation"] = (
+                    "INSUFFICIENT_EVIDENCE: Active model ROC-AUC is missing or invalid."
+                )
+            elif cand_auc > act_auc and cand_brier <= self.MAX_PROMOTION_BRIER_SCORE:
                 comparison["recommendation"] = "PROCEED_TO_BACKTEST: Candidate exhibits superior Out-of-Time AUC."
             else:
                 comparison["recommendation"] = "RETAIN_ACTIVE: Candidate does not demonstrate statistically superior performance."
         else:
-            if cand_auc > 0.52 and cand_brier <= 0.25:
+            if cand_auc > self.MIN_PROMOTION_ROC_AUC and cand_brier <= self.MAX_PROMOTION_BRIER_SCORE:
                 comparison["recommendation"] = "PROCEED_TO_BACKTEST: Candidate outperforms random baseline."
             else:
                 comparison["recommendation"] = "INSUFFICIENT_EVIDENCE: Metric evidence is not convincing."
@@ -85,17 +113,60 @@ class ModelRegistry:
 
         if candidate.status == "rejected":
             raise ModelGovernanceError(f"Cannot promote model {candidate_id} because it was marked REJECTED.")
+        if candidate.status != "candidate":
+            raise ModelGovernanceError(
+                f"Cannot promote model {candidate_id} from status {candidate.status!r}; "
+                "only candidates can be promoted."
+            )
 
-        # Archive current active model
+        # A model must have a readable artifact before the active model is touched.
+        artifact_path = Path(candidate.artifact_path)
+        if not artifact_path.is_file():
+            raise ModelGovernanceError(
+                f"Cannot promote model {candidate_id}: artifact file is missing."
+            )
+
+        metrics = candidate.test_metrics
+        cand_auc = self._metric_value(metrics, "roc_auc")
+        cand_brier = self._metric_value(metrics, "brier_score")
+        if cand_auc is None or cand_brier is None:
+            raise ModelGovernanceError(
+                f"Cannot promote model {candidate_id}: valid test ROC-AUC and Brier score are required."
+            )
+        if cand_auc <= self.MIN_PROMOTION_ROC_AUC or cand_brier > self.MAX_PROMOTION_BRIER_SCORE:
+            raise ModelGovernanceError(
+                f"Cannot promote model {candidate_id}: test metrics do not pass the minimum gate "
+                f"(ROC-AUC must be > {self.MIN_PROMOTION_ROC_AUC:.2f}; "
+                f"Brier score must be <= {self.MAX_PROMOTION_BRIER_SCORE:.2f})."
+            )
+
+        # When an active model exists, fail closed if its score is unavailable or
+        # the candidate does not improve the active model's recorded ROC-AUC.
         active_current = self.get_active_model_record()
+        if active_current and active_current.model_id != candidate_id:
+            active_auc = self._metric_value(active_current.test_metrics, "roc_auc")
+            if active_auc is None:
+                raise ModelGovernanceError(
+                    "Cannot promote candidate: the active model has no valid ROC-AUC for comparison."
+                )
+            if cand_auc <= active_auc:
+                raise ModelGovernanceError(
+                    f"Cannot promote model {candidate_id}: ROC-AUC {cand_auc:.4f} "
+                    f"does not exceed active model ROC-AUC {active_auc:.4f}."
+                )
+
+        # Mutate model states only after every promotion gate has passed.
         if active_current and active_current.model_id != candidate_id:
             active_current.status = "archived"
             logger.info(f"Archived previous active model {active_current.model_id}.")
 
-        # Set candidate to active
         candidate.status = "active"
-        candidate.promotion_notes = notes or "Promoted after multi-metric evaluation against baseline."
-        self.db.commit()
+        candidate.promotion_notes = notes or "Promoted after test-metric gates; backtest approval must be verified separately."
+        try:
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
         self.db.refresh(candidate)
 
         log_security_event(
