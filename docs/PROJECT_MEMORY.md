@@ -316,10 +316,10 @@ This section records a second pass against the current GitHub state and the proj
 - PR #1: `OPEN`, `DRAFT`, not merged; base branch `main`.
 - PR head branch: `fix/core-correctness-audit`.
 - PR base SHA: `f60ed647956068c6d6423846dd93399a09ec682a`.
-- PR head SHA at this check: `88bfc9eef8a25790d835670697681fd5e4775cdf`, the commit that updated this memory file.
+- PR head SHA during the first verification pass: `88bfc9eef8a25790d835670697681fd5e4775cdf`.
 - PR is reported mergeable, but this does not mean it should be merged.
 - A GitHub Actions workflow run associated with this head was found: run ID `38311139568`, workflow `Core Regression Tests`, conclusion `success`.
-- The combined commit-status endpoint returned no status entries. The workflow run above is the direct evidence available for the current head; do not infer that every CI job or the full test suite ran.
+- The combined commit-status endpoint returned no status entries. The successful workflow run above belongs to the earlier head `88bfc9eef8a25790d835670697681fd5e4775cdf`; after the documentation-only follow-up commit, the PR head became `6d0685373a4dcfc23073ea215c68ecccbd09013c`. No workflow run was returned for this newest documentation-only commit. Do not infer that every CI job or the full test suite ran.
 - The PR description states that 58 focused regression/security tests passed, compilation/import smoke checks passed, and a fresh SQLite Alembic upgrade passed. It explicitly says the complete repository test suite is **not claimed as passing**. It also says Windows/Python 3.14 and real the configured broker/MT5 symbol economics, account history, quote freshness, margin calculation, and demo execution remain to be verified locally.
 - Therefore, the older report of 175/175 tests passing conflicts with the current PR's narrower validation statement. Preserve the 175-test figure as an older reported result only; do not present it as current verified evidence until its exact commit, command, and raw output are recovered and reconciled.
 
