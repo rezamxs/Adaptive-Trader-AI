@@ -51,6 +51,21 @@ class ModelTrainer:
         scaler = dataset_result.get("scaler")
         dataset_version_tag = dataset_result["version_tag"]
 
+        # Do not train a binary classifier on a one-class training partition.
+        train_classes = np.unique(np.asarray(y_train))
+        if len(train_classes) != 2 or set(train_classes.tolist()) != {0, 1}:
+            raise ValueError(
+                "Training partition must contain both target classes 0 and 1; "
+                f"found {train_classes.tolist()}."
+            )
+
+        # Prevent numerical failures from infinities that survived upstream transforms.
+        for partition_name, partition in (
+            ("train", X_train), ("validation", X_val), ("test", X_test)
+        ):
+            if not np.isfinite(np.asarray(partition, dtype=float)).all():
+                raise ValueError(f"{partition_name.capitalize()} features contain non-finite values.")
+
         # 1. Fit Model
         model.fit(X_train, y_train)
 
