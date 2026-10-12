@@ -1,4 +1,6 @@
 """Position Sizing and Post-Rounding Risk Validation."""
+import math
+from decimal import Decimal
 from typing import Tuple
 from backend.app.core.logging import logger
 from backend.app.services.market_data.base import SymbolInfo
@@ -28,24 +30,40 @@ class PositionSizer:
         if sl_distance <= 0:
             return False, 0.0, "Invalid stop loss: distance to entry price is zero."
 
+        if risk_percent <= 0 or max_allowed_risk_percent < risk_percent:
+            return False, 0.0, "Risk percentages are invalid."
+
         target_risk_amount = equity * (risk_percent / 100.0)
         hard_max_risk_amount = equity * (max_allowed_risk_percent / 100.0)
 
-        # Risk per 1.0 standard lot
-        contract_size = symbol_info.trade_contract_size or 100000.0
-        risk_per_full_lot = sl_distance * contract_size
+        # Prefer broker tick economics. MT5 reports tick value in the account
+        # deposit currency, which is more appropriate for metals and CFDs.
+        tick_size = float(symbol_info.tick_size or 0.0)
+        tick_value = float(symbol_info.tick_value or 0.0)
+        if tick_size > 0 and tick_value > 0:
+            risk_per_full_lot = (sl_distance / tick_size) * tick_value
+        else:
+            # Compatibility fallback for providers without valid tick economics.
+            contract_size = float(symbol_info.trade_contract_size or 0.0)
+            if contract_size <= 0:
+                return False, 0.0, "Missing valid tick economics and contract size."
+            risk_per_full_lot = sl_distance * contract_size
 
-        if risk_per_full_lot <= 0:
-            return False, 0.0, "Calculated risk per full lot is non-positive."
+        if not math.isfinite(risk_per_full_lot) or risk_per_full_lot <= 0:
+            return False, 0.0, "Calculated risk per full lot is non-positive or invalid."
 
         raw_lots = target_risk_amount / risk_per_full_lot
 
-        # Quantize to broker's volume step
-        step = symbol_info.volume_step or 0.01
-        min_lot = symbol_info.volume_min or 0.01
-        max_lot = symbol_info.volume_max or 100.0
+        # Round DOWN: nearest-step rounding may exceed the desired risk target.
+        step = float(symbol_info.volume_step or 0.01)
+        min_lot = float(symbol_info.volume_min or 0.01)
+        max_lot = float(symbol_info.volume_max or 100.0)
+        if step <= 0 or min_lot <= 0 or max_lot < min_lot:
+            return False, 0.0, "Broker volume limits are invalid."
 
-        quantized_lots = round(raw_lots / step) * step
+        step_precision = max(0, -Decimal(str(step)).normalize().as_tuple().exponent)
+        quantized_lots = math.floor((raw_lots / step) + 1e-12) * step
+        quantized_lots = round(quantized_lots, step_precision)
 
         # If quantized is 0 or less than min_lot, check if min_lot violates max risk
         if quantized_lots < min_lot:
@@ -56,13 +74,13 @@ class PositionSizer:
 
         # Clip to max_lot
         final_lots = min(max_lot, quantized_lots)
-        final_lots = round(final_lots, 2)
+        final_lots = round(final_lots, step_precision)
 
         # POST-ROUNDING VERIFICATION:
         actual_risk_amount = final_lots * risk_per_full_lot
         if actual_risk_amount > hard_max_risk_amount:
             # Step down by one volume step
-            stepped_down = round(final_lots - step, 2)
+            stepped_down = round(final_lots - step, step_precision)
             if stepped_down >= min_lot:
                 final_lots = stepped_down
                 actual_risk_amount = final_lots * risk_per_full_lot
