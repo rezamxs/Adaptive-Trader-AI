@@ -1,5 +1,6 @@
 """MT5 epoch timestamps are UTC and must not receive broker-local offsets."""
 from datetime import datetime, timezone
+import numpy as np
 
 from backend.app.services.market_data.time_conversion import MT5TimeConverter
 
@@ -32,3 +33,11 @@ def test_invalid_epoch_value_is_rejected():
 
     assert converted is None
     assert reason.startswith("CONVERSION_ERROR:")
+
+
+
+def test_numpy_integer_rate_timestamp_is_converted_as_utc():
+    timestamp = np.int64(1_797_000_000)
+    converted, reason = MT5TimeConverter().raw_to_utc(timestamp)
+    assert converted == datetime.fromtimestamp(int(timestamp), tz=timezone.utc)
+    assert reason == "MT5_UNIX_EPOCH_UTC"
