@@ -90,22 +90,44 @@ class SignalManager:
             logger.info(f"Signal with key {idempotency_key} already recorded. Skipping duplicate.")
             return existing
 
-        # 6. Price and SL/TP calculation
-        entry_price = float(latest_bar["close"])
-        atr = float(latest_bar.get("atr_14", 0.0015))
-        if final_direction == "BUY":
-            stop_loss = entry_price - (sl_atr_mult * atr)
-            take_profit = entry_price + (tp_atr_mult * atr)
-        else:
-            stop_loss = entry_price + (sl_atr_mult * atr)
-            take_profit = entry_price - (tp_atr_mult * atr)
-
-        # 7. Query account, symbol info, quote for Risk Assessment
+        # 6. Query current market context before setting executable entry and barriers.
         account = self.data_provider.get_account_info()
         symbol_info = self.data_provider.get_symbol_info(symbol)
         quote = self.data_provider.get_current_quote(symbol)
 
+        # A signal based on a closed bar still needs a current executable price.
+        # Use Ask for BUY and Bid for SELL when a usable live quote exists.
+        bar_close = float(latest_bar["close"])
+        quote_is_usable = (
+            quote is not None
+            and not quote.is_stale
+            and quote.symbol.upper() == symbol.upper()
+            and isinstance(quote.time, datetime)
+            and quote.time.tzinfo is not None
+            and quote.time.utcoffset() is not None
+            and pd.notna(quote.ask)
+            and pd.notna(quote.bid)
+            and float(quote.ask) >= float(quote.bid) > 0
+        )
+        if quote_is_usable:
+            entry_price = float(quote.ask if final_direction == "BUY" else quote.bid)
+        else:
+            entry_price = bar_close
+
+        atr = float(latest_bar.get("atr_14", float("nan")))
         is_approved, calculated_lots, risk_reason = False, 0.0, "Risk evaluation unfulfilled"
+        if not pd.notna(atr) or atr <= 0:
+            risk_reason = "REJECTED_INVALID_ATR: ATR is missing, non-finite, or non-positive."
+        elif not quote_is_usable:
+            risk_reason = "REJECTED_RISK_CONTEXT_UNAVAILABLE: A current, valid quote is required."
+        else:
+            if final_direction == "BUY":
+                stop_loss = entry_price - (sl_atr_mult * atr)
+                take_profit = entry_price + (tp_atr_mult * atr)
+            else:
+                stop_loss = entry_price + (sl_atr_mult * atr)
+                take_profit = entry_price - (tp_atr_mult * atr)
+
         open_trades_count: Optional[int] = None
         daily_loss_percent: Optional[float] = None
         try:
@@ -120,7 +142,7 @@ class SignalManager:
             open_trades_count = None
             daily_loss_percent = None
 
-        if account and symbol_info and quote:
+        if account and symbol_info and quote and pd.notna(atr) and atr > 0 and quote_is_usable:
             is_approved, calculated_lots, risk_reason = self.risk_engine.assess_signal(
                 symbol=symbol,
                 direction=final_direction,
