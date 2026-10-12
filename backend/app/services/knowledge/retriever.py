@@ -103,6 +103,17 @@ class KnowledgeRetriever:
         self._idf: Dict[str, float] = {}
         self._build_corpus_index()
 
+    def refresh(self) -> None:
+        """Reload chunks after ingestion so a long-lived manager sees new documents."""
+        self._corpus_cached = False
+        self._chunks_cache = []
+        self._doc_tokens = {}
+        self._doc_lens = {}
+        self._avg_dl = 1.0
+        self._df = {}
+        self._idf = {}
+        self._build_corpus_index()
+
     def _build_corpus_index(self):
         """Indexes knowledge chunks, computing document frequencies and BM25 IDF weights."""
         self._chunks_cache = self.db.query(KnowledgeChunk).all()
