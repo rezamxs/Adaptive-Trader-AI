@@ -65,11 +65,11 @@ def test_signal_only_mode_dispatches_zero_orders(db_session):
     assert orders_count == 0, "Orders were dispatched in SIGNAL_ONLY mode! Security violation!"
 
 
-def test_signal_idempotency_prevents_duplicate_signals(db_session):
-    """Verify that multiple evaluation cycles on the same bar produce the exact same signal
-    without creating duplicate records.
-    """
+def test_signal_idempotency_prevents_duplicate_signals(db_session, monkeypatch):
+    """Only one direction may be recorded for a specific symbol/timeframe/candle."""
     provider = MockMarketDataProvider(is_demo_account=True)
+    fixed_bars = provider.get_historical_dataframe("EURUSD", TimeFrame.M15, count=100)
+    monkeypatch.setattr(provider, "get_historical_dataframe", lambda *args, **kwargs: fixed_bars)
     manager = SignalManager(db_session, provider)
 
     rule = TradingRule(
