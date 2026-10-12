@@ -51,7 +51,7 @@ class ModelRegistry:
     @classmethod
     def _walk_forward_failure(cls, metrics: Any) -> Optional[str]:
         """Require actual cost-aware, out-of-sample backtest evidence before promotion."""
-        if not isinstance(metrics, dict):
+        if not isinstance(metrics, dict) or not metrics:
             return "Walk-forward backtest evidence is missing."
 
         fold_count = metrics.get("fold_count")
