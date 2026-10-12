@@ -560,8 +560,14 @@ class MarketMonitoringWorker:
             )
             model_dir, model_prob = SignalGenerator.evaluate_model(latest_feat_series, active_model_artifact)
 
-            # Determine direction & status code
-            final_direction = "HOLD"
+            # Determine direction through the same consensus policy as SignalManager.
+            final_direction, _ = SignalGenerator.resolve_consensus(
+                rule_direction=rule_dir,
+                rule_strength=rule_str,
+                model_direction=model_dir,
+                model_strength=model_prob,
+                approved_rule_count=len(approved_rules),
+            )
             status_code = "NO_VALID_SIGNAL"
             reason_details = []
 
@@ -569,13 +575,6 @@ class MarketMonitoringWorker:
                 reason_details.append("NO_APPROVED_RULES")
             if active_model_artifact is None:
                 reason_details.append("NO_ACTIVE_MODEL")
-
-            if rule_dir != "HOLD" and model_dir == rule_dir:
-                final_direction = rule_dir
-            elif rule_dir != "HOLD" and model_dir is None:
-                final_direction = rule_dir
-            elif model_dir is not None and model_dir != "HOLD" and len(approved_rules) == 0:
-                final_direction = model_dir
 
             signal_id_created = None
             if final_direction == "HOLD":
