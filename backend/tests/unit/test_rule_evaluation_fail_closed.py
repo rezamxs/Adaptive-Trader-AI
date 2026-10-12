@@ -64,3 +64,31 @@ def test_ema_condition_uses_threshold_not_only_sign():
     )
     assert direction == "HOLD"
     assert triggered == []
+
+
+
+def test_documented_ema_expression_uses_the_matching_feature():
+    rule = _rule("EMA Buy", [{"indicator": "EMA", "operator": ">", "threshold": "Price > EMA(21)"}])
+    direction, _, triggered = SignalGenerator.evaluate_rules(
+        pd.Series({"dist_ema_21": 0.01}), [rule], symbol="XAUUSD", timeframe="M1"
+    )
+    assert direction == "BUY"
+    assert triggered == ["r1"]
+
+
+def test_unsupported_ema_period_fails_closed_instead_of_using_ema21():
+    rule = _rule("EMA Buy", [{"indicator": "EMA", "operator": ">", "threshold": "Price > EMA(50)"}])
+    direction, _, triggered = SignalGenerator.evaluate_rules(
+        pd.Series({"dist_ema_21": 0.50}), [rule], symbol="XAUUSD", timeframe="M1"
+    )
+    assert direction == "HOLD"
+    assert triggered == []
+
+
+def test_documented_sma50_expression_uses_sma50_feature():
+    rule = _rule("SMA Buy", [{"indicator": "SMA", "operator": ">", "threshold": "Price > SMA(50)"}])
+    direction, _, triggered = SignalGenerator.evaluate_rules(
+        pd.Series({"dist_sma_50": 0.02}), [rule], symbol="XAUUSD", timeframe="M1"
+    )
+    assert direction == "BUY"
+    assert triggered == ["r1"]
