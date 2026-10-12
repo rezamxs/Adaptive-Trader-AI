@@ -196,9 +196,19 @@ class MarketMonitoringWorker:
         """
         if not quote:
             return "NO_RECENT_TICK", "No quote or tick data received from broker terminal."
-        
-        age_seconds = (now_utc - quote.time).total_seconds()
-        if age_seconds <= settings.WORKER_STALE_TICK_SECONDS:
+        if not isinstance(quote.time, datetime) or quote.time.tzinfo is None or quote.time.utcoffset() is None:
+            return "INVALID_TICK_TIMESTAMP", "Quote timestamp must be timezone-aware UTC."
+        if not isinstance(now_utc, datetime) or now_utc.tzinfo is None or now_utc.utcoffset() is None:
+            return "INVALID_WORKER_CLOCK", "Worker evaluation time must be timezone-aware UTC."
+
+        quote_time_utc = quote.time.astimezone(timezone.utc)
+        now_utc = now_utc.astimezone(timezone.utc)
+        age_seconds = (now_utc - quote_time_utc).total_seconds()
+        if age_seconds < -5.0:
+            return "FUTURE_TICK_TIMESTAMP", (
+                f"Quote timestamp is {-age_seconds:.1f}s in the future; freshness cannot be verified."
+            )
+        if not quote.is_stale and age_seconds <= settings.WORKER_STALE_TICK_SECONDS:
             return "MARKET_OPEN_DATA_FRESH", f"Market is open with live quotes (tick age {age_seconds:.1f}s)."
         
         # Check if UTC weekday falls in weekend session closure
