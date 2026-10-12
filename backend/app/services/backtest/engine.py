@@ -1,5 +1,6 @@
 """Realistic Event-Driven / Bar-by-Bar Backtest Engine."""
 import uuid
+import math
 from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
@@ -25,6 +26,8 @@ class RealisticBacktestEngine:
         risk_per_trade_pct: float = 1.0,
         point_value: float = 0.00001,
         contract_size: float = 100000.0,
+        tick_size: float = 0.0,
+        tick_value: float = 0.0,
         lot_step: float = 0.01,
         min_lot: float = 0.01,
         max_lot: float = 10.0,
@@ -39,28 +42,60 @@ class RealisticBacktestEngine:
         self.risk_per_trade_pct = risk_per_trade_pct
         self.point_value = point_value
         self.contract_size = contract_size
+        self.tick_size = tick_size
+        self.tick_value = tick_value
         self.lot_step = lot_step
         self.min_lot = min_lot
         self.max_lot = max_lot
         self.db = db
 
     def calculate_lot_size(self, balance: float, entry_price: float, stop_loss: float) -> float:
-        """Calculates volume based on risk percentage, stop loss distance, and broker lot limits."""
+        """Size a position using broker tick economics, rounding down and enforcing a hard risk cap."""
         risk_amount = balance * (self.risk_per_trade_pct / 100.0)
+        hard_max_risk_amount = risk_amount * 1.5
         sl_distance = abs(entry_price - stop_loss)
-        if sl_distance <= 0:
-            return self.min_lot
+        if (
+            not math.isfinite(sl_distance)
+            or sl_distance <= 0
+            or not math.isfinite(risk_amount)
+            or risk_amount <= 0
+            or not math.isfinite(self.lot_step)
+            or self.lot_step <= 0
+        ):
+            return 0.0
 
-        # Cost per 1 standard lot for sl_distance price move
-        risk_per_standard_lot = sl_distance * self.contract_size
-        if risk_per_standard_lot <= 0:
-            return self.min_lot
+        if self.tick_size > 0 and self.tick_value > 0:
+            risk_per_standard_lot = (sl_distance / self.tick_size) * self.tick_value
+        else:
+            risk_per_standard_lot = sl_distance * self.contract_size
+        if not math.isfinite(risk_per_standard_lot) or risk_per_standard_lot <= 0:
+            return 0.0
 
         raw_lots = risk_amount / risk_per_standard_lot
-        # Step quantization
-        quantized_lots = round(raw_lots / self.lot_step) * self.lot_step
-        clipped_lots = max(self.min_lot, min(self.max_lot, quantized_lots))
-        return round(clipped_lots, 2)
+        stepped_lots = math.floor((raw_lots / self.lot_step) + 1e-12) * self.lot_step
+        stepped_lots = round(stepped_lots, 8)
+
+        if stepped_lots < self.min_lot:
+            # Minimum broker size is allowed only if it remains inside the hard cap.
+            if self.min_lot * risk_per_standard_lot > hard_max_risk_amount:
+                return 0.0
+            stepped_lots = self.min_lot
+
+        final_lots = min(self.max_lot, stepped_lots)
+        if final_lots <= 0 or final_lots < self.min_lot:
+            return 0.0
+        if final_lots * risk_per_standard_lot > hard_max_risk_amount:
+            return 0.0
+        return round(final_lots, 8)
+
+    def _calculate_gross_pnl(
+        self, entry_price: float, exit_price: float, direction: str, volume: float
+    ) -> float:
+        """Calculate PnL in deposit currency using broker tick value when available."""
+        price_change = exit_price - entry_price if direction == "BUY" else entry_price - exit_price
+        if self.tick_size > 0 and self.tick_value > 0:
+            return (price_change / self.tick_size) * self.tick_value * volume
+        return price_change * self.contract_size * volume
 
     def run(
         self,
@@ -89,8 +124,6 @@ class RealisticBacktestEngine:
         balance = self.initial_balance
         open_trade: Optional[Dict[str, Any]] = None
 
-        cost_per_point = self.point_value * self.contract_size  # $1 per pip for standard lot
-
         for i in range(n_bars - 1):
             current_time = times[i]
             next_open = opens[i + 1]
@@ -100,6 +133,8 @@ class RealisticBacktestEngine:
                 high_bar = highs[i]
                 low_bar = lows[i]
                 holding_bars = i - open_trade["entry_bar_idx"]
+                spread_cost = self.spread_points * self.point_value
+                slippage_cost = self.slippage_points * self.point_value
 
                 tp = open_trade["take_profit"]
                 sl = open_trade["stop_loss"]
@@ -124,11 +159,15 @@ class RealisticBacktestEngine:
                         exit_price = tp - (self.slippage_points * self.point_value)
                         exit_reason = "TAKE_PROFIT"
                     elif holding_bars >= max_holding_bars:
-                        exit_price = closes[i]
+                        exit_price = closes[i] - slippage_cost
                         exit_reason = "TIME_EXPIRY"
                 else:  # SELL
-                    tp_hit = (low_bar <= tp)
-                    sl_hit = (high_bar >= sl)
+                    # MT5 historical OHLC is bid-based. A short position closes at
+                    # Ask, approximated as Bid + spread, so spread affects exit triggers.
+                    ask_high = high_bar + spread_cost
+                    ask_low = low_bar + spread_cost
+                    tp_hit = (ask_low <= tp)
+                    sl_hit = (ask_high >= sl)
 
                     if tp_hit and sl_hit:
                         exit_price = sl + (self.slippage_points * self.point_value)
@@ -140,13 +179,14 @@ class RealisticBacktestEngine:
                         exit_price = tp + (self.slippage_points * self.point_value)
                         exit_reason = "TAKE_PROFIT"
                     elif holding_bars >= max_holding_bars:
-                        exit_price = closes[i]
+                        exit_price = closes[i] + spread_cost + slippage_cost
                         exit_reason = "TIME_EXPIRY"
 
                 if exit_price is not None:
                     # Calculate PnL
-                    points = (exit_price - open_trade["entry_price"]) / self.point_value if direction == "BUY" else (open_trade["entry_price"] - exit_price) / self.point_value
-                    gross_pnl = points * (self.point_value * self.contract_size * vol)
+                    gross_pnl = self._calculate_gross_pnl(
+                        open_trade["entry_price"], exit_price, direction, vol
+                    )
                     commission = self.commission_per_lot * vol
                     net_pnl = gross_pnl - commission
                     balance += net_pnl
@@ -181,28 +221,28 @@ class RealisticBacktestEngine:
                         spread_cost = self.spread_points * self.point_value
                         slippage_cost = self.slippage_points * self.point_value
 
+                        # MT5 historical OHLC is bid-based: buy entries execute at
+                        # Ask (Bid + spread), while sell entries execute at Bid.
                         if direction == "BUY":
                             entry_price = next_open + spread_cost + slippage_cost
                             stop_loss = entry_price - (sl_atr_mult * atr)
                             take_profit = entry_price + (tp_atr_mult * atr)
                         else:
-                            # Model spread symmetrically: short entries must pay
-                            # the same cost as long entries, in the opposite direction.
-                            entry_price = next_open - spread_cost - slippage_cost
+                            entry_price = next_open - slippage_cost
                             stop_loss = entry_price + (sl_atr_mult * atr)
                             take_profit = entry_price - (tp_atr_mult * atr)
 
                         lots = self.calculate_lot_size(balance, entry_price, stop_loss)
-
-                        open_trade = {
-                            "direction": direction,
-                            "volume": lots,
-                            "entry_bar_idx": i + 1,
-                            "entry_time": times[i + 1],
-                            "entry_price": entry_price,
-                            "stop_loss": stop_loss,
-                            "take_profit": take_profit,
-                        }
+                        if lots > 0:
+                            open_trade = {
+                                "direction": direction,
+                                "volume": lots,
+                                "entry_bar_idx": i + 1,
+                                "entry_time": times[i + 1],
+                                "entry_price": entry_price,
+                                "stop_loss": stop_loss,
+                                "take_profit": take_profit,
+                            }
 
         # 3. Liquidate any position still open at the final available close.
         # Omitting it biases trade count and PnL when the data ends before TP/SL.
@@ -212,17 +252,16 @@ class RealisticBacktestEngine:
             vol = open_trade["volume"]
             exit_price = float(closes[final_idx])
             slippage_cost = self.slippage_points * self.point_value
+            spread_cost = self.spread_points * self.point_value
             if direction == "BUY":
                 exit_price -= slippage_cost
             else:
-                exit_price += slippage_cost
+                # Closing a short is a buy at Ask; bid OHLC needs spread added.
+                exit_price += spread_cost + slippage_cost
 
-            points = (
-                (exit_price - open_trade["entry_price"]) / self.point_value
-                if direction == "BUY"
-                else (open_trade["entry_price"] - exit_price) / self.point_value
+            gross_pnl = self._calculate_gross_pnl(
+                open_trade["entry_price"], exit_price, direction, vol
             )
-            gross_pnl = points * (self.point_value * self.contract_size * vol)
             commission = self.commission_per_lot * vol
             net_pnl = gross_pnl - commission
             balance += net_pnl
@@ -259,6 +298,9 @@ class RealisticBacktestEngine:
             "contract_size": self.contract_size,
             "execution_delay_bars": 1,
             "same_bar_collision_policy": "CONSERVATIVE_STOP_LOSS",
+            "price_basis": "MT5_BID_OHLC",
+            "tick_size": self.tick_size,
+            "tick_value": self.tick_value,
         }
 
         limitations = [
