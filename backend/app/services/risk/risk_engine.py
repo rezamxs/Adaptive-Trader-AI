@@ -3,8 +3,7 @@ Validates all signal and trade proposals against strict safety thresholds.
 """
 from datetime import datetime, timezone
 import math
-from typing import Callable
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
@@ -77,9 +76,15 @@ class RiskEngine:
         if quote.symbol.upper() != symbol.upper() or symbol_info.name.upper() != symbol.upper():
             return False, 0.0, "REJECTED_SYMBOL_MISMATCH: Quote or broker specification does not match requested symbol."
         price_values = (entry_price, stop_loss, take_profit, quote.bid, quote.ask, quote.spread_points)
-        if not all(math.isfinite(float(value)) for value in price_values):
+        try:
+            prices_are_finite = all(math.isfinite(float(value)) for value in price_values)
+            numeric_prices = tuple(float(value) for value in price_values)
+        except (TypeError, ValueError, OverflowError):
+            return False, 0.0, "REJECTED_INVALID_PRICE: Price or spread contains a non-numeric value."
+        if not prices_are_finite:
             return False, 0.0, "REJECTED_INVALID_PRICE: Price or spread contains a non-finite value."
-        if min(entry_price, stop_loss, take_profit, quote.bid, quote.ask) <= 0 or quote.ask < quote.bid or quote.spread_points < 0:
+        entry_value, sl_value, tp_value, bid_value, ask_value, spread_value = numeric_prices
+        if min(entry_value, sl_value, tp_value, bid_value, ask_value) <= 0 or ask_value < bid_value or spread_value < 0:
             return False, 0.0, "REJECTED_INVALID_PRICE: Non-positive price or inverted quote."
         if direction not in {"BUY", "SELL"}:
             return False, 0.0, "REJECTED_INVALID_DIRECTION: Direction must be BUY or SELL."
@@ -120,6 +125,10 @@ class RiskEngine:
             return False, 0.0, "REJECTED_INVALID_SL: Stop loss must be strictly below entry price for BUY orders."
         if direction == "SELL" and stop_loss <= entry_price:
             return False, 0.0, "REJECTED_INVALID_SL: Stop loss must be strictly above entry price for SELL orders."
+        if direction == "BUY" and take_profit <= entry_price:
+            return False, 0.0, "REJECTED_INVALID_TP: Take profit must be strictly above entry price for BUY orders."
+        if direction == "SELL" and take_profit >= entry_price:
+            return False, 0.0, "REJECTED_INVALID_TP: Take profit must be strictly below entry price for SELL orders."
 
         # 7. POSITION SIZING & POST-ROUNDING VALIDATION
         is_ok, lots, reason = PositionSizer.calculate_and_verify_lots(
