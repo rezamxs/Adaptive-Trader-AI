@@ -1,5 +1,5 @@
 """Machine Learning and Model Training Endpoints."""
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 import math
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -19,7 +19,7 @@ router = APIRouter()
 class TrainModelRequest(BaseModel):
     symbol: str = Field(default="EURUSD", min_length=1, max_length=32)
     timeframe: TimeFrame = TimeFrame.M15
-    algorithm: str = "logistic_regression"  # logistic_regression, random_forest, baseline
+    algorithm: Literal["logistic_regression", "random_forest", "baseline"] = "logistic_regression"
     bars_count: int = Field(default=300, ge=100, le=100000)
     horizon_bars: int = Field(default=15, ge=1, le=1000)
 
@@ -39,6 +39,7 @@ def list_models(db: Session = Depends(get_db)):
         "algorithm": m.algorithm,
         "status": m.status,
         "dataset_version": m.dataset_version_tag,
+        "validation_metrics": m.validation_metrics,
         "test_metrics": m.test_metrics,
         "trained_at": m.trained_at.isoformat(),
         "promotion_notes": m.promotion_notes,
