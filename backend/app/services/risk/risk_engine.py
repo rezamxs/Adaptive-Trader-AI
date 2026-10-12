@@ -31,8 +31,8 @@ class RiskEngine:
         account: AccountDetails,
         symbol_info: SymbolInfo,
         quote: Quote,
-        open_trades_count: int = 0,
-        daily_loss_percent: float = 0.0,
+        open_trades_count: Optional[int] = None,
+        daily_loss_percent: Optional[float] = None,
         current_time_utc: Optional[datetime] = None,
         active_martingale_drawdown: float = 0.0,
         enforce_session_filter: bool = False,
@@ -88,6 +88,14 @@ class RiskEngine:
             return False, 0.0, "REJECTED_INVALID_PRICE: Non-positive price or inverted quote."
         if direction not in {"BUY", "SELL"}:
             return False, 0.0, "REJECTED_INVALID_DIRECTION: Direction must be BUY or SELL."
+        account_values = (account.equity, account.free_margin, account.leverage)
+        try:
+            if not all(math.isfinite(float(value)) for value in account_values):
+                return False, 0.0, "REJECTED_INVALID_ACCOUNT: Equity, free margin, or leverage is non-finite."
+            if float(account.equity) <= 0 or float(account.free_margin) < 0 or int(account.leverage) <= 0:
+                return False, 0.0, "REJECTED_INVALID_ACCOUNT: Equity, free margin, or leverage is invalid."
+        except (TypeError, ValueError, OverflowError):
+            return False, 0.0, "REJECTED_INVALID_ACCOUNT: Equity, free margin, or leverage is invalid."
 
         # 3. SPREAD FILTER
         if quote.spread_points > settings.MAX_ALLOWED_SPREAD_POINTS:
