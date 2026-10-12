@@ -62,7 +62,10 @@ class DatasetPipeline:
         )
         df_feat["target"] = target_series
 
-        # 3. Clean Warmup and Horizon NaNs
+        # 3. Clean warmup, invalid labels, and any infinite feature values.
+        # dropna alone does not remove +/-inf, which can break scaler/model fitting.
+        finite_features = df_feat[feature_names].replace([np.inf, -np.inf], np.nan)
+        df_feat.loc[:, feature_names] = finite_features
         clean_df = df_feat.dropna(subset=feature_names + ["target"]).copy()
         clean_df["target"] = clean_df["target"].astype(int)
 
