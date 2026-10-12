@@ -19,6 +19,8 @@ class ModelRegistry:
     MIN_PROMOTION_ROC_AUC = 0.52
     MAX_PROMOTION_BRIER_SCORE = 0.25
     MIN_PROMOTION_EVALUATION_SAMPLES = 30
+    MIN_WALK_FORWARD_FOLDS = 3
+    MIN_WALK_FORWARD_TRADES = 30
 
     def __init__(self, db: Session):
         self.db = db
@@ -45,6 +47,49 @@ class ModelRegistry:
         except (TypeError, ValueError, OverflowError):
             return 0
         return count if count >= 0 else 0
+
+    @classmethod
+    def _walk_forward_failure(cls, metrics: Any) -> Optional[str]:
+        """Require actual cost-aware, out-of-sample backtest evidence before promotion."""
+        if not isinstance(metrics, dict):
+            return "Walk-forward backtest evidence is missing."
+
+        fold_count = metrics.get("fold_count")
+        trade_count = metrics.get("trade_count")
+        if (
+            not isinstance(fold_count, int) or isinstance(fold_count, bool)
+            or not isinstance(trade_count, int) or isinstance(trade_count, bool)
+            or fold_count < cls.MIN_WALK_FORWARD_FOLDS
+            or trade_count < cls.MIN_WALK_FORWARD_TRADES
+        ):
+            return (
+                "Walk-forward evidence must contain at least "
+                f"{cls.MIN_WALK_FORWARD_FOLDS} folds and {cls.MIN_WALK_FORWARD_TRADES} trades."
+            )
+
+        try:
+            net_profit = float(metrics["net_profit"])
+            profit_factor = float(metrics["profit_factor"])
+            max_drawdown_percent = float(metrics["max_drawdown_percent"])
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return "Walk-forward evidence is missing net profit, profit factor, or drawdown."
+
+        if not all(math.isfinite(value) for value in (net_profit, profit_factor, max_drawdown_percent)):
+            return "Walk-forward metrics must contain finite numeric values."
+        if net_profit <= 0:
+            return "Walk-forward net profit must be positive after costs."
+        if profit_factor <= 1.0:
+            return "Walk-forward profit factor must be greater than 1 after costs."
+        if max_drawdown_percent < 0 or max_drawdown_percent > settings.MAX_DRAWDOWN_PERCENT:
+            return (
+                "Walk-forward maximum drawdown must be between 0 and "
+                f"{settings.MAX_DRAWDOWN_PERCENT:.2f}%."
+            )
+
+        cost_fields = ("spread_costs_included", "slippage_costs_included", "commission_costs_included")
+        if any(metrics.get(field) is not True for field in cost_fields):
+            return "Walk-forward backtest must include spread, slippage, and commission costs."
+        return None
 
     def get_active_model_record(self) -> Optional[MLModelRecord]:
         """Returns the currently active MLModelRecord, if any."""
@@ -221,6 +266,15 @@ class ModelRegistry:
                 f"Brier score must be <= {self.MAX_PROMOTION_BRIER_SCORE:.2f})."
             )
 
+        # Classification metrics alone do not prove that this model is profitable
+        # when used as a trading strategy. Do not activate it without a separate,
+        # cost-aware walk-forward backtest on unseen periods.
+        walk_forward_failure = self._walk_forward_failure(candidate.walk_forward_metrics)
+        if walk_forward_failure:
+            raise ModelGovernanceError(
+                f"Cannot promote model {candidate_id}: {walk_forward_failure}"
+            )
+
         # Test-set values are reserved for absolute gates. Compare candidates to
         # the active model on validation only to avoid repeatedly tuning against test.
         active_current = self.get_active_model_record()
@@ -262,7 +316,7 @@ class ModelRegistry:
             logger.info(f"Archived previous active model {active_current.model_id}.")
 
         candidate.status = "active"
-        candidate.promotion_notes = notes or "Promoted after test-metric gates; backtest approval must be verified separately."
+        candidate.promotion_notes = notes or "Promoted after validation, independent-test, and walk-forward gates passed."
         try:
             self.db.commit()
         except Exception:
