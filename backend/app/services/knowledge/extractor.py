@@ -125,7 +125,7 @@ class RuleExtractor:
             if average_type == "sma":
                 indicator = "SMA"
                 expression_type = "SMA"
-            elif average_type == "میانگین":
+            elif average_type in {"ma", "میانگین"}:
                 # Generic "moving average" does not identify SMA vs EMA.
                 # Preserve the ambiguity so runtime evaluation fails closed.
                 indicator = "MA"
