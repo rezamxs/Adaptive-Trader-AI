@@ -19,6 +19,10 @@ jobs:
           cache: pip
       - name: Install package and development dependencies
         run: python -m pip install -e ".[dev]"
+      - name: Compile and import application modules
+        run: |
+          python -m compileall -q backend migrations
+          python -c "import backend.app.main; from backend.app.api.v1.endpoints import backtest, documents, ml, signals"
       - name: Run focused core regression suite
         run: >-
           python -m pytest
