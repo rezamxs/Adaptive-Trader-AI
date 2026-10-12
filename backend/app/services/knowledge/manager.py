@@ -41,7 +41,7 @@ class KnowledgeManager:
             raise ValueError("File exceeds maximum allowed size of 250MB.")
 
         # Keep uploads inside the raw-data directory; never trust path components from a filename.
-        safe_file_name = Path(file_name).name
+        safe_file_name = Path(str(file_name).replace("\\\\", "/")).name
         ext = Path(safe_file_name).suffix.lower()
         storage_path = settings.DATA_RAW_DIR / f"{document_id}_{safe_file_name}"
         storage_path.parent.mkdir(parents=True, exist_ok=True)
