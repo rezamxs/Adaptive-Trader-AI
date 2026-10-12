@@ -2,6 +2,8 @@
 Validates all signal and trade proposals against strict safety thresholds.
 """
 from datetime import datetime, timezone
+import math
+from typing import Callable
 from typing import Any, Dict, Optional, Tuple
 from sqlalchemy.orm import Session
 
@@ -15,8 +17,9 @@ from backend.app.services.risk.position_sizer import PositionSizer
 class RiskEngine:
     """Evaluates trading proposals against comprehensive risk policies."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, margin_estimator: Optional[Callable[..., Optional[float]]] = None):
         self.db = db
+        self.margin_estimator = margin_estimator
         self.emergency_stop = EmergencyStopManager(db)
 
     def assess_signal(
@@ -70,9 +73,34 @@ class RiskEngine:
                 f"{settings.WORKER_STALE_TICK_SECONDS}s."
             )
 
+        # Validate identifiers and all prices before any numeric risk decision.
+        if quote.symbol.upper() != symbol.upper() or symbol_info.name.upper() != symbol.upper():
+            return False, 0.0, "REJECTED_SYMBOL_MISMATCH: Quote or broker specification does not match requested symbol."
+        price_values = (entry_price, stop_loss, take_profit, quote.bid, quote.ask, quote.spread_points)
+        if not all(math.isfinite(float(value)) for value in price_values):
+            return False, 0.0, "REJECTED_INVALID_PRICE: Price or spread contains a non-finite value."
+        if min(entry_price, stop_loss, take_profit, quote.bid, quote.ask) <= 0 or quote.ask < quote.bid or quote.spread_points < 0:
+            return False, 0.0, "REJECTED_INVALID_PRICE: Non-positive price or inverted quote."
+        if direction not in {"BUY", "SELL"}:
+            return False, 0.0, "REJECTED_INVALID_DIRECTION: Direction must be BUY or SELL."
+
         # 3. SPREAD FILTER
         if quote.spread_points > settings.MAX_ALLOWED_SPREAD_POINTS:
             return False, 0.0, f"REJECTED_HIGH_SPREAD: Current spread ({quote.spread_points} pts) exceeds maximum permitted ({settings.MAX_ALLOWED_SPREAD_POINTS} pts)."
+
+        # Unknown position/drawdown data must never be replaced by zero.
+        if open_trades_count is None or daily_loss_percent is None:
+            return False, 0.0, (
+                "REJECTED_RISK_CONTEXT_UNAVAILABLE: Open positions and daily drawdown "
+                "could not be verified from the account."
+            )
+        if (
+            not isinstance(open_trades_count, int)
+            or open_trades_count < 0
+            or not math.isfinite(float(daily_loss_percent))
+            or daily_loss_percent < 0
+        ):
+            return False, 0.0, "REJECTED_INVALID_RISK_CONTEXT: Position count or daily drawdown is invalid."
 
         # 4. MAX OPEN TRADES LIMIT
         if open_trades_count >= settings.MAX_OPEN_TRADES:
@@ -106,8 +134,31 @@ class RiskEngine:
         if not is_ok:
             return False, 0.0, f"REJECTED_POSITION_SIZING: {reason}"
 
-        # 8. MARGIN ADEQUACY CHECK
-        estimated_margin = (lots * (symbol_info.trade_contract_size or 100000.0)) / (account.leverage or 1)
+        # 8. MARGIN ADEQUACY CHECK. Production signal flow injects MT5's
+        # order_calc_margin; fallback formula exists for isolated service tests.
+        if self.margin_estimator is not None:
+            try:
+                estimated_margin = self.margin_estimator(symbol, direction, lots, entry_price)
+            except Exception as margin_error:
+                logger.warning(f"Broker margin estimate failed for {symbol}: {margin_error}")
+                estimated_margin = None
+            if estimated_margin is None:
+                return False, 0.0, (
+                    "REJECTED_MARGIN_ESTIMATE_UNAVAILABLE: Broker could not verify required margin."
+                )
+            try:
+                estimated_margin = float(estimated_margin)
+            except (TypeError, ValueError, OverflowError):
+                return False, 0.0, "REJECTED_MARGIN_ESTIMATE_INVALID: Broker margin estimate is invalid."
+            if not math.isfinite(estimated_margin) or estimated_margin < 0:
+                return False, 0.0, "REJECTED_MARGIN_ESTIMATE_INVALID: Broker margin estimate is invalid."
+        else:
+            leverage = int(account.leverage or 0)
+            contract_size = float(symbol_info.trade_contract_size or 0.0)
+            if leverage <= 0 or contract_size <= 0:
+                return False, 0.0, "REJECTED_MARGIN_ESTIMATE_UNAVAILABLE: Leverage or contract size is invalid."
+            estimated_margin = lots * contract_size * entry_price / leverage
+
         if estimated_margin > account.free_margin:
             return False, 0.0, f"REJECTED_INSUFFICIENT_MARGIN: Estimated required margin (${estimated_margin:.2f}) exceeds free margin (${account.free_margin:.2f})."
 
