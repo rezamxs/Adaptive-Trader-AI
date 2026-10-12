@@ -109,29 +109,27 @@ def execute_backtest(req: RunBacktestRequest, db: Session = Depends(get_db)):
     # 1. Transform features
     df_feat, _ = FeatureEngineer.transform(df_raw)
 
-    # 2. Get approved rules
+    # 2. A backtest must represent an explicitly approved strategy, never an
+    # implicit fallback heuristic that the user has not reviewed or approved.
     km = KnowledgeManager(db)
     approved_rules = km.get_active_strategy_rules()
+    if not approved_rules:
+        raise HTTPException(
+            status_code=400,
+            detail="No approved strategy rules are available; approve a strategy before backtesting.",
+        )
 
-    # 3. Generate signals for each bar
+    # 3. Generate signals using only approved rules within their declared scope.
     signals = pd.Series(np.zeros(len(df_feat)), index=df_feat.index)
     for i in range(len(df_feat)):
         bar = df_feat.iloc[i]
-        if approved_rules:
-            direction, _, _ = SignalGenerator.evaluate_rules(
-                bar, approved_rules, symbol=req.symbol, timeframe=req.timeframe.value
-            )
-            if direction == "BUY":
-                signals.iloc[i] = 1
-            elif direction == "SELL":
-                signals.iloc[i] = -1
-        else:
-            # Fallback to simple RSI rule if no rules are approved yet
-            rsi = bar.get("rsi_14", 50.0)
-            if rsi < 30:
-                signals.iloc[i] = 1
-            elif rsi > 70:
-                signals.iloc[i] = -1
+        direction, _, _ = SignalGenerator.evaluate_rules(
+            bar, approved_rules, symbol=req.symbol, timeframe=req.timeframe.value
+        )
+        if direction == "BUY":
+            signals.iloc[i] = 1
+        elif direction == "SELL":
+            signals.iloc[i] = -1
 
     # 4. Run Backtest
     engine = RealisticBacktestEngine(
