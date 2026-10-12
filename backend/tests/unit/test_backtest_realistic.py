@@ -106,3 +106,29 @@ def test_stress_testing_and_report_generation():
     assert "# گزارش تحلیلی بکتست" in report_md
     assert "حداکثر افت سرمایه" in report_md
     assert "adverse_stress" in report_md
+
+
+def test_open_position_is_liquidated_at_end_of_dataset():
+    """An open final trade must be closed and included in reported performance."""
+    idx = pd.date_range("2026-10-12 10:00:00", periods=3, freq="min", tz="UTC")
+    df = pd.DataFrame({
+        "open": [2000.0, 2000.0, 2000.0],
+        "high": [2001.0, 2001.0, 2002.5],
+        "low": [1999.0, 1999.0, 1999.0],
+        "close": [2000.0, 2000.0, 2001.0],
+        "atr_14": [2.0, 2.0, 2.0],
+    }, index=idx)
+    signals = pd.Series([0, 1, 0], index=idx)
+    engine = RealisticBacktestEngine(
+        symbol="XAUUSD", initial_balance=10000.0, spread_points=0,
+        slippage_points=0, commission_per_lot=7.0, point_value=0.01,
+        contract_size=100.0,
+    )
+    result = engine.run(df, signals)
+
+    assert result["metrics"]["total_trades"] == 1
+    trade = result["trades"][0]
+    assert trade["exit_reason"] == "END_OF_DATA"
+    assert trade["exit_time"] == str(idx[-1])
+    assert trade["commission"] > 0
+    assert result["metrics"]["net_profit"] == trade["net_profit"]
