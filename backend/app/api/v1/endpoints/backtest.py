@@ -77,7 +77,9 @@ def execute_backtest(req: RunBacktestRequest, db: Session = Depends(get_db)):
     for i in range(len(df_feat)):
         bar = df_feat.iloc[i]
         if approved_rules:
-            direction, _, _ = SignalGenerator.evaluate_rules(bar, approved_rules)
+            direction, _, _ = SignalGenerator.evaluate_rules(
+                bar, approved_rules, symbol=req.symbol, timeframe=req.timeframe.value
+            )
             if direction == "BUY":
                 signals.iloc[i] = 1
             elif direction == "SELL":
