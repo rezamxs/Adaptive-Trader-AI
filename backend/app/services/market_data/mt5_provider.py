@@ -323,7 +323,7 @@ class MT5MarketDataProvider(IMarketDataProvider):
             for i, r in enumerate(rates):
                 is_closed = True if (start_pos > 0 or i < total - 1) else False
                 try:
-                    candle_time = datetime.fromtimestamp(r['time'], tz=timezone.utc)
+                    candle_time = datetime.fromtimestamp(int(r['time']), tz=timezone.utc)
                 except (TypeError, ValueError, OverflowError, OSError) as exc:
                     logger.warning(f"Skipping candle with invalid MT5 timestamp for {symbol}: {exc}")
                     continue
