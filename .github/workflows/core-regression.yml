@@ -37,4 +37,6 @@ jobs:
           backend/tests/unit/test_worker_freshness_guards.py
           backend/tests/unit/test_knowledge_ingestion_chunks.py
           backend/tests/unit/test_dataset_split_reproducibility.py
+          backend/tests/security/test_signal_mode_and_idempotency.py
+          backend/tests/security/test_demo_executor_security.py
           -q
