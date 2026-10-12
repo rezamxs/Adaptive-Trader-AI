@@ -120,14 +120,15 @@ class DemoTradingExecutor:
 
         try:
             execution_volume = float(signal.calculated_volume)
+            symbol_point = float(symbol_info.point)
             volume_step = float(symbol_info.volume_step)
             volume_min = float(symbol_info.volume_min)
             volume_max = float(symbol_info.volume_max)
         except (TypeError, ValueError, OverflowError):
             return False, None, "Execution rejected: stored volume or broker volume limits are invalid."
         if (
-            not all(math.isfinite(value) for value in (execution_volume, volume_step, volume_min, volume_max))
-            or volume_step <= 0 or volume_min <= 0 or volume_max < volume_min
+            not all(math.isfinite(value) for value in (execution_volume, symbol_point, volume_step, volume_min, volume_max))
+            or symbol_point <= 0 or volume_step <= 0 or volume_min <= 0 or volume_max < volume_min
             or execution_volume < volume_min or execution_volume > volume_max
             or not math.isclose(execution_volume / volume_step, round(execution_volume / volume_step), abs_tol=1e-8)
         ):
@@ -202,7 +203,7 @@ class DemoTradingExecutor:
                 volume=result.volume,
                 requested_price=req_price,
                 executed_price=result.price,
-                slippage_points=round(abs(result.price - req_price) / symbol_info.point, 1),
+                slippage_points=round(abs(result.price - req_price) / symbol_point, 1),
                 stop_loss=signal.stop_loss,
                 take_profit=signal.take_profit,
                 status="FILLED",
