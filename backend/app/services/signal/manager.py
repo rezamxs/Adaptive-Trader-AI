@@ -64,22 +64,14 @@ class SignalManager:
         # 4. Evaluate Model logic
         model_dir, model_prob = SignalGenerator.evaluate_model(latest_bar, active_model_artifact)
 
-        # Consensus direction
-        final_direction = "HOLD"
-        confidence = 0.0
-
-        if rule_dir != "HOLD" and model_dir == rule_dir:
-            # High conviction agreement
-            final_direction = rule_dir
-            confidence = model_prob
-        elif rule_dir != "HOLD" and model_dir is None:
-            # Rule-only execution
-            final_direction = rule_dir
-            confidence = 1.0
-        elif model_dir is not None and model_dir != "HOLD" and len(approved_rules) == 0:
-            # Model-only execution
-            final_direction = model_dir
-            confidence = model_prob
+        # Resolve consensus consistently with the BUY-only training target.
+        final_direction, confidence = SignalGenerator.resolve_consensus(
+            rule_direction=rule_dir,
+            rule_strength=rule_str,
+            model_direction=model_dir,
+            model_strength=model_prob,
+            approved_rule_count=len(approved_rules),
+        )
 
         if final_direction == "HOLD":
             return None
