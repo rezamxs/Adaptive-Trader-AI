@@ -138,7 +138,10 @@ def test_promotion_does_not_archive_active_if_candidate_is_weaker(db_session, tm
     candidate_artifact = tmp_path / "candidate.joblib"
     _write_artifact(candidate_artifact)
     active = _model("active-model", active_artifact, status="active", auc=0.56, brier=0.19)
-    candidate = _model("weaker-model", candidate_artifact, auc=0.55, brier=0.20)
+    candidate = _model(
+        "weaker-model", candidate_artifact, auc=0.55, brier=0.20,
+        walk_forward_metrics=_passing_walk_forward_metrics(),
+    )
     db_session.add_all([active, candidate])
     db_session.commit()
 
