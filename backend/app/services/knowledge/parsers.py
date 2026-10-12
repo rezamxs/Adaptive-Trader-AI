@@ -2,7 +2,7 @@
 import io
 import csv
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 import pymupdf  # PyMuPDF
 import openpyxl
 from backend.app.core.logging import logger
