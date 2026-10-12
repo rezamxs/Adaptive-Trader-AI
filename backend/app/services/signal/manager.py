@@ -1,5 +1,6 @@
 """Signal Lifecycle Manager with strict idempotency and audit trail."""
 import uuid
+import math
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
@@ -95,38 +96,52 @@ class SignalManager:
         symbol_info = self.data_provider.get_symbol_info(symbol)
         quote = self.data_provider.get_current_quote(symbol)
 
+        # ATR must be valid even for a rejected signal; otherwise there is no
+        # meaningful basis for its stop-loss and take-profit levels.
+        try:
+            atr = float(latest_bar.get("atr_14", float("nan")))
+            bar_close = float(latest_bar["close"])
+        except (TypeError, ValueError, OverflowError, KeyError):
+            logger.warning(f"Missing numeric price/ATR for {symbol}; signal not persisted.")
+            return None
+        if not math.isfinite(atr) or atr <= 0 or not math.isfinite(bar_close) or bar_close <= 0:
+            logger.warning(f"Invalid price/ATR for {symbol}; signal not persisted.")
+            return None
+
         # A signal based on a closed bar still needs a current executable price.
         # Use Ask for BUY and Bid for SELL when a usable live quote exists.
-        bar_close = float(latest_bar["close"])
-        quote_is_usable = (
-            quote is not None
-            and not quote.is_stale
-            and quote.symbol.upper() == symbol.upper()
-            and isinstance(quote.time, datetime)
-            and quote.time.tzinfo is not None
-            and quote.time.utcoffset() is not None
-            and pd.notna(quote.ask)
-            and pd.notna(quote.bid)
-            and float(quote.ask) >= float(quote.bid) > 0
-        )
-        if quote_is_usable:
-            entry_price = float(quote.ask if final_direction == "BUY" else quote.bid)
-        else:
-            entry_price = bar_close
+        quote_is_usable = False
+        quote_bid = quote_ask = float("nan")
+        if quote is not None:
+            try:
+                quote_bid = float(quote.bid)
+                quote_ask = float(quote.ask)
+                quote_is_usable = (
+                    not quote.is_stale
+                    and str(quote.symbol).upper() == symbol.upper()
+                    and isinstance(quote.time, datetime)
+                    and quote.time.tzinfo is not None
+                    and quote.time.utcoffset() is not None
+                    and math.isfinite(quote_bid)
+                    and math.isfinite(quote_ask)
+                    and 0 < quote_bid <= quote_ask
+                )
+            except (TypeError, ValueError, OverflowError):
+                quote_is_usable = False
 
-        atr = float(latest_bar.get("atr_14", float("nan")))
-        is_approved, calculated_lots, risk_reason = False, 0.0, "Risk evaluation unfulfilled"
-        if not pd.notna(atr) or atr <= 0:
-            risk_reason = "REJECTED_INVALID_ATR: ATR is missing, non-finite, or non-positive."
-        elif not quote_is_usable:
-            risk_reason = "REJECTED_RISK_CONTEXT_UNAVAILABLE: A current, valid quote is required."
+        entry_price = (
+            quote_ask if final_direction == "BUY" else quote_bid
+        ) if quote_is_usable else bar_close
+        if final_direction == "BUY":
+            stop_loss = entry_price - (sl_atr_mult * atr)
+            take_profit = entry_price + (tp_atr_mult * atr)
         else:
-            if final_direction == "BUY":
-                stop_loss = entry_price - (sl_atr_mult * atr)
-                take_profit = entry_price + (tp_atr_mult * atr)
-            else:
-                stop_loss = entry_price + (sl_atr_mult * atr)
-                take_profit = entry_price - (tp_atr_mult * atr)
+            stop_loss = entry_price + (sl_atr_mult * atr)
+            take_profit = entry_price - (tp_atr_mult * atr)
+
+        is_approved, calculated_lots, risk_reason = False, 0.0, "Risk evaluation unfulfilled"
+        if not quote_is_usable:
+            risk_reason = "REJECTED_RISK_CONTEXT_UNAVAILABLE: A current, valid quote is required."
 
         open_trades_count: Optional[int] = None
         daily_loss_percent: Optional[float] = None
@@ -142,7 +157,7 @@ class SignalManager:
             open_trades_count = None
             daily_loss_percent = None
 
-        if account and symbol_info and quote and pd.notna(atr) and atr > 0 and quote_is_usable:
+        if account and symbol_info and quote and quote_is_usable:
             is_approved, calculated_lots, risk_reason = self.risk_engine.assess_signal(
                 symbol=symbol,
                 direction=final_direction,
