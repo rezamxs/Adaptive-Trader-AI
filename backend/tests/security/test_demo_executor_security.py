@@ -106,6 +106,26 @@ def test_executor_blocks_on_real_account(db_session, sample_approved_signal, mon
     assert "Account could not be verified as a genuine DEMO account" in msg
 
 
+def test_executor_rejects_signal_when_stop_loss_is_invalid_at_current_price(
+    db_session, sample_approved_signal, monkeypatch
+):
+    """A past risk approval cannot bypass current-price SL/TP validation."""
+    monkeypatch.setattr(settings, "EXECUTION_MODE", ExecutionMode.DEMO_TRADING)
+    monkeypatch.setattr(settings, "DEMO_TRADING_ENABLED", True)
+
+    sample_approved_signal.stop_loss = 1.0860  # Above the current BUY entry at 1.08515.
+    db_session.commit()
+
+    provider = MockMarketDataProvider(is_demo_account=True)
+    executor = DemoTradingExecutor(db_session, provider)
+    success, order, msg = executor.execute_demo_signal(sample_approved_signal)
+
+    assert success is False
+    assert order is None
+    assert "REJECTED_INVALID_SL" in msg
+    assert db_session.query(DemoOrder).count() == 0
+
+
 def test_order_idempotency_prevents_duplicate_dispatch(db_session, sample_approved_signal, monkeypatch):
     """Verify order idempotency prevents duplicate fills on same signal."""
     monkeypatch.setattr(settings, "EXECUTION_MODE", ExecutionMode.DEMO_TRADING)
