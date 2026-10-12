@@ -34,3 +34,14 @@ def test_volume_is_rounded_down_not_up_to_nearest_step():
     assert ok
     assert lots == 0.01
     assert "Actual risk: $66.00" in reason
+
+
+
+def test_max_volume_is_rounded_down_to_a_valid_broker_step():
+    info = _symbol_info(volume_step=0.01, volume_min=0.01, volume_max=0.025)
+    ok, lots, _ = PositionSizer.calculate_and_verify_lots(
+        equity=100000.0, entry_price=2700.0, stop_loss=2699.0,
+        symbol_info=info, risk_percent=1.0, max_allowed_risk_percent=2.0,
+    )
+    assert ok
+    assert lots == 0.02
