@@ -81,11 +81,33 @@ class SignalGenerator:
         raw_vec = np.array([latest_bar_features.get(f, 0.0) for f in feat_names]).reshape(1, -1)
         scaled_vec = scaler.transform(raw_vec) if scaler else raw_vec
 
-        proba = model.predict_proba(scaled_vec)
-        pos_prob = float(proba[0, 1]) if proba.shape[1] > 1 else float(proba[0, 0])
+        # Training class 1 means BUY reaches TP before SL; class 0 means that
+        # BUY setup fails or expires. A low class-1 probability is not a SELL label.
+        try:
+            proba = model.predict_proba(scaled_vec)
+            if getattr(proba, "ndim", 0) != 2 or proba.shape[0] != 1:
+                return None, 0.0
+
+            classes = getattr(model, "classes_", None)
+            if classes is not None:
+                class_labels = list(classes)
+                if 1 not in class_labels:
+                    return None, 0.0
+                positive_index = class_labels.index(1)
+            else:
+                if proba.shape[1] != 2:
+                    return None, 0.0
+                positive_index = 1
+
+            if positive_index >= proba.shape[1]:
+                return None, 0.0
+            pos_prob = float(proba[0, positive_index])
+            if not np.isfinite(pos_prob) or not 0.0 <= pos_prob <= 1.0:
+                return None, 0.0
+        except (AttributeError, IndexError, TypeError, ValueError):
+            return None, 0.0
 
         if pos_prob >= prob_threshold:
             return "BUY", round(pos_prob, 4)
-        elif pos_prob <= (1.0 - prob_threshold):
-            return "SELL", round(1.0 - pos_prob, 4)
+        # Class 0 has no directional SELL meaning. Remain neutral instead.
         return "HOLD", round(pos_prob, 4)
