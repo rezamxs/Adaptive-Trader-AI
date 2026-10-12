@@ -109,8 +109,10 @@ class DatasetPipeline:
         # identical data/settings yields the same dataset version.
         version_payload = (
             pd.util.hash_pandas_object(clean_df, index=True).values.tobytes()
-            + f"|{symbol}|{timeframe}|{horizon_bars}|{tp_mult}|{sl_mult}|"
-              f"{train_ratio}|{test_ratio}|{effective_spread}|{effective_point}".encode("utf-8")
+            + (
+                f"|{symbol}|{timeframe}|{horizon_bars}|{tp_mult}|{sl_mult}|"
+                f"{train_ratio}|{test_ratio}|{effective_spread}|{effective_point}"
+            ).encode("utf-8")
         )
         version_hash = hashlib.sha256(version_payload).hexdigest()[:8]
         version_tag = f"{version_prefix}_{symbol.lower()}_{timeframe.lower()}_{version_hash}"
