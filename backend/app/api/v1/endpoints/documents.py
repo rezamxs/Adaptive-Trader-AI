@@ -24,7 +24,10 @@ async def upload_document(
     db: Session = Depends(get_db)
 ):
     """Uploads a knowledge file (PDF/TXT/CSV/XLSX), extracts text, and parses rules."""
-    file_bytes = await file.read()
+    max_upload_bytes = 250 * 1024 * 1024
+    file_bytes = await file.read(max_upload_bytes + 1)
+    if len(file_bytes) > max_upload_bytes:
+        raise HTTPException(status_code=413, detail="File exceeds maximum allowed size of 250MB.")
     if len(file_bytes) == 0:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
