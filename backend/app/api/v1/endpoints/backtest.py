@@ -9,7 +9,6 @@ import numpy as np
 from backend.app.db.session import get_db
 from backend.app.models.backtest import BacktestRun
 from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
-from backend.app.services.market_data.mock_provider import MockMarketDataProvider
 from backend.app.services.market_data.base import TimeFrame
 from backend.app.services.dataset.features import FeatureEngineer
 from backend.app.services.backtest.engine import RealisticBacktestEngine
@@ -26,7 +25,7 @@ class RunBacktestRequest(BaseModel):
     timeframe: TimeFrame = TimeFrame.M15
     strategy_name: str = "Approved Strategy Backtest"
     bars_count: int = 300
-    spread_points: int = 15
+    spread_points: Optional[int] = None
     slippage_points: int = 3
     commission_per_lot: float = 7.0
     initial_balance: float = 10000.0
@@ -55,12 +54,19 @@ def execute_backtest(req: RunBacktestRequest, db: Session = Depends(get_db)):
     """Executes realistic backtest with cost modeling and stress analysis."""
     provider = MT5MarketDataProvider()
     if not provider.connect():
-        provider = MockMarketDataProvider()
+        raise HTTPException(
+            status_code=503,
+            detail="MT5 is unavailable; backtesting with synthetic fallback data is disabled.",
+        )
 
     try:
         df_raw = provider.get_historical_dataframe(req.symbol, req.timeframe, count=req.bars_count)
+        symbol_info = provider.get_symbol_info(req.symbol)
     finally:
         provider.disconnect()
+
+    if symbol_info is None:
+        raise HTTPException(status_code=503, detail=f"MT5 did not return broker specifications for {req.symbol}.")
 
     if len(df_raw) < 50:
         raise HTTPException(status_code=400, detail="Insufficient bars to run backtest.")
@@ -97,16 +103,34 @@ def execute_backtest(req: RunBacktestRequest, db: Session = Depends(get_db)):
         symbol=req.symbol,
         timeframe=req.timeframe.value,
         initial_balance=req.initial_balance,
-        spread_points=req.spread_points,
+        spread_points=(max(0, int(symbol_info.spread)) if req.spread_points is None else req.spread_points),
         slippage_points=req.slippage_points,
         commission_per_lot=req.commission_per_lot,
+        point_value=float(symbol_info.point),
+        contract_size=float(symbol_info.trade_contract_size),
+        tick_size=float(symbol_info.tick_size),
+        tick_value=float(symbol_info.tick_value),
+        lot_step=float(symbol_info.volume_step),
+        min_lot=float(symbol_info.volume_min),
+        max_lot=float(symbol_info.volume_max),
         db=db,
     )
     bt_res = engine.run(df_feat, signals, strategy_name=req.strategy_name)
 
     # 5. Run Stress Scenarios
     stress_res = BacktestStressTester.run_stress_scenarios(
-        df_feat, signals, symbol=req.symbol, timeframe=req.timeframe.value, initial_balance=req.initial_balance
+        df_feat, signals, symbol=req.symbol, timeframe=req.timeframe.value,
+        initial_balance=req.initial_balance,
+        base_spread_points=(max(0, int(symbol_info.spread)) if req.spread_points is None else req.spread_points),
+        point_value=float(symbol_info.point),
+        contract_size=float(symbol_info.trade_contract_size),
+        tick_size=float(symbol_info.tick_size),
+        tick_value=float(symbol_info.tick_value),
+        lot_step=float(symbol_info.volume_step),
+        min_lot=float(symbol_info.volume_min),
+        max_lot=float(symbol_info.volume_max),
+        base_slippage_points=req.slippage_points,
+        commission_per_lot=req.commission_per_lot,
     )
 
     # 6. Generate Markdown Report
