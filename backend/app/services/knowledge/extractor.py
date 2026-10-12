@@ -122,9 +122,14 @@ class RuleExtractor:
             average_type = ma_match.group(1)
             period = int(ma_match.group(2))
             parameters["ma_period"] = period
-            if average_type in {"sma", "میانگین"}:
+            if average_type == "sma":
                 indicator = "SMA"
                 expression_type = "SMA"
+            elif average_type == "میانگین":
+                # Generic "moving average" does not identify SMA vs EMA.
+                # Preserve the ambiguity so runtime evaluation fails closed.
+                indicator = "MA"
+                expression_type = "MA"
             else:
                 indicator = "EMA"
                 expression_type = "EMA"
