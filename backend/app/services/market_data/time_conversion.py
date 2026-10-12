@@ -68,10 +68,9 @@ class MT5TimeConverter:
         max_clock_skew_seconds: float = 60.0,
     ) -> Tuple[bool, Optional[int], str]:
         """Legacy API: validate that a supplied value is a valid Unix epoch."""
-        try:
-            datetime.fromtimestamp(raw_tick_time, tz=timezone.utc)
-        except (TypeError, ValueError, OverflowError, OSError) as exc:
-            return False, None, f"INVALID_UNIX_EPOCH_TIMESTAMP: {exc}"
+        converted, conversion_reason = self.raw_to_utc(raw_tick_time)
+        if converted is None:
+            return False, None, f"INVALID_UNIX_EPOCH_TIMESTAMP: {conversion_reason}"
         self._detected_offset_seconds = 0
         self._offset_source = "MT5_UNIX_EPOCH_UTC"
         return True, 0, "MT5 Unix epoch timestamp interpreted as UTC; no broker offset applied."
@@ -83,7 +82,14 @@ class MT5TimeConverter:
     ) -> Tuple[Optional[datetime], str]:
         """Convert Unix epoch seconds to UTC without any broker-time adjustment."""
         try:
-            dt = datetime.fromtimestamp(raw_seconds, tz=timezone.utc)
+            # NumPy structured MT5 rate arrays often expose np.int64 timestamps,
+            # so coerce integral numeric types to a built-in int before conversion.
+            if isinstance(raw_seconds, (str, bytes, bool)):
+                raise TypeError("Unix timestamp must be numeric, not text or bool.")
+            epoch_seconds = int(raw_seconds)
+            if raw_seconds != epoch_seconds:
+                raise ValueError("Unix timestamp must be an integral number of seconds.")
+            dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc)
             return dt, "MT5_UNIX_EPOCH_UTC"
         except (TypeError, ValueError, OverflowError, OSError) as exc:
             return None, f"CONVERSION_ERROR: {exc}"
