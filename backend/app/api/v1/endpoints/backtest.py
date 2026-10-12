@@ -1,7 +1,7 @@
 """Backtesting API Endpoints."""
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 import pandas as pd
 import numpy as np
@@ -24,11 +24,11 @@ class RunBacktestRequest(BaseModel):
     symbol: str = "EURUSD"
     timeframe: TimeFrame = TimeFrame.M15
     strategy_name: str = "Approved Strategy Backtest"
-    bars_count: int = 300
-    spread_points: Optional[int] = None
-    slippage_points: int = 3
-    commission_per_lot: float = 7.0
-    initial_balance: float = 10000.0
+    bars_count: int = Field(default=300, ge=50, le=100000)
+    spread_points: Optional[int] = Field(default=None, ge=0, le=100000)
+    slippage_points: int = Field(default=3, ge=0, le=100000)
+    commission_per_lot: float = Field(default=7.0, ge=0.0, le=100000.0)
+    initial_balance: float = Field(default=10000.0, gt=0.0)
 
 
 @router.get("/runs")
