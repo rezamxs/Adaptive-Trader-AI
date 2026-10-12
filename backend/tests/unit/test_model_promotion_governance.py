@@ -1,5 +1,8 @@
 """Model-promotion governance regression tests."""
 import pytest
+import joblib
+from sklearn.dummy import DummyClassifier
+from backend.app.core.config import settings
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
@@ -11,7 +14,8 @@ from backend.app.services.ml.registry import ModelRegistry
 
 
 @pytest.fixture
-def db_session():
+def db_session(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "ARTIFACTS_MODELS_DIR", tmp_path)
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -23,6 +27,14 @@ def db_session():
     engine.dispose()
 
 
+def _write_artifact(path):
+    estimator = DummyClassifier(strategy="prior").fit([[0.0], [1.0]], [0, 1])
+    joblib.dump(
+        {"model": estimator, "scaler": None, "feature_names": ["rsi_14"]},
+        path,
+    )
+
+
 def _model(model_id, artifact_path, *, status="candidate", auc=0.55, brier=0.20):
     return MLModelRecord(
         model_id=model_id,
@@ -32,7 +44,8 @@ def _model(model_id, artifact_path, *, status="candidate", auc=0.55, brier=0.20)
         features_used=["rsi_14"],
         target_name="target_tp_before_sl",
         train_metrics={},
-        test_metrics={"roc_auc": auc, "brier_score": brier},
+        validation_metrics={"roc_auc": auc, "brier_score": brier, "sample_count": 50},
+        test_metrics={"roc_auc": auc, "brier_score": brier, "sample_count": 50},
         calibration_metrics={},
         walk_forward_metrics={},
         status=status,
@@ -42,7 +55,7 @@ def _model(model_id, artifact_path, *, status="candidate", auc=0.55, brier=0.20)
 
 def test_promotion_rejects_metrics_at_or_below_baseline(db_session, tmp_path):
     artifact = tmp_path / "weak.joblib"
-    artifact.write_bytes(b"test artifact")
+    _write_artifact(artifact)
     candidate = _model("weak-model", artifact, auc=0.50, brier=0.20)
     db_session.add(candidate)
     db_session.commit()
@@ -61,7 +74,7 @@ def test_promotion_rejects_missing_or_invalid_metrics(db_session, tmp_path):
     db_session.add(candidate)
     db_session.commit()
 
-    with pytest.raises(ModelGovernanceError, match="valid test ROC-AUC"):
+    with pytest.raises(ModelGovernanceError, match="validation and test partitions"):
         ModelRegistry(db_session).promote_candidate(candidate.model_id)
 
 
@@ -78,9 +91,9 @@ def test_promotion_requires_candidate_status(db_session, tmp_path):
 
 def test_promotion_does_not_archive_active_if_candidate_is_weaker(db_session, tmp_path):
     active_artifact = tmp_path / "active.joblib"
-    active_artifact.write_bytes(b"active artifact")
+    _write_artifact(active_artifact)
     candidate_artifact = tmp_path / "candidate.joblib"
-    candidate_artifact.write_bytes(b"candidate artifact")
+    _write_artifact(candidate_artifact)
     active = _model("active-model", active_artifact, status="active", auc=0.56, brier=0.19)
     candidate = _model("weaker-model", candidate_artifact, auc=0.55, brier=0.20)
     db_session.add_all([active, candidate])
