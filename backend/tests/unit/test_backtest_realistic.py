@@ -132,3 +132,35 @@ def test_open_position_is_liquidated_at_end_of_dataset():
     assert trade["exit_time"] == str(idx[-1])
     assert trade["commission"] > 0
     assert result["metrics"]["net_profit"] == trade["net_profit"]
+
+
+
+def test_sell_spread_is_applied_on_close_for_bid_based_ohlc():
+    """MT5 Bid OHLC charges spread when a SELL position is bought back at Ask."""
+    idx = pd.date_range("2026-10-12 10:00:00", periods=3, freq="min", tz="UTC")
+    df = pd.DataFrame({
+        "open": [2000.0, 2000.0, 2000.0],
+        "high": [2001.0, 2001.0, 2001.0],
+        "low": [1999.0, 1999.0, 1999.0],
+        "close": [2000.0, 2000.0, 1999.0],
+        "atr_14": [2.0, 2.0, 2.0],
+    }, index=idx)
+    result = RealisticBacktestEngine(
+        symbol="XAUUSD", initial_balance=10000.0, spread_points=10,
+        slippage_points=0, commission_per_lot=0.0, point_value=0.01,
+        contract_size=100.0, lot_step=0.01, min_lot=0.01, max_lot=10.0,
+    ).run(df, pd.Series([-1, 0, 0], index=idx))
+
+    trade = result["trades"][0]
+    assert trade["entry_price"] == 2000.0
+    assert trade["exit_reason"] == "END_OF_DATA"
+    assert trade["exit_price"] == 1999.1
+    assert trade["gross_profit"] > 0
+
+
+def test_position_sizing_returns_zero_when_minimum_lot_breaks_risk_cap():
+    engine = RealisticBacktestEngine(
+        initial_balance=100.0, point_value=1.0, contract_size=100.0,
+        lot_step=0.01, min_lot=0.01, max_lot=10.0, risk_per_trade_pct=1.0,
+    )
+    assert engine.calculate_lot_size(balance=100.0, entry_price=100.0, stop_loss=90.0) == 0.0
