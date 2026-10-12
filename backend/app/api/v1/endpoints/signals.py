@@ -10,7 +10,6 @@ from backend.app.models.signal import TradeSignal
 from backend.app.models.order import DemoOrder
 from backend.app.services.market_data.base import TimeFrame
 from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
-from backend.app.services.market_data.mock_provider import MockMarketDataProvider
 from backend.app.services.signal.manager import SignalManager
 from backend.app.services.execution.demo_executor import DemoTradingExecutor
 
@@ -48,7 +47,10 @@ def generate_signal(req: GenerateSignalRequest, db: Session = Depends(get_db)):
     """Evaluates latest bar and generates a signal in current execution mode."""
     provider = MT5MarketDataProvider()
     if not provider.connect():
-        provider = MockMarketDataProvider()
+        raise HTTPException(
+            status_code=503,
+            detail="MT5 is unavailable; signal generation from synthetic market data is disabled.",
+        )
 
     try:
         manager = SignalManager(db=db, data_provider=provider)
@@ -100,7 +102,10 @@ def execute_demo_order(signal_id: str, db: Session = Depends(get_db)):
 
     provider = MT5MarketDataProvider()
     if not provider.connect():
-        provider = MockMarketDataProvider()
+        raise HTTPException(
+            status_code=503,
+            detail="MT5 is unavailable; demo execution requires a verified terminal and account.",
+        )
 
     try:
         executor = DemoTradingExecutor(db=db, data_provider=provider)
