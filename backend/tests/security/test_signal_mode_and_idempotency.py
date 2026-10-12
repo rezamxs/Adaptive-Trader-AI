@@ -94,13 +94,18 @@ def test_signal_idempotency_prevents_duplicate_signals(db_session):
     sig1 = manager.process_latest_bar("EURUSD", TimeFrame.M15)
     assert sig1 is not None
 
-    # Immediate second run (same bar)
+    # Flip the rule's direction, then evaluate the same completed bar again.
+    # Idempotency must prevent a BUY and SELL signal for the same candle.
+    rule.name = "Sell on RSI Oversold"
+    db_session.commit()
+
     sig2 = manager.process_latest_bar("EURUSD", TimeFrame.M15)
     assert sig2 is not None
 
-    # Both must have identical ID and idempotency key
+    # The earlier signal wins for this bar, regardless of a later direction change.
     assert sig1.signal_id == sig2.signal_id
     assert sig1.idempotency_key == sig2.idempotency_key
+    assert sig1.direction == sig2.direction == "BUY"
 
     # Total signal rows in database must be strictly 1
     total_signals = db_session.query(TradeSignal).count()
