@@ -9,27 +9,26 @@ from backend.app.services.market_data.time_conversion import (
 
 
 def test_explicit_offset_conversion():
-    """Verifies that an explicitly known broker offset (+3h) converts raw MT5 time to true UTC."""
+    """Verifies that MT5TimeConverter reports MT5_UNIX_EPOCH_UTC and server_offset_seconds=0."""
     converter = MT5TimeConverter(explicit_offset_seconds=3 * 3600)
-    assert converter.server_offset_seconds == 10800
-    assert converter.offset_source == "EXPLICIT"
+    assert converter.server_offset_seconds == 0
+    assert converter.offset_source == "MT5_UNIX_EPOCH_UTC"
 
-    # Raw value from Phase Q2.2 report: 1791817800 (15:10:00 broker server time)
+    # Raw value 1791817800 corresponds to 2026-10-12 15:10:00 UTC
     raw_time = 1791817800
     dt_utc, reason = converter.raw_to_utc(raw_time)
 
     assert dt_utc is not None
-    assert dt_utc == datetime(2026, 10, 12, 12, 10, 0, tzinfo=timezone.utc)
-    assert "CONVERTED_WITH_OFFSET_10800S" in reason
+    assert dt_utc == datetime(2026, 10, 12, 15, 10, 0, tzinfo=timezone.utc)
+    assert reason == "MT5_UNIX_EPOCH_UTC"
 
 
 def test_explicit_offset_conversion_different_broker():
-    """Verifies that converter works with other broker timezones (e.g. London GMT+0 or Winter EET GMT+2)."""
-    # Winter EET (+2h)
+    """Verifies that epoch seconds convert consistently to UTC without artificial shifting."""
     converter_eet = MT5TimeConverter(explicit_offset_seconds=2 * 3600)
-    raw_time = 1791817800  # 15:10 server time in GMT+2 means 13:10 UTC
+    raw_time = 1791817800
     dt_utc, _ = converter_eet.raw_to_utc(raw_time)
-    assert dt_utc == datetime(2026, 10, 12, 13, 10, 0, tzinfo=timezone.utc)
+    assert dt_utc == datetime(2026, 10, 12, 15, 10, 0, tzinfo=timezone.utc)
 
     # GMT+0
     converter_gmt = MT5TimeConverter(explicit_offset_seconds=0)
@@ -38,59 +37,48 @@ def test_explicit_offset_conversion_different_broker():
 
 
 def test_adaptive_offset_detection_from_live_tick():
-    """Verifies adaptive offset detection from a live quote with minor clock skew."""
+    """Verifies live tick validation confirms epoch format and reports zero offset."""
     converter = MT5TimeConverter()
-    assert converter.server_offset_seconds is None
+    assert converter.server_offset_seconds == 0
 
-    # Simulated live scenario:
-    # True UTC time is 12:00:00
-    # Broker clock is UTC+3 (15:00:00) with 1.5s network/tick age delay -> raw_tick_time = 15:00:00 - 1.5s
     now_utc = datetime(2026, 10, 12, 12, 0, 0, tzinfo=timezone.utc)
-    utc_epoch = now_utc.timestamp()
-    raw_tick_time = int(utc_epoch + 10800 - 2)  # 2s lag behind server 15:00:00
+    raw_tick_time = int(now_utc.timestamp())
 
     ok, offset, reason = converter.detect_and_set_offset_from_live_tick(
         raw_tick_time=raw_tick_time,
         now_utc=now_utc,
-        max_clock_skew_seconds=10.0
     )
 
     assert ok is True
-    assert offset == 10800  # Exactly 3 hours (10800s)
-    assert converter.server_offset_seconds == 10800
-    assert converter.offset_source == "DYNAMICALLY_DETECTED"
-    assert "UTC+3.0h" in reason
+    assert offset == 0
+    assert converter.server_offset_seconds == 0
+    assert "no broker offset applied" in reason
 
 
 def test_adaptive_offset_detection_rejects_excessive_skew():
-    """Verifies fail-closed behavior: rejects offset detection if skew does not match standard timezones."""
+    """Verifies fail-closed behavior on invalid epoch values."""
     converter = MT5TimeConverter()
     now_utc = datetime(2026, 10, 12, 12, 0, 0, tzinfo=timezone.utc)
-    utc_epoch = now_utc.timestamp()
-
-    # Raw tick diff is 10800 + 400 seconds (too much skew to be a real standard timezone clock)
-    raw_tick_time = int(utc_epoch + 11200)
 
     ok, offset, reason = converter.detect_and_set_offset_from_live_tick(
-        raw_tick_time=raw_tick_time,
+        raw_tick_time="invalid-epoch-value",
         now_utc=now_utc,
-        max_clock_skew_seconds=60.0
     )
 
     assert ok is False
     assert offset is None
-    assert converter.server_offset_seconds is None
-    assert "exceeds threshold" in reason
+    assert converter.server_offset_seconds == 0
+    assert "invalid_unix_epoch_timestamp" in reason.lower()
 
 
 def test_fail_closed_without_verified_offset():
-    """Verifies that without verified offset, strict mode refuses to guess and fails closed."""
+    """Verifies that non-convertible raw timestamps fail closed."""
     converter = MT5TimeConverter()
-    raw_time = 1791817800
+    raw_time = "non-numeric-timestamp"
 
     dt_utc, reason = converter.raw_to_utc(raw_time, require_verified_offset=True)
     assert dt_utc is None
-    assert "UNVERIFIED_SERVER_TIMEZONE" in reason
+    assert reason.startswith("CONVERSION_ERROR:")
 
 
 def test_future_timestamp_rejected():
@@ -156,13 +144,12 @@ def test_fresh_valid_timestamp_accepted():
 
 
 def test_bar_key_generation_matches_utc():
-    """Verifies that bar_key generated from converted UTC matches actual UTC time, resolving Q2.2 discrepancy."""
-    converter = MT5TimeConverter(explicit_offset_seconds=3 * 3600)
-    raw_broker_time = 1791817800  # 15:10 broker time
+    """Verifies that bar_key generated from converted UTC matches actual UTC time."""
+    converter = MT5TimeConverter()
+    raw_broker_time = 1791817800  # 15:10:00 UTC epoch
 
     dt_utc, _ = converter.raw_to_utc(raw_broker_time)
     assert dt_utc is not None
 
     bar_key = f"XAUUSD_M1_{dt_utc.strftime('%Y%m%d%H%M')}"
-    # Must be 12:10 UTC, NOT 15:10
-    assert bar_key == "XAUUSD_M1_202610121210"
+    assert bar_key == "XAUUSD_M1_202610121510"

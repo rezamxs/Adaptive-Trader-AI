@@ -59,8 +59,44 @@ def test_rules_api_list():
     assert isinstance(res.json(), list)
 
 
-def test_backtest_run_endpoint():
-    """Verify running backtest via API returns realistic metrics and stress scenarios."""
+def test_backtest_run_endpoint(monkeypatch):
+    """Verify running backtest via API returns realistic metrics and stress scenarios using test provider."""
+    from backend.app.services.market_data.mock_provider import MockMarketDataProvider
+    from backend.app.services.market_data.base import TimeFrame
+
+    class StubMT5Provider:
+        def connect(self):
+            return True
+
+        def disconnect(self):
+            pass
+
+        def get_historical_dataframe(self, symbol, timeframe, count):
+            tf = TimeFrame(timeframe) if isinstance(timeframe, str) else timeframe
+            return MockMarketDataProvider().get_historical_dataframe(symbol, tf, count=count)
+
+        def get_symbol_info(self, symbol):
+            return MockMarketDataProvider().get_symbol_info(symbol)
+
+    from backend.app.models.rule import TradingRule
+    sample_rule = TradingRule(
+        rule_id="rule_rsi_oversold",
+        name="RSI Oversold Buy",
+        category="entry",
+        description="Buy when RSI < 70",
+        conditions=[{"indicator": "RSI", "operator": "<", "threshold": 70.0}],
+        parameters={"rsi_period": 14},
+        symbol_scope=["EURUSD"],
+        timeframe_scope=["M15"],
+        approval_status="approved",
+        version=1,
+    )
+    monkeypatch.setattr(
+        "backend.app.api.v1.endpoints.backtest.KnowledgeManager.get_active_strategy_rules",
+        lambda self: [sample_rule],
+    )
+    monkeypatch.setattr("backend.app.api.v1.endpoints.backtest.MT5MarketDataProvider", StubMT5Provider)
+
     res = client.post("/api/v1/backtest/run", json={
         "symbol": "EURUSD",
         "timeframe": "M15",
@@ -76,6 +112,26 @@ def test_backtest_run_endpoint():
     assert "metrics" in data
     assert "net_profit" in data["metrics"]
     assert "stress_test" in data
+
+
+def test_backtest_run_endpoint_returns_503_when_mt5_unavailable(monkeypatch):
+    """Verify 503 Service Unavailable is cleanly returned when MT5 market provider fails to connect."""
+    class DisconnectedMT5Provider:
+        def connect(self):
+            return False
+
+        def disconnect(self):
+            pass
+
+    monkeypatch.setattr("backend.app.api.v1.endpoints.backtest.MT5MarketDataProvider", DisconnectedMT5Provider)
+
+    res = client.post("/api/v1/backtest/run", json={
+        "symbol": "EURUSD",
+        "timeframe": "M15",
+        "bars_count": 120,
+    })
+    assert res.status_code == 503
+    assert "MT5 is unavailable" in res.json()["detail"]
 
 
 def test_dashboard_html_served():

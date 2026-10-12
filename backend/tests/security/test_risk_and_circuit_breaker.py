@@ -157,6 +157,7 @@ def test_risk_engine_blocks_on_daily_drawdown_and_trips_breaker(db_session, mock
         account=mock_account,
         symbol_info=mock_symbol_info,
         quote=quote,
+        open_trades_count=0,
         daily_loss_percent=3.5,
     )
 

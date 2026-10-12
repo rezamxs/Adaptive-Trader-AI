@@ -81,6 +81,8 @@ def test_gold_minimum_equity_gate(memory_db, dummy_symbol_gold, dummy_quote_gold
         account=low_account,
         symbol_info=dummy_symbol_gold,
         quote=dummy_quote_gold,
+        open_trades_count=0,
+        daily_loss_percent=0.0,
         enforce_gold_min_equity=True,
     )
 
@@ -111,6 +113,8 @@ def test_gold_minimum_equity_gate(memory_db, dummy_symbol_gold, dummy_quote_gold
         account=ok_account,
         symbol_info=dummy_symbol_gold,
         quote=dummy_quote_gold,
+        open_trades_count=0,
+        daily_loss_percent=0.0,
         enforce_gold_min_equity=True,
     )
 
@@ -146,6 +150,8 @@ def test_session_hours_gate(memory_db, dummy_symbol_gold, dummy_quote_gold):
         account=account,
         symbol_info=dummy_symbol_gold,
         quote=dummy_quote_gold,
+        open_trades_count=0,
+        daily_loss_percent=0.0,
         current_time_utc=valid_time,
         enforce_session_filter=True,
     )
@@ -163,6 +169,8 @@ def test_session_hours_gate(memory_db, dummy_symbol_gold, dummy_quote_gold):
         account=account,
         symbol_info=dummy_symbol_gold,
         quote=dummy_quote_gold,
+        open_trades_count=0,
+        daily_loss_percent=0.0,
         current_time_utc=ny_time,
         enforce_session_filter=True,
     )
@@ -197,6 +205,8 @@ def test_friday_close_weekend_risk(memory_db, dummy_symbol_gold, dummy_quote_gol
         account=account,
         symbol_info=dummy_symbol_gold,
         quote=dummy_quote_gold,
+        open_trades_count=0,
+        daily_loss_percent=0.0,
         current_time_utc=friday_night,
         enforce_session_filter=True,
     )
@@ -230,6 +240,8 @@ def test_martingale_drawdown_ceiling(memory_db, dummy_symbol_gold, dummy_quote_g
         account=account,
         symbol_info=dummy_symbol_gold,
         quote=dummy_quote_gold,
+        open_trades_count=0,
+        daily_loss_percent=0.0,
         active_martingale_drawdown=150.0,
     )
     assert ok
@@ -245,6 +257,8 @@ def test_martingale_drawdown_ceiling(memory_db, dummy_symbol_gold, dummy_quote_g
         account=account,
         symbol_info=dummy_symbol_gold,
         quote=dummy_quote_gold,
+        open_trades_count=0,
+        daily_loss_percent=0.0,
         active_martingale_drawdown=200.0,
     )
     assert not breached

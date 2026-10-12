@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 from dataclasses import dataclass
 
 
+@dataclass
 class TimestampValidationResult:
     """Structured result of timestamp validation."""
     is_valid: bool
