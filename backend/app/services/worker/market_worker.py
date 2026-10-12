@@ -14,7 +14,7 @@ from backend.app.core.logging import logger, log_security_event
 from backend.app.db.session import SessionLocal
 from backend.app.models.worker_cycle import WorkerCycleRecord
 from backend.app.models.signal import TradeSignal
-from backend.app.services.market_data.base import IMarketDataProvider, TimeFrame, Candle
+from backend.app.services.market_data.base import IMarketDataProvider, TimeFrame, Candle, Quote
 from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
 from backend.app.services.knowledge.manager import KnowledgeManager
 from backend.app.services.ml.registry import ModelRegistry
