@@ -38,6 +38,23 @@ class DatasetPipeline:
         """Builds an ML-ready dataset with strict temporal separation and purging."""
         if len(raw_df) < settings.MIN_DATA_POINTS_REQUIRED:
             raise ValueError(f"Insufficient data: {len(raw_df)} bars provided, minimum required is {settings.MIN_DATA_POINTS_REQUIRED}.")
+        if not isinstance(raw_df.index, pd.DatetimeIndex):
+            raise ValueError("Raw market data must use a DatetimeIndex for temporal splitting.")
+        if raw_df.index.has_duplicates or not raw_df.index.is_monotonic_increasing:
+            raise ValueError("Raw market data timestamps must be unique and sorted in ascending order.")
+        required_ohlc = ["open", "high", "low", "close"]
+        missing_ohlc = [column for column in required_ohlc if column not in raw_df.columns]
+        if missing_ohlc:
+            raise ValueError(f"Raw market data is missing OHLC columns: {missing_ohlc}.")
+        ohlc = raw_df[required_ohlc].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
+        if not np.isfinite(ohlc).all() or (ohlc <= 0).any():
+            raise ValueError("Raw OHLC values must be finite and strictly positive.")
+        if (ohlc[:, 1] < ohlc[:, 2]).any():
+            raise ValueError("Raw market data has candles where high is below low.")
+        if (ohlc[:, 1] < np.maximum(ohlc[:, 0], ohlc[:, 3])).any():
+            raise ValueError("Raw market data contains open/close prices above candle high.")
+        if (ohlc[:, 2] > np.minimum(ohlc[:, 0], ohlc[:, 3])).any():
+            raise ValueError("Raw market data contains open/close prices below candle low.")
         if horizon_bars < 1:
             raise ValueError("horizon_bars must be at least 1.")
         if not (0.0 < train_ratio < 1.0 and 0.0 < test_ratio < 1.0 and train_ratio + test_ratio < 1.0):
@@ -147,21 +164,26 @@ class DatasetPipeline:
             start_t = clean_df.index[0] if isinstance(clean_df.index[0], datetime) else datetime.utcnow()
             end_t = clean_df.index[-1] if isinstance(clean_df.index[-1], datetime) else datetime.utcnow()
             
-            record = DatasetVersion(
-                version_tag=version_tag,
-                symbol=symbol,
-                timeframe=timeframe,
-                start_time=start_t,
-                end_time=end_t,
-                total_bars=n_clean,
-                features_list=feature_names,
-                target_definition=f"BUY TP({tp_mult}*ATR) before SL({sl_mult}*ATR) within {horizon_bars} bars [spread={effective_spread}pts, pt={effective_point}]",
-                target_stats=target_stats,
-                file_path=str(save_path),
-            )
-            self.db.add(record)
-            self.db.commit()
-            logger.info(f"Recorded dataset version {version_tag} in database.")
+            existing_record = self.db.query(DatasetVersion).filter_by(version_tag=version_tag).first()
+            if existing_record is None:
+                record = DatasetVersion(
+                    version_tag=version_tag,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    start_time=start_t,
+                    end_time=end_t,
+                    total_bars=n_clean,
+                    features_list=feature_names,
+                    target_definition=f"BUY TP({tp_mult}*ATR) before SL({sl_mult}*ATR) within {horizon_bars} bars [spread={effective_spread}pts, pt={effective_point}]",
+                    target_stats=target_stats,
+                    file_path=str(save_path),
+                )
+                self.db.add(record)
+                self.db.commit()
+                logger.info(f"Recorded dataset version {version_tag} in database.")
+            else:
+                # Deterministic rebuilds are idempotent; do not violate the unique key.
+                logger.info(f"Reusing existing dataset version {version_tag}.")
 
         return {
             "version_tag": version_tag,
