@@ -555,7 +555,9 @@ class MarketMonitoringWorker:
             active_model_artifact = model_reg.load_active_model_artifact()
 
             # Evaluate rules & model
-            rule_dir, rule_str, triggered_rules = SignalGenerator.evaluate_rules(latest_feat_series, approved_rules)
+            rule_dir, rule_str, triggered_rules = SignalGenerator.evaluate_rules(
+                latest_feat_series, approved_rules, symbol=self.symbol, timeframe=self.timeframe.value
+            )
             model_dir, model_prob = SignalGenerator.evaluate_model(latest_feat_series, active_model_artifact)
 
             # Determine direction & status code
