@@ -43,6 +43,18 @@ class KnowledgeManager:
         # Keep uploads inside the raw-data directory; never trust path components from a filename.
         safe_file_name = Path(str(file_name).replace("\\", "/")).name
         ext = Path(safe_file_name).suffix.lower()
+
+        # Idempotency check: prevent duplicate document and chunk ingestion
+        existing_doc = self.db.query(Document).filter(
+            Document.file_name == safe_file_name,
+            Document.file_size_bytes == file_size,
+            Document.processing_status == "completed"
+        ).first()
+        if existing_doc:
+            logger.info(f"Document {safe_file_name} already ingested. Returning existing record.")
+            existing_rules = self.db.query(TradingRule).filter(TradingRule.source_document == existing_doc.document_id).all()
+            return existing_doc, existing_rules
+
         storage_path = settings.DATA_RAW_DIR / f"{document_id}_{safe_file_name}"
         storage_path.parent.mkdir(parents=True, exist_ok=True)
         with open(storage_path, "wb") as f:
@@ -94,14 +106,21 @@ class KnowledgeManager:
                     page_number = int(page_value) if page_value is not None else None
                 except (TypeError, ValueError):
                     page_number = None
-                if sheet_name:
+
+                loc_type = part.get("location_type")
+                loc_ref = part.get("location_reference")
+                if loc_type and loc_ref:
+                    location_type = loc_type
+                    location_reference = loc_ref
+                elif sheet_name:
                     location_type = "sheet"
                     location_reference = f"Sheet: {str(sheet_name)[:100]}"
                 else:
                     location_type = "page"
                     location_reference = f"Page {page_number or index}"
+
                 first_line = next((line.strip() for line in chunk_text.splitlines() if line.strip()), "")
-                title = first_line[:255] or safe_file_name
+                title = part.get("title") or (first_line[:255] if first_line else safe_file_name)
                 chunk = KnowledgeChunk(
                     chunk_id=f"chunk_{uuid.uuid4().hex[:16]}",
                     document_id=document_id,
