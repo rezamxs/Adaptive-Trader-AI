@@ -370,3 +370,90 @@ The user identified five chats titled `تعریف و آموزش ماشین لر�
 4. Independently test MT5 timestamp/freshness and broker symbol economics on Windows in read-only mode.
 5. Continue Phase O strategy extraction only with the original source document accessible; keep all extracted rules unapproved.
 6. Keep PR #1 open and draft until the user explicitly chooses otherwise. Do not enable demo execution or send orders.
+
+
+---
+
+## 14. Chat-history consolidation — 2026-10-17
+
+This addendum corrects and supplements the earlier “Limits of the five-chat extraction” note in section 13. It records what was actually readable in the current Codex session and keeps user-submitted reports separate from independently verified GitHub evidence.
+
+### Scope and access
+
+- The ChatGPT project **ماشین** contains 19 listed ChatGPT conversations. This session read 18; one conversation, ID `6ad12f2a-b994-83eb-b8ac-3515f8c642bc`, could not be opened because the conversation host reported it unavailable. Do not claim all 19 transcripts were read.
+- The five numbered conversations titled `تعریف و آموزش ماشین لرنینگ (1)` through `(5)`, plus the base conversation `تعریف و آموزش ماشین لرنینگ`, were among the readable project history. The conversations include the user's earlier explicit request to read these chats and maintain one comprehensive Markdown handover in GitHub.
+- Two related Codex conversations about Hindsight setup were also read. Some earlier messages contain references to attached files whose contents were not returned by the chat-history tool. This is therefore a transcript-based consolidation of accessible messages, not independent inspection of every attachment, local file, database, report, or project commit.
+- The canonical file was fetched successfully from repository `rezamxs/Adaptive-Trader-AI`, ref `fix/core-correctness-audit`, on 2026-10-17. This session observed file blob SHA `238a7dbb866cc5659b56595361e6037577a2d9fe` before this update. No local checkout, branch HEAD, PR state, CI, database, or tests were inspected in this memory-only task.
+
+### Durable user instructions and collaboration preferences
+
+- Keep one canonical, cumulative handover at `docs/PROJECT_MEMORY.md`; do not create parallel memory files. Add material decisions, evidence, blockers, and phase changes here when they arise.
+- Before giving project advice, inspect relevant prior project chats and current repository evidence; do not make the user repeat context that is already available. Be candid, act on authorized work, avoid looping or asking the user to relay steps they have already delegated.
+- Reply in Persian, right-to-left where appropriate. Keep updates concise; explain difficult/important steps briefly and save detailed evidence in this file. The user prefers one coherent final report over repeated low-value progress messages.
+- The user has supplied `PromptEngineeringforLLMsFullFA.pdf` and `Prompt-Engineering-Lecture-Elvis.pdf` as preferred references for crafting professional prompts for Antigravity/other coding agents. Their contents were attachments and were not available in this session; use the references only when the files can actually be read.
+- The user wants Antigravity or other agents to review each other's output, run focused verification, and correct errors, with a manager/reviewer role for multi-agent work. Do not claim an agent or independent review ran unless it did.
+- The user disliked the current dashboard UI/UX and asked to defer redesign until after core correctness/data work.
+- The user expects a full-repository review when requesting one, not a superficial spot check. Explain what was actually covered and what was not.
+
+### Hindsight shared-memory attempt — status from chat history
+
+- The user's intended architecture is one project-specific Hindsight memory shared by ChatGPT, Antigravity, and Zed, while retaining `docs/PROJECT_MEMORY.md` as the canonical project record.
+- Project-specific bank slug used in setup instructions: `adaptive-trader-ai`. Do not invent or expose any bearer token. A bearer token was pasted in chat; treat it as compromised and never reuse or copy it into this file, prompts, logs, or tools.
+- The setup conversations show attempts to configure the custom MCP connector and inspect ChatGPT settings. They did **not** establish a successful Hindsight connection or successful retain/recall test. A Codex UI check reported a Free account, missing Developer mode, and a Plugins settings loading error; a later attempt was blocked by unsupported browser URL-policy automation. These are historical UI observations, not proof of the account's current state.
+- Do not claim shared cross-tool memory is operational until the connector is actually available and a write/read round-trip succeeds. GitHub memory updates are durable repository storage only; they do not automatically make every future chat read this file.
+
+### Phase O source inventory — user/agent report, not independently rechecked here
+
+A Phase O final report supplied in the project chats claimed that six files were inspected from the user's `فایل ها` folder. Preserve these as **reported** source metadata until verified from the actual files/repository:
+
+| Reported source | Reported size | Reported SHA-256 | Reported coverage |
+|---|---:|---|---|
+| `راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf` | 6,668,982 bytes | `85a219257e7d916a3461a997db578701e9de12f965358d073a34d9ecb035b7e5` | 15 pages |
+| `اصطلاح پرکاربرد در ترید.docx` | 26,014 bytes | `1350af69197010602db0f6708be5c472a7ba33a6b771f30a3e29125b98f91254` | 313 bilingual glossary paragraphs |
+| `جزوه_بازطراحی_پروفایل_و_اوردر_فلو_جلسات_۱۱_تا_۲۵.docx` | 102,711 bytes | `0e830dce54a94ef43a9086f7131201c6258bc2906f82d02170c9af227c668478` | 1,323 training paragraphs |
+| `_⁨پرایس اکشن⁩.pdf` | 167,667,492 bytes | `a6705cc4bcbcc3f3e3b83f5eda31177a1df8d39b87fe7ca75cb365d3bbd40f58` | 89 slides; report says vector text extracted |
+| `KX_EIGHT_MYTHS.pdf` | 902,194 bytes | `9cf1f18c03bc5cffb0bff5dca05d248cbef7ef7c3a96aaaa499b8f506e0795dd` | 39 pages / 1,401 text lines |
+| `6332607065685434115_526865520591018.zip` | 546,855 bytes | `e7a1795fa9857d41f02172a6b29d8b7ea7bc151049615a2eb8ca1e3a6a9bfa9c` | Report says 70 files: 40 assets, 4 governance, 14 references, 11 scripts, root `SKILL.md` |
+
+The report says all six sources were fully extracted and that the ZIP's 11 Python scripts were included in the audit. Earlier memory noted 11 ZIP scripts as possibly excluded. Treat that exclusion as **superseded by a later reported claim, not independently resolved**; inspect the archive and ingestion artifacts before closing it.
+
+### Phase O strategy extraction — later report claims and unresolved verification
+
+A later user-provided Phase O report claims:
+- 25 new operational price-action rules were added to a prior set of 27, for 52 total rule records across the six sources;
+- earlier counts of 6, 25, 27, 41, 47, and 52 refer to different snapshots/scopes, per the report's reconciliation;
+- all 52 rules are `UNAPPROVED`; the rule registry is claimed to be `docs/strategy/rule_registry.json`;
+- 20 scalper rules (`STR-001`–`STR-020`), five KX governance rules (`STR-PA-001`–`005`), two order-flow rules (`STR-OF-001`–`002`), and 25 newly detailed price-action rules were included;
+- the 25 newly reported rules cover 11 RTM setups (`STR-PA-RTM-001`–`011`, source pages 65–84), two supply/demand rules (`STR-PA-SND-001`–`002`, pages 58–64), five harmonic patterns (`STR-PA-HARM-001`–`005`, pages 43–49), five Lance Beggs setups (`STR-PA-BEGGS-001`–`005`, pages 33–35), one candle rule (`STR-PA-CNDL-001`, pages 21–29), and one oscillator calibration rule (`STR-PA-IND-001`, pages 88–89).
+- the report identifies human Phase P decisions: reject or replace the reported Martingale ladder with a fixed ATR-based stop; select candidate transparent price-action triggers (examples: QM, Caps, FL, TST); and approve rules individually.
+
+These rule counts, page mappings, extraction completeness, registry contents, and source files were reported in chat and are **not verified by this GitHub memory-file fetch**. Preserve all rules as pending/unapproved unless the actual registry and explicit user approval prove otherwise. The earlier section 8 roadmap entry calling Phase O the “next” strategy workflow is stale relative to this later report: Phase O is **reported complete**, Phase P decisions remain pending, and all downstream status still requires evidence.
+
+### Phase O remediation and test reports — contradictory reported snapshots
+
+The chats contain multiple results that must remain distinct:
+- An earlier Phase O report says the working tree was clean, no files changed, no commit/push occurred, and no tests ran at that snapshot; it described a reproduced document-deduplication defect.
+- Later reports claim fixes for SHA-256 content deduplication, a nullable/indexed `content_sha256` migration, safe handling of legacy documents and same-name/same-size collisions, and stricter DOCX session-heading parsing. Claimed files include `backend/app/models/document.py`, `backend/app/services/knowledge/manager.py`, `backend/app/services/knowledge/parsers.py`, `backend/app/services/knowledge/retriever.py`, `backend/app/core/config.py`, `migrations/versions/2026_10_15_add_content_sha256_to_documents.py`, and `backend/tests/unit/test_phase_o_three_defects.py`.
+- A later “Phase O Final Exit-Gate Audit” report says branch `fix/core-correctness-audit` was ahead of origin by one commit (`5aedb1a`), with five modified unstaged files and two untracked files (the test and migration above), no staged files, no new commit/push/merge, and `git diff --check` clean.
+- That same report claims `python -m pytest -o addopts="" --tb=no` returned 193 passed, 0 failed, 0 skipped, 1 warning in 74.74s; it says 11 focused three-defect tests, 7 evidence-remediation tests, and 28 strategy-registry/retrieval tests passed. Earlier reports claim 175 tests passed, while a Phase N audit had reported 157 passed and 17 failed. These are different historical snapshots and **none were rerun in this memory update**.
+- Fix claims include recovery from `IntegrityError` during concurrent ingestion, hash-backed deduplication, preserving distinct same-name/same-size content, parser false-positive reduction for “جلسه ۱۱–۲۵”, and migration compatibility. Inspect the live branch and tests before describing any as current implementation.
+- No claim in these reports authorizes trading. Keep `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, no `order_send`, and no live/demo order placement.
+
+### Phase Q2 and engineering workflow — reported only
+
+A user-provided Q2 report said the MT5 terminal was connected during a Sunday check but its last tick was about 39.8 hours old because the market session was closed; it reported zero orders and software/persistence checks passing while fresh-candle validation remained pending until the market reopened. The report included account identifiers, intentionally omitted here. This does not clear the MT5 timestamp/freshness blocker in section 6.
+
+The user also shared a `JEV` (decision-maker model) idea and a SubQ account with a small balance, and asked whether to use it. No architectural adoption, API-key use, spending, or model integration is verified here. Do not send secrets or add a paid service without a concrete scoped decision.
+
+### Corrected transcript-coverage statement
+
+The earlier section 13 statement that the project conversations were not individually readable is no longer accurate for this session: 18 of 19 listed ChatGPT project conversations and two related Codex Hindsight threads were opened and reviewed. One ChatGPT conversation remains unavailable, attached-file contents were not returned, and this task did not inspect repository source, CI, database, MT5, local files, or tests. Treat this as a material-history consolidation, not a full source audit or proof of current implementation.
+
+### Current next actions after this consolidation
+
+1. At the exact current branch head, inspect `docs/strategy/rule_registry.json`, the six source artifacts, Phase O reports, migration, ingestion/parser code, and related tests; reconcile the reported 52-rule inventory and approval states.
+2. Inspect branch HEAD, working tree, PR/CI, and the reported uncommitted changes before any code work; do not overwrite or commit unknown user changes.
+3. Re-run relevant tests only when requested or when implementing a change; this memory update ran no tests.
+4. Obtain explicit human decisions for Phase P rules; keep all rules unapproved until then.
+5. Continue the read-only MT5 timestamp/freshness investigation before data-dependent modeling/backtesting.
+6. If cross-tool memory remains desired, verify a working Hindsight OAuth connector and successful retain/recall round-trip; do not reuse the exposed token.
