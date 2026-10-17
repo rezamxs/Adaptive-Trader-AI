@@ -457,3 +457,57 @@ The earlier section 13 statement that the project conversations were not individ
 4. Obtain explicit human decisions for Phase P rules; keep all rules unapproved until then.
 5. Continue the read-only MT5 timestamp/freshness investigation before data-dependent modeling/backtesting.
 6. If cross-tool memory remains desired, verify a working Hindsight OAuth connector and successful retain/recall round-trip; do not reuse the exposed token.
+
+
+---
+
+## 15. Phase O repository verification — 2026-10-17
+
+This section records direct GitHub evidence gathered after the chat-history consolidation. It supersedes any conflicting Phase O status claims in earlier chat reports, while preserving those reports as history.
+
+### Repository and branch state — verified now
+
+- Repository: `rezamxs/Adaptive-Trader-AI`; default branch: `main`.
+- Branch `fix/core-correctness-audit` exists. Its current HEAD at this check was `cce107f016ff630d74960e2b8c7f593032b87852`, commit message `docs: consolidate machine project chat history`. The commit tree was `5b9f9c2cdc0a0bf2e47464b1d81e5a5ca6d7e556`.
+- Pull request #1 targets `main` and is `OPEN`, `DRAFT`, not merged; its head matched the branch SHA above.
+- GitHub returned two completed `core-regression` check runs with conclusion `success` for this SHA, and two successful `Core Regression Tests` workflow run records. The combined commit-status endpoint had no status entries. This verifies those reported CI checks only; it does not establish that the missing Phase O test module ran or that every repository test ran.
+- The Remote Desktop Commander device `<OWNER_WORKSTATION>` was offline (last seen 15 hours earlier). Local `G:\mash` branch/HEAD/working-tree state and the reported local unstaged changes therefore remain unknown. No local files were changed and no local tests were run in this audit.
+
+### Strategy registry — verified now
+
+At the branch SHA above, `docs/strategy/rule_registry.json` exists (blob `f1c55eb53d0dac19769a2679c831ba15e8ebfb3c`) and parses as JSON:
+- `schema_version: 1.1.0`, phase `Phase O Comprehensive Source Extraction`, declared and actual count both 52;
+- all 52 rules have status `UNAPPROVED`;
+- no duplicate `rule_id` values were found;
+- category counts are 20 `SCALPER_EA`, 30 `PRICE_ACTION`, and 2 `ORDER_FLOW`;
+- all 52 records have the registry's expected identifying, source-reference, exact-source-text, executable-definition, and approval-blocker fields populated;
+- the registry cites four direct source-document values: the scalper guide PDF (20 rules), the strategy ZIP (5), the order-flow/profile DOCX (2), and the price-action PDF (25). The glossary DOCX and `KX_EIGHT_MYTHS.pdf` appear in the source inventory but are not direct `source_document` values for registry rules.
+
+This verifies the stored registry structure and approval states, not the correctness of each rule against its original source and not user approval. No rule was activated.
+
+### Phase O source artifacts — incomplete independent verification
+
+The following project documents exist at this SHA: `docs/strategy/source_inventory.md`, `strategy_spec.md`, `ambiguities.md`, `data_requirements.md`, `reports/strategy_review.md`, and the strategy audit/reconciliation reports at `docs/strategy-source-audit.md`, `docs/strategy-rule-reconciliation.md`, `docs/strategy-evidence-validation.md`, `docs/strategy-validation-report.md`, and `docs/strategy-integration-report.md`.
+
+The source inventory and review report assert complete inspection and give file sizes/hashes for six originals. However, the recursive Git tree at this SHA contains no original PDF or DOCX source files. It contains a same-named ZIP only at `.agents/skills/6332607065685434115_526865520591018.zip`, with GitHub-reported size **534,605 bytes**, while the reported original ZIP size is **546,855 bytes**. This size difference means that repository copy cannot establish byte identity with the reported source archive. Thus the 52-rule inventory and the committed audit documents are verified as present, but the original six files, the claimed hashes, and complete source-to-rule fidelity remain unverified through GitHub alone. Recheck the actual files on the desktop when that device is online.
+
+### Reported Phase O deduplication/parser fixes — not present in current GitHub tree
+
+At the same SHA:
+- `backend/app/models/document.py` has no `content_sha256` field.
+- `backend/app/services/knowledge/manager.py` creates a random document ID and writes the upload before parsing; the checked implementation has no content-hash deduplication or same-content collision recovery.
+- `backend/app/services/knowledge/parsers.py` does not contain the reported DOCX session-heading pattern.
+- The reported `backend/tests/unit/test_phase_o_three_defects.py` is absent from the recursive Git tree (GitHub contents lookup returned 404).
+- The reported `migrations/versions/2026_10_15_add_content_sha256_to_documents.py` is absent (contents lookup returned 404). The tree only lists the initial-schema and 2026-10-12 validation-metrics migrations.
+- Existing knowledge tests are present, including `test_knowledge_ingestion_chunks.py`, `test_knowledge_pipeline.py`, and `test_knowledge_retrieval.py`; their existence alone does not prove the reported deduplication, legacy backfill, race-recovery, or parser regressions are covered.
+
+Therefore, the Phase O fixes and the 193-test report remain **reported local work** at most; they are not in the current GitHub branch snapshot checked here. They may exist as uncommitted files on the offline desktop, which cannot be ruled in or out. Do not merge or describe these fixes as shipped until local state is recovered and the implementation, migration, tests, and commit are inspected.
+
+### Audit conclusion and next actions
+
+- **Verified:** GitHub branch/HEAD, open draft PR #1, CI check conclusions, committed Phase O documentation, and a 52-entry all-`UNAPPROVED` registry with no duplicate IDs.
+- **Not verified:** source binaries/hashes, local dirty state, the reported Phase O code fixes, their migration/tests, and the reported 193-test local run.
+- Reconnect the desktop and inspect `G:\mash` status and diffs before making any code changes. Preserve the five reported modified files and two reported untracked paths if they still exist.
+- Recover the six source files and compare their actual size/hash with `docs/strategy/source_inventory.md`; inspect the 52 rule citations against source pages.
+- If the local Phase O changes are valid, add the missing migration, model/service/parser changes, and focused tests to the intended branch; then run the focused suite and full requested suite. Keep the PR draft and all rules unapproved pending the user's Phase P decisions.
+- Continue enforcing `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, and no order placement.
