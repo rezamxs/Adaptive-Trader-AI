@@ -9,6 +9,15 @@ from backend.app.core.config import settings
 SPEC_PATH = settings.DATA_PROCESSED_DIR / "dataset_spec_xauusd_m1.json"
 DATASET_PATH = settings.DATA_PROCESSED_DIR / "research_xauusd_m1_latest.csv"
 
+# The research dataset artifacts are gitignored runtime data (real market
+# exports); they exist on the owner's machine only. On CI / fresh clones the
+# suite skips instead of failing on missing files (same pattern as the C1
+# sentinel and the MT5-dependent modules).
+pytestmark = pytest.mark.skipif(
+    not (SPEC_PATH.is_file() and DATASET_PATH.is_file()),
+    reason="research dataset artifacts (data/processed/*) not present in this environment",
+)
+
 
 def test_research_dataset_spec_exists_and_valid():
     """Verify specification JSON artifact is present and adheres to structure."""

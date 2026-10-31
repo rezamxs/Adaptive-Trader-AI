@@ -16,7 +16,14 @@ import pytest
 from backend.app.core.config import settings
 from backend.app.services.market_data import mt5_provider as mt5_provider_module
 from backend.app.services.market_data.base import TimeFrame
-from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
+from backend.app.services.market_data.mt5_provider import MT5_AVAILABLE, MT5MarketDataProvider
+
+# Item 24 (CI): these tests monkeypatch the MT5 C-extension module and the
+# provider's connect() short-circuits to False when the Windows-only
+# MetaTrader5 package is absent — the whole module skips on ubuntu CI.
+pytestmark = pytest.mark.skipif(
+    not MT5_AVAILABLE, reason="requires the Windows-only MetaTrader5 package"
+)
 
 XCHIEF = "YourBroker-MT5"
 OFFSET_SECONDS = 3 * 3600
