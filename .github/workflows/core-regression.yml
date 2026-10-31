@@ -1,16 +1,19 @@
 name: Core Regression Tests
 
+# Item 24: the previous workflow ran only 12 hand-picked test files and
+# triggered only on main / fix/core-correctness-audit — branches like `reveo`
+# had NO coverage and tests (data_ml, tamper-hash, downgrade, risk,
+# test_db_models) never ran in CI. Now: the FULL supported suite runs.
 on:
   pull_request:
-    branches: [main]
   push:
-    branches: [main, fix/core-correctness-audit]
+    branches: [main, fix/core-correctness-audit, reveo]
   workflow_dispatch:
 
 jobs:
   core-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -23,20 +26,14 @@ jobs:
         run: |
           python -m compileall -q backend migrations
           python -c "import backend.app.main; from backend.app.api.v1.endpoints import backtest, documents, ml, signals"
-          DATABASE_URL=sqlite:///./migration-smoke.db python -m alembic upgrade head
-      - name: Run focused core regression suite
-        run: >-
-          python -m pytest
-          backend/tests/unit/test_signal_model_semantics.py
-          backend/tests/unit/test_position_sizer_tick_value.py
-          backend/tests/unit/test_risk_quote_freshness.py
-          backend/tests/unit/test_backtest_realistic.py
-          backend/tests/unit/test_model_promotion_governance.py
-          backend/tests/unit/test_mt5_time_conversion_utc.py
-          backend/tests/unit/test_rule_evaluation_fail_closed.py
-          backend/tests/unit/test_worker_freshness_guards.py
-          backend/tests/unit/test_knowledge_ingestion_chunks.py
-          backend/tests/unit/test_dataset_split_reproducibility.py
-          backend/tests/security/test_signal_mode_and_idempotency.py
-          backend/tests/security/test_demo_executor_security.py
-          -q
+          # Destination safety: Alembic refuses to run without an explicitly
+          # pinned ALEMBIC_DATABASE_URL, so the smoke migration pins the tmp DB.
+          ALEMBIC_DATABASE_URL=sqlite:///./migration-smoke.db python -m alembic upgrade head
+      - name: Run full backend test suite (MT5-terminal-dependent tests skip themselves)
+        # The MetaTrader5 python package is Windows-only: on ubuntu the
+        # provider import sets MT5_AVAILABLE=False and the dependent tests
+        # skip themselves (test_mt5_provider, test_audit_fixes_h6 are marked
+        # skipif). Everything else — data_ml, tamper/digest, downgrade,
+        # risk/circuit_breaker, test_db_models, knowledge, API integration —
+        # runs here on isolated in-memory/tmp databases.
+        run: python -m pytest backend/tests -q

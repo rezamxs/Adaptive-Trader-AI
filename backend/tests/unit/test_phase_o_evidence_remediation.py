@@ -153,7 +153,7 @@ def test_deterministic_idempotent_ingestion_fresh_db():
 
 def test_rule_registry_integrity_all_52_unapproved():
     """Verify all 52 rules in rule_registry.json remain UNAPPROVED with exact blocked gates."""
-    reg_path = Path("docs/strategy/rule_registry.json")
+    reg_path = Path(__file__).resolve().parents[3] / "docs/strategy/rule_registry.json"
     assert reg_path.exists()
 
     with open(reg_path, "r", encoding="utf-8") as f:

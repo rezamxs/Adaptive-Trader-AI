@@ -1,10 +1,10 @@
 # 🚀 سامانه معاملاتی تطبیقی Adaptive Trader AI
 ### سامانه ماژولار مبتنی بر یادگیری ماشین، تحلیل قوانین و اتصال امن به MetaTrader 5
 
-[![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.143.0-009688.svg)](https://fastapi.tiangolo.com/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-%E2%89%A50.110-009688.svg)](https://fastapi.tiangolo.com/)
 [![MetaTrader 5](https://img.shields.io/badge/MetaTrader5-Demo_Only-red.svg)](https://www.metatrader5.com/)
-[![Tests Passing](https://img.shields.io/badge/Tests-50%2F50%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-400_passing-brightgreen.svg)]()
 [![Security Mode](https://img.shields.io/badge/Safety_Gate-Fail--Closed-success.svg)]()
 
 ---
@@ -44,7 +44,7 @@ adaptive-trader-ai/
 │   │   │   ├── signal/      # تولید سیگنال با بررسی تکرار (Idempotency)
 │   │   │   └── execution/   # مجری محدود سفارشات دمو با گیت‌های امنیتی
 │   │   └── main.py          # برنامه اصلی FastAPI و سرویس فرانت‌اند
-│   └── tests/               # سوئیت ۵۰ تستی خودکار (واحد، یکپارچگی، امنیت، دیتاست)
+│   └── tests/               # سوئیت ۴۰۰ تستی خودکار (واحد، یکپارچگی، امنیت، دیتاست)
 ├── frontend/                # داشبورد وب فارسی راست‌چین (RTL)
 ├── data/                    # داده‌های خام و پردازش‌شده
 ├── artifacts/               # خروجی مدل‌های هوش مصنوعی و گزارش‌های بکتست
@@ -69,6 +69,12 @@ adaptive-trader-ai/
 - پایتون نسخه ۳.۱۱ یا بالاتر (در محیط با پایتون ۳.۱۴ آزمایش شده است)
 - ترمینال MetaTrader 5 (نصب و با حساب دمو لاگین شده)
 
+### نصب وابستگی‌ها (محیط قابل بازتولید)
+```powershell
+python -m pip install -r requirements-lock.txt
+```
+`requirements-lock.txt` کل بستار ترانزیتیو (runtime + ابزار تست) را روی **دقیقاً همان نسخه‌هایی** که سوئیت ۴۰۰ تستی رویشان سبز شده پین می‌کند.
+
 ### ۱. ساخت فایل تنظیمات محیطی
 فایل نمونه `.env.example` را به `.env` کپی کنید:
 ```powershell
@@ -78,8 +84,16 @@ Copy-Item .env.example .env
 ### ۲. اجرای پایگاه داده و مهاجرت‌ها
 ```powershell
 python -m backend.app.db.init_db
+$env:ALEMBIC_DATABASE_URL="sqlite:///G:/mash/adaptive_trader.db"
 alembic upgrade head
 ```
+`init_db` فقط جدول‌های غایب را می‌سازد و دیگر ستون به جدول موجود اضافه نمی‌کند؛ هر تغییر schema از این به بعد فقط با `alembic upgrade head` اعمال می‌شود. روی هر دیتابیس موجود، اجرای این دستور **الزامی** است وگرنه بوت با `OperationalError` (ستون ناموجود) شکست می‌خورد.
+
+**ایمنی مقصد مهاجرت:** Alembic بدون `ALEMBIC_DATABASE_URL` صریح **متوقف می‌شود** (خطای RuntimeError) و هرگز به‌صورت خودکار دیتابیس اپ را حدس نمی‌زند — این محافظ عمدی در برابر اجرای اشتباه مهاجرت روی دیتابیس اشتباه است. برای مهاجرت روی دیتابیس فعال، متغیر بالا را با مسیر مطلق همان فایل ست کنید.
+
+**هشدار downgrade مخرب (M21):** `alembic downgrade base` نسخهٔ پایه است که معکوس آن `Base.metadata.drop_all` است — **تمام جدول‌ها با تمام داده‌ها حذف می‌شوند**. این دستور بدون اجازهٔ صریح اجرا نمی‌شود: برای همان یک دستور باید `ALEMBIC_ALLOW_DESTRUCTIVE_DOWNGRADE=yes` ست شود؛ در غیر این صورت با RuntimeError متوقف می‌گردد. این محافظ جایگزین پین‌کردن مقصد نیست؛ هر دو لازم‌اند. downgradeهای میانی (مثل `downgrade -1` یا رسیدن به یک revision مشخص) این پرچم را نمی‌خواهند.
+
+**دیتابیس فعال و نسخه‌های جانبی (مورد ۳۹):** دیتابیس فعال همیشه `adaptive_trader.db` در **ریشهٔ مخزن** است (مسیر مطلق در `backend/app/core/config.py`). دو فایل قدیمی در مخزن وجود دارند که توسط هیچ کدی استفاده نمی‌شوند: `backend/adaptive_trader.db` (بدون جدول alembic_version، از دوران قبل از مسیر مطلق) و `adaptive_trader_backup.db` (در revision پایه `01f57c481926` عقب است). این فایل‌ها حذف نشده‌اند؛ **هرگز آن‌ها را به‌عنوان دیتابیس فعال جایگزین نکنید** — در صورت استفادهٔ ضروری از backup، ابتدا فایل را به ریشه بیاورید و سپس `alembic upgrade head` را اجرا کنید تا به جدیدترین revision برسد.
 
 ### ۳. اجرای سرور و داشبورد فارسی
 ```powershell
@@ -87,6 +101,8 @@ python -m backend.app.main
 ```
 سپس مرورگر خود را باز کرده و به آدرس زیر مراجعه فرمایید:
 👉 **`http://localhost:8000/dashboard`** یا **`http://localhost:8000/`**
+
+نکتهٔ احراز هویت: endpointهای تغییردهندهٔ وضعیت (تأیید قانون، آپلود سند، آموزش/ارتقای مدل، بکتست، صدور سیگنال، توقف اضطراری) هدر `X-API-TOKEN` را می‌خواهند. توکن از `API_TOKEN` در تنظیمات می‌آید؛ اگر ست نشده باشد سرور در هر اجرا یک توکن تصادفی fail-closed تولید می‌کند که **در هیچ لاگی نوشته نمی‌شود** — پس مقدار `API_TOKEN` را خودتان در `.env` ست کنید تا قابل پیش‌بینی باشد. در داشبورد، دکمهٔ «🔑 توکن API» را بزنید و مقدار را وارد کنید؛ توکن **فقط در حافظهٔ همان صفحه** می‌ماند (هرگز در `localStorage` یا `sessionStorage` نوشته نمی‌شود) و بعد از هر reload باید دوباره وارد شود.
 
 مستندات تعاملی Swagger API نیز در آدرس زیر در دسترس است:
 👉 **`http://localhost:8000/docs`**
@@ -98,7 +114,7 @@ python -m backend.app.main
 تمام بخش‌های سیستم دارای آزمون‌های خودکار هستند:
 
 ```powershell
-# اجرای کامل ۵۰ آزمون
+# اجرای کامل ۴۰۰ آزمون
 pytest backend/tests -v
 
 # اجرای آزمون‌های امنیتی و گیت‌های ریسک

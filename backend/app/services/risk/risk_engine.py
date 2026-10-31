@@ -16,6 +16,42 @@ from backend.app.services.risk.position_sizer import PositionSizer
 class RiskEngine:
     """Evaluates trading proposals against comprehensive risk policies."""
 
+    GRID_COMMENT_PREFIX = "Demo AI: "
+
+    @staticmethod
+    def compute_grid_martingale_drawdown(positions) -> Optional[float]:
+        """Martingale-ceiling input = the floating loss of OUR demo-grid
+        positions ONLY (identified by the broker comment prefix the executor
+        writes), NOT the whole-account floating loss (manual positions on the
+        same account are excluded — item 4).
+
+        Returns None (fail closed) when the position list itself is
+        unverifiable or a grid position carries an unusable profit value.
+        Never substitutes zero for missing data.
+        """
+        if positions is None:
+            return None
+        total_floating = 0.0
+        grid_positions = 0
+        for position in positions:
+            comment = str(getattr(position, "comment", "") or "")
+            if RiskEngine.GRID_COMMENT_PREFIX not in comment:
+                continue  # manual/unrelated position: not part of the grid
+            grid_positions += 1
+            profit = getattr(position, "profit", None)
+            if profit is None:
+                return None
+            try:
+                floating = float(profit)
+            except (TypeError, ValueError):
+                return None
+            if not math.isfinite(floating):
+                return None
+            total_floating += floating
+        if grid_positions == 0:
+            return 0.0
+        return max(0.0, -total_floating)
+
     def __init__(self, db: Session, margin_estimator: Optional[Callable[..., Optional[float]]] = None):
         self.db = db
         self.margin_estimator = margin_estimator
@@ -88,8 +124,12 @@ class RiskEngine:
             return False, 0.0, "REJECTED_INVALID_PRICE: Non-positive price or inverted quote."
         if direction not in {"BUY", "SELL"}:
             return False, 0.0, "REJECTED_INVALID_DIRECTION: Direction must be BUY or SELL."
-        account_values = (account.equity, account.free_margin, account.leverage)
+        # Fail-closed on missing account context: AttributeError on a None
+        # account would bypass the REJECTED contract instead of honoring it.
+        if account is None:
+            return False, 0.0, "REJECTED_INVALID_ACCOUNT: Account data is unavailable (fail-closed)."
         try:
+            account_values = (account.equity, account.free_margin, account.leverage)
             if not all(math.isfinite(float(value)) for value in account_values):
                 return False, 0.0, "REJECTED_INVALID_ACCOUNT: Equity, free margin, or leverage is non-finite."
             if float(account.equity) <= 0 or float(account.free_margin) < 0 or int(account.leverage) <= 0:

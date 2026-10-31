@@ -511,3 +511,423 @@ Therefore, the Phase O fixes and the 193-test report remain **reported local wor
 - Recover the six source files and compare their actual size/hash with `docs/strategy/source_inventory.md`; inspect the 52 rule citations against source pages.
 - If the local Phase O changes are valid, add the missing migration, model/service/parser changes, and focused tests to the intended branch; then run the focused suite and full requested suite. Keep the PR draft and all rules unapproved pending the user's Phase P decisions.
 - Continue enforcing `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, and no order placement.
+
+---
+
+## 16. Shared cross-agent memory / Hindsight integration — 2026-10-16
+
+### Goal
+
+Use one project-scoped Hindsight memory bank across ChatGPT, Antigravity, and the user's coding editor where supported, while keeping `docs/PROJECT_MEMORY.md` as the canonical, version-controlled project handover. Hindsight is a retrieval layer, not the authority for current code, Git state, test results, trading settings, or secrets.
+
+### Verified local/repository state on 2026-10-16
+
+- Local workspace: `G:\\mash`.
+- Local branch: `fix/core-correctness-audit`; local HEAD observed as `5aedb1a3c95728ddab67beeed03aac3cd1ac6489`; local branch reports `ahead 1` of `origin/fix/core-correctness-audit`.
+- GitHub branch head observed separately as `9510c764ae89e63d559d3fc6ba214eaa30ff039f`. The divergence must be reconciled deliberately; do not reset, rebase, push, or overwrite local work as part of memory setup.
+- Existing memory file confirmed locally and on the working GitHub branch: `docs/PROJECT_MEMORY.md`. Do not create a parallel master-memory file.
+- Existing local working-tree changes before this section was appended: five modified tracked files (`backend/app/core/config.py`, `backend/app/models/document.py`, `backend/app/services/knowledge/manager.py`, `backend/app/services/knowledge/parsers.py`, `backend/app/services/knowledge/retriever.py`) and two untracked files (`backend/tests/unit/test_phase_o_three_defects.py`, `migrations/versions/2026_10_15_add_content_sha256_to_documents.py`). Treat these as user-owned; do not discard or stage them.
+- Antigravity 2.23.1 is installed and running. Cursor 3.18.25 and VS Code are installed.
+- A process named `ZCode.exe` is running from `G:\\Projects\\ZCode\\ZCode.exe`; it has not yet been verified as the Zed editor. Do not modify its configuration until its identity/config format is confirmed.
+- Hindsight CLI/server, `uv`/`uvx`, Docker, and Ollama were not found on PATH during the initial inspection. This does not prove they cannot exist elsewhere, but no working local Hindsight deployment has been verified.
+- No Hindsight account token/API key was available through the inspected tool results. Never search for, print, or store secret values in this file.
+
+### Architecture decision
+
+1. `docs/PROJECT_MEMORY.md` remains the canonical, human-readable project handover and is committed with ordinary project documentation only after the user reviews the diff.
+2. Hindsight should use a dedicated bank such as `adaptive-trader-ai`, isolated from unrelated personal memories.
+3. Store durable decisions, user-approved constraints, known failures, verified test evidence, unresolved questions, and handover summaries. Do not store credentials, raw account identifiers, API keys, or unverified agent claims as facts.
+4. Each agent must recall relevant context before substantial work and retain a concise update after material decisions or verified results. Retrieved memories are hints; validate current branch/HEAD, source, database state, and tests before acting.
+5. Preserve evidence labels: `VERIFIED`, `REPORTED`, `UNRESOLVED`, and `SUPERSEDED`. A newer memory does not erase an older failure; record why a status changed.
+6. Keep trading-safety rules fail-closed: `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, no orders, no rule approvals, and no demo/live activation without explicit user authorization.
+
+### Integration feasibility and blockers
+
+- Hindsight documents a built-in MCP endpoint for self-hosted deployments and a hosted Cloud MCP connection. Zed has a documented `hindsight-zed` setup path. Client setup is client-specific and must be verified with a read/write/recall smoke test.
+- ChatGPT custom MCP apps/connectors require Developer Mode and a supported plan according to the current Hindsight integration documentation. The user's current ChatGPT plan is Free, so direct ChatGPT-to-Hindsight MCP integration is currently blocked unless account capabilities change. Do not claim ChatGPT is connected.
+- Antigravity is installed, but its actual MCP configuration location and support for the chosen Hindsight transport still need to be verified. Do not write guessed settings.
+- The running `ZCode.exe` application must be identified before deciding whether the Zed integration applies.
+- Hosted Hindsight requires the user to authenticate and authorize access/create a token or connection. No credentials are available in this session. Do not create an account, incur paid usage, or use a third-party API balance without explicit user authorization.
+- A local Hindsight server is not yet configured. It may require a supported LLM provider or a suitable local model; do not install a large local model on the reported low-memory laptop without benchmarking and user approval.
+
+### Next actions
+
+1. Confirm whether `ZCode.exe` is Zed or another editor and locate Antigravity's real MCP configuration without exposing secrets.
+2. Ask the user to open Hindsight Cloud, sign in, and create/select the dedicated `adaptive-trader-ai` bank using the official connection flow; obtain the appropriate supported connection details through the UI. Never ask the user to paste a secret token into chat if a secure setup path is available.
+3. Configure Antigravity and the confirmed coding editor with the supported integration; preserve existing MCP server entries and validate JSON/config syntax before saving.
+4. Run a smoke test: retain a harmless unique test fact in the project bank, recall it from a new session in each connected coding client, then delete/mark the test record if the service supports it.
+5. For ChatGPT, verify plan-level MCP availability before promising direct access. If unavailable, continue using this canonical memory file and explicit handover summaries; do not imply that Hindsight memories are automatically visible to ChatGPT.
+6. Update this section with exact client versions, config locations (not secret values), successful test evidence, remaining blockers, and date.
+7. Do not commit or push this documentation update until the user reviews the complete working-tree diff; do not alter trading code or database state for this integration task.
+
+### Progress update — 2026-10-16 (setup attempt)
+
+- Created the previously absent Antigravity global MCP config at `<OWNER_HOME>\\.gemini\\config\\mcp_config.json` with one entry, `hindsight-adaptive-trader-ai`, pointing to `https://api.hindsight.vectorize.io/mcp/adaptive-trader-ai/`. No token or secret is stored in the file.
+- Parsed the new config successfully as JSON and confirmed the endpoint is reachable over HTTPS (GET returned HTTP 200). This is only a network reachability check; it does **not** prove MCP initialization, OAuth authorization, bank creation, or successful memory read/write.
+- Antigravity was already running when the config was created. Its MCP server list has not yet been reloaded and no authenticated Hindsight connection has been verified. Use Antigravity's MCP Servers / Manage MCP Servers UI to reload and complete authentication if prompted.
+- Hindsight Cloud account/bank ownership and OAuth authorization remain pending user authentication. Do not attempt to bypass login, invent credentials, or claim the service is connected.
+- ChatGPT is still not connected. The current Free plan is a blocker for custom MCP app/connector setup according to the current Hindsight/ChatGPT integration documentation.
+- ZCode 3.15.3.8237 is installed and running, but it is a distinct product named ZCode, not verified as the Zed editor. No ZCode MCP settings were changed.
+- No Git commit, push, merge, database migration, trading configuration change, or order submission was performed as part of this memory setup.
+
+### Progress update — 2026-10-16 (ZCode MCP)
+
+- Identified the running editor correctly as **ZCode Desktop 3.15.3.8237** (not Zed).
+- ZCode's user config `<OWNER_HOME>\\.zcode\\cli\\config.json` existed and had valid JSON with `plugins` and `skills`, but no MCP servers. Created a backup at `<OWNER_HOME>\\.zcode\\cli\\config.json.pre-hindsight-20261016.bak`, then added the Hindsight HTTP endpoint under `mcp.servers.hindsight-adaptive-trader-ai`. The existing top-level settings were preserved and post-write JSON validation passed.
+- Tested the Hindsight MCP endpoint using an unauthenticated JSON-RPC `tools/list` request: it returned HTTP 401 with a WWW-Authenticate challenge. This confirms the endpoint requires authentication; it does not confirm successful OAuth or tool access.
+- The ZCode config was written while the app was running. Its MCP server list has not yet been refreshed/restarted, and the user-facing authorization flow has not been completed. No memory write/read smoke test has passed yet.
+- Antigravity's global config was created separately and points to the same project bank. It likewise needs reload and authentication.
+- No Hindsight API key, token, or password was stored in either config. No Git commit/push, database change, or trading action was performed.
+
+### Progress update — 2026-10-16 (agent instructions)
+
+- Added a new repository-root `AGENTS.md` (16 lines) as an **instruction layer**, not a second memory store. It tells coding agents to read `docs/PROJECT_MEMORY.md`, use the Hindsight bank when actually connected, preserve evidence labels, update the canonical memory after material events, and obey the project's no-trading/no-unapproved-Git-operation constraints.
+- This file is local and untracked at the time of this note. Neither it nor the 58-line memory update has been committed or pushed, so the GitHub copy remains unchanged until the user explicitly authorizes a reviewed commit/push.
+- ChatGPT's direct Hindsight MCP connection remains blocked on the current Free plan. The available GitHub connector can read the repository's memory file once the update is pushed; until then, this conversation's local copy and prior context are the available sources. Do not claim automatic Hindsight recall in ChatGPT.
+
+
+### Progress update — 2026-10-16 (user signed in; client verification still pending)
+
+- The user reports that they connected/signed in to the Hindsight account. This is **user-reported**; account/session state was not independently inspected.
+- Re-read both local MCP configs and confirmed the Hindsight endpoint entries remain present in Antigravity's `mcp_config.json` and ZCode's `cli/config.json`. ZCode's existing settings are still present; the pre-change backup remains available.
+- Searched Antigravity's current `main.log` and the current-day ZCode logs for the literal `hindsight`; no matches were found. This indicates there is no log evidence yet that either client initialized the configured server. It does not prove the apps failed; config reload/authorization may not have been triggered.
+- No Hindsight MCP tools are exposed to this ChatGPT session, so I cannot directly call the bank's retain/recall operations from here. The prior unauthenticated JSON-RPC test returned HTTP 401. Therefore, no successful authenticated memory write/read smoke test has been demonstrated, and the shared bank must not be described as fully connected yet.
+- Next required client-side verification: reload/restart the MCP server from each app's MCP settings UI and complete the authorization flow if prompted; then confirm the server is listed as connected and perform a harmless retain/recall test. Avoid terminating active editor processes blindly because unsaved work may exist.
+- No commit/push, trading action, database migration, or project code change was performed in this verification pass.
+
+### Progress update — 2026-10-16 (ZCode CLI MCP config fix and independent verification)
+
+**What was done:**
+- Independently audited the ZCode MCP configuration at `<OWNER_HOME>\.zcode\cli\config.json`. Found one schema defect: the field `"enable": true` was not the canonical name; corrected to `"enabled": true` per the official ZCode MCP schema (legacy `enable` may be migrated by CLI but not by the Desktop app session manager). Also increased `timeoutMs` from `30000` to `60000` because OAuth handshake adds latency.
+- Validated the corrected JSON: `type: "http"`, `url`, `enabled`, `timeoutMs` — zero unknown keys. The schema is strict; an unknown key silently drops the server entry.
+- Confirmed no workspace-level MCP config exists (`G:\mash\.zcode/` absent; no `.agents/mcp.json` at user or workspace scope). The user-level config is the only active source.
+- All existing `plugins` and `skills` settings in the config were preserved unchanged.
+
+**What is proven (verified now):**
+- The Hindsight OAuth discovery is functional: `GET /.well-known/oauth-protected-resource` and `GET /.well-known/oauth-authorization-server` both return valid JSON. The server supports `authorization_code` grant with PKCE (`S256`), dynamic client registration at `/oauth/register`, and scopes `openid profile email offline_access`.
+- An unauthenticated `POST` to the MCP endpoint returns HTTP 401 with `WWW-Authenticate: Bearer resource_metadata=...`. This confirms the endpoint is reachable and authentication-gated.
+- ZCode Desktop logs (`<OWNER_HOME>\.zcode\v2\logs\2026-10-16.log`) show MCP initialization only for official plugin servers (`image_search`). No `hindsight` entry appeared in any log line. The config was written while ZCode was running; the server list was not reloaded.
+- No `mcp__hindsight*` tools are registered in this CLI session's tool namespace.
+
+**What remains unresolved:**
+1. **ZCode Desktop must reload the MCP server list.** The config file is correct, but the running process hasn't picked it up. Action: open **Settings → MCP** in ZCode Desktop, verify `hindsight-adaptive-trader-ai` appears, and click to reconnect/enable it. If OAuth is prompted, complete the browser-based authorization. Do not paste tokens into chat.
+2. **No authenticated smoke test has passed.** Until a ZCode session can list the server's tools (e.g., `retain`, `recall`, `forget`) and execute a harmless recall, the connection is not confirmed.
+3. **This CLI session started before the config fix.** A new `kiro-cli chat` session in `G:\mash` will read the corrected config and attempt MCP server connection at startup, including the OAuth flow.
+
+**Files changed:**
+- `<OWNER_HOME>\.zcode\cli\config.json` — field `enable` → `enabled`, `timeoutMs` 30000 → 60000 in the `hindsight-adaptive-trader-ai` server entry. All other settings preserved.
+- `G:\mash\docs\PROJECT_MEMORY.md` — this update appended.
+
+**Safety:** No Git commit/push, database migration, trading config change, order submission, or strategy rule activation was performed.
+
+### Progress update — 2026-10-16 (Antigravity MCP verification and status)
+
+**What was done:**
+- Audited Antigravity global MCP configuration at `<OWNER_HOME>\.gemini\config\mcp_config.json`.
+- Connected directly to Antigravity's running Language Server on `127.0.0.1:49235` (HTTPS) using internal CSRF token authentication (`x-codeium-csrf-token`).
+- Executed `RefreshMcpServers` RPC to force the running Language Server to reload configuration live without killing the process.
+- Inspected the live server state via `GetMcpServerStates` RPC.
+
+**What is proven (verified now):**
+- Antigravity successfully loaded the server definition `hindsight-adaptive-trader-ai` from `<OWNER_HOME>\.gemini\config\mcp_config.json`.
+- Live connection state is `status: MCP_SERVER_STATUS_ERROR` with exact error: `calling "initialize": sending "initialize": Unauthorized`.
+- Hindsight Cloud endpoint `https://api.hindsight.vectorize.io/mcp/adaptive-trader-ai/` challenges the connection with HTTP 401 and `WWW-Authenticate: Bearer resource_metadata="https://api.hindsight.vectorize.io/.well-known/oauth-protected-resource"`.
+- Antigravity's Language Server binary contains the full OAuth pipeline (`discoverProtectedResourceMetadata`, `discoverAuthServerMetadata`, `registerClient`, PKCE `S256`, `CompleteMcpOAuth`), but the OAuth handshake has not been triggered or completed for this server instance.
+- Because `initialize` failed with 401 Unauthorized, no Hindsight MCP tools (`retain`, `recall`, etc.) are registered or callable in the agent toolset.
+- No secrets or credentials were written to configuration files or exposed in logs.
+
+**What remains unresolved / required manual action:**
+1. Open Antigravity Desktop UI, navigate to **Additional Options (...) → MCP Servers** (or **Skills & Customizations → MCP Servers**).
+2. Locate `hindsight-adaptive-trader-ai` (status: Error / Sign-in required). Click the **Sign in** / **Authenticate** button to trigger the browser OAuth authorization flow for Hindsight Cloud.
+3. Once the OAuth authorization flow completes in the browser, Antigravity will save the token and the server status will transition to `MCP_SERVER_STATUS_READY`.
+4. Perform the smoke test (`retain` a test fact, then `recall`) once tools become visible.
+
+**Safety:** Kept `EXECUTION_MODE=SIGNAL_ONLY`, no trading actions, no database changes, no Git commits or branch modifications.
+
+---
+
+## 17. Git divergence reconciliation and Phase O fix session — 2026-10-17 (ZCode/جک)
+
+**Evidence labels:** items marked VERIFIED were executed and observed directly in this session; REPORTED items come from sub-agent output or earlier reports.
+
+### Verified now (this session, read-only + minimal fix)
+
+- Local branch `fix/core-correctness-audit`, HEAD `5aedb1a3c95728ddab67beeed03aac3cd1ac6489`, was diverged from remote: remote advanced with 2 docs-only commits (`cce107f` chat-history consolidation, `4a8bd1a` Phase O repository audit) by rezamxs 2026-10-17 evening.
+- Remote `4a8bd1a` had drifted into the same 5 code files local had as uncommitted work (manager.py, parsers.py, retriever.py idempotency/provenance removed; `backend/tests/unit/test_phase_o_evidence_remediation.py` deleted from remote tree, 199 lines).
+- Verified rule-regression evidence in remote registry edits: `docs/strategy/rule_registry.json` blocker bullets for STR-012 (Gambler's Ruin / Negative Skewness evidence text) and STR-015 (floating spread evidence) were shortened; local richer versions retained.
+- PR #1 verified via `gh pr view 1`: OPEN, DRAFT, MERGEABLE, head `4a8bd1a`, base `main`, two `core-regression` checks SUCCESS (runs 39045688243, 39045684235, 2026-10-17T15:35Z).
+- Local uncommitted state preserved: 5 modified files + untracked `backend/tests/unit/test_phase_o_three_defects.py` (14/14 passed locally) and `migrations/versions/2026_10_15_add_content_sha256_to_documents.py`. Nothing was committed, pushed, stashed, or discarded in this session pending user authorization.
+
+### Defect found and fixed (verified)
+
+- `backend/tests/unit/test_phase_o_evidence_remediation.py:156` opened `Path("docs/strategy/rule_registry.json")` relative to CWD; test passed only when pytest ran from repo root, broke from `backend/`.
+- Fix applied (one line, no logic change): `reg_path = Path(__file__).resolve().parents[3] / "docs/strategy/rule_registry.json"`.
+- Test evidence: from repo root `7 passed in 4.33s`; from `backend/` `7 passed in 4.16s`; both Phase O modules together `20 passed, 1 skipped in 5.21s` (1 skip pre-existing, environment-dependent; not investigated yet).
+
+### Sub-agent output assessment
+
+- Sub-agent (Git agent prompt) partially fixed the CWD path issue but reported it garbled/incomplete; its claims were NOT accepted without reproduction — fix was re-derived from source (`Path(__file__)` anchor) and verified by direct test runs above.
+
+### Superseded
+
+- Earlier session belief that Hindsight bank `adaptive-trader-ai` was unreachable ("Bank not found") is SUPERSEDED: `get_bank` succeeded and `sync_retain`/`recall` round-trip verified twice this day (project snapshot + divergence audit stored). Hindsight live memory is operational in ZCode.
+
+### Remaining risks / unresolved
+
+1. Working tree still diverged from origin: no merge, commit, or push yet (needs explicit user authorization per project protocol).
+2. Full-suite local run not executed this session (last REPORTED figures only: 193 passed from Phase O exit-gate report; 175 from older Phase N report — reconcile after merge).
+3. MT5 timestamp/freshness ~3h blocker still open (section 6); no data-dependent work authorized until resolved.
+4. Two pre-existing skipping anomalies listed above; plus intermittent stray untracked file `ِ‪…Purpose…` (unusual Unicode-named file in git status, unexamined, priority low).
+5. Phase P human rule approvals still pending; all 52 rules remain UNAPPROVED.
+
+### Next actions (priority order)
+
+1. User-authorized merge: `git merge origin/fix/core-correctness-audit`, resolve conflicts keeping local rich versions for the 5 code files, reconcile `docs/PROJECT_MEMORY.md` (both remote sections 14/15 and local section 16+17), restore `test_phase_o_evidence_remediation.py` from `5aedb1a`, single reconciliation commit, then full suite before any push.
+2. After merge+commit: user-authorized push to update PR #1 head.
+3. Then MT5 timestamp/freshness read-only investigation.
+4. Then Phase P approval workflow.
+
+**Safety:** `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, no orders, no rule approvals, no live/demo execution; database untouched.
+
+---
+
+## 18. ECC toolchain installed for OpenCode — 2026-10-22
+
+**VERIFIED (this session):**
+- ECC (github.com/affaan-m/ECC) v2.2.3, source clone at `<OWNER_HOME>\ECC` (commit `90606c8`), installed for the OpenCode harness per the repo's documented OpenCode path (`npm install && npm run build:opencode`; installer `node scripts/ecc.js install --profile full --target opencode --enable-hooks`).
+- Install root: `<OWNER_HOME>\.config\opencode\` — 311 skill directories, 103 command files, `hooks\hooks.json` present. Install-state: `ecc-install-state.json`; `ecc doctor --target opencode` returned OK (1/1, no issues).
+- The user-owned `opencode.json` was preserved (installer skipped it: not ECC-owned). Node v24.15.0, Git 2.54.0 (Windows).
+- All files are OUTSIDE `G:\mash`; no repository changes were made for this install. No commit/push of the memory update.
+- New skills/commands appear in the OpenCode session skill list only after the session reloads the config directory (new session or reload).
+
+**REPORTED / not yet observed:** hook runtime behavior inside OpenCode sessions (hooks copied but no live session observed firing them yet in this session).
+
+**Next action:** start a fresh OpenCode session and verify ECC commands/skills are discoverable; remove nothing; optional cleanup later via `node scripts/ecc.js uninstall --target opencode --dry-run` from `<OWNER_HOME>\ECC`.
+
+---
+
+## 19. Audit-fix execution H1..H7 + C1 (uncommitted, working tree) — 2026-10-24
+
+**Scope:** user-ordered fix of exactly 8 audit findings (H1 promotion-gate metric attestation, H2 dashboard XSS, H3 defusedxml, H4 Alembic ownership of drift + real baseline downgrade, H5 fail-closed market 503, H6 demo-order PENDING-before-dispatch, H7 streamed upload, C1 API-token auth on state-changing endpoints). ECC reviewer agents were NOT available as subagent types in this harness; each step was executed manually in TDD (red → fix → green) with the same gate criteria. Hindsight MCP unavailable this session.
+
+**VERIFIED now (all with tests, full suite 223 passed / 0 failed — `python -m pytest backend/tests -q -o addopts=""`):**
+- **C1** — `backend/app/core/auth.py:16` `require_api_token` (fail-closed `settings.API_TOKEN` bootstrap in `backend/app/core/config.py`; `X-API-TOKEN` header; `hmac.compare_digest`). Applied to 9 state-changing POST endpoints: `system.py:111,119`, `rules.py:32,42`, `signals.py:47,98`, `ml.py:51,122`, `backtest.py:55`, `documents.py:31`. Tests: `backend/tests/unit/test_audit_fixes_corr1.py` (C1 block).
+- **H2** — `frontend/index.html:852` `escapeHtml` + `esc()`; all server-controlled interpolations in innerHTML sinks wrapped (31 uses). Tests: H2 block of `test_audit_fixes_corr1.py` (static sink scan + node-evaluated vector test).
+- **H3** — `backend/app/services/knowledge/parsers.py:161` defusedxml `ElementTree` (DOCTYPE/ENTITY forbidden by library); tests incl. billion-laughs zip bomb.
+- **H5** — `backend/app/api/v1/endpoints/market.py:17` 503 "refuse to serve mock data"; MockMarketDataProvider fallback removed; factory test asserts raise.
+- **H6** — `backend/app/services/execution/demo_executor.py:171-226`: single DemoOrder row committed as PENDING BEFORE `mt5.order_send`, updated in place to FILLED/REJECTED after; post-fill commit wrapped in try/except → `DEMO_ORDER_PERSIST_FAILED` CRITICAL event, row stays PENDING for recovery; idempotency now reserved pre-dispatch. Tests: `backend/tests/unit/test_audit_fixes_h6.py` (4).
+- **H7** — `backend/app/api/v1/endpoints/documents.py:17,44` streamed 1MB-chunk upload into bounded temp file, 250MB cap enforced at stream boundary (spoofable pre-declared size not trusted), 400/413/500 paths; temp cleanup in `finally`.
+- **H4** — boot ALTER patches removed from `backend/app/db/init_db.py` (now create_all + safety seeding only); new revision `migrations/versions/2026_10_24_20261024_initp_init_db_patches.py` (worker_cycle_records.lifecycle_phase/updated_at, ml_models.validation_metrics) with real downgrade; baseline `2026_10_10_01f57c481926_initial_schema.py:39` now real `Base.metadata.drop_all` downgrade. Tests: `backend/tests/unit/test_audit_fixes_h4.py` (upgrade→downgrade base→upgrade cycle on isolated tmp DB).
+- **H1** — `backend/app/core/metrics_integrity.py:40,60` (HMAC-SHA256 with env `METRIC_SIGNING_KEY`, else SHA-256 integrity digest; canonical JSON incl. model_id, validation/test/walk-forward metrics); `MLModelRecord.metrics_digest` column + migration `2026_10_24_20261024_mdig_metrics_digest.py`; trainer commits digest into artifact payload and DB row (`trainer.py`); `registry.promote_candidate` rejects unattested, tampered-store, or artifact-mismatch candidates before any gate mutates state. Tests: `backend/tests/unit/test_audit_fixes_h1.py` (5). Existing governance fixtures re-attest via `metric_digest` when they intentionally change metrics (`test_model_promotion_governance.py::_model`, `data_ml/test_ml_governance.py::_re_attest`).
+
+**INCIDENT (disclosed, recovered):** first H4 test run executed Alembic against the PRODUCTION DB because `migrations/env.py` read `settings.DATABASE_URL` and ignored the test-provided URL. Result: prod progressed 01f57c481926 → head, then initp columns were dropped and re-added; values previously stored in lifecycle_phase/updated_at/validation_metrics reset to defaults (no orders/trades data involved; documents/knowledge data intact). `env.py` now honors `ALEMBIC_DATABASE_URL` override first; prod re-migrated to `20261024_mdig`, all 12 tables + columns verified present, version confirmed `20261024_mdig`.
+
+**Remaining risks / UNRESOLVED:**
+1. Legacy `ml_models` rows have `metrics_digest=NULL` → promotion fails closed until re-registered (intentional).
+2. `METRIC_SIGNING_KEY` not set → digest is integrity-only (not attacker-resistant); set env key for production.
+3. All changes UNCOMMITTED (working tree on `fix/core-correctness-audit`); commit/push awaits explicit user authorization, same as the pre-existing staged Phase O set.
+4. MT5 ~3h timestamp/freshness blocker unchanged (section 6).
+
+**Next action:** user reviews diff + authorizes commit(s); optionally set `METRIC_SIGNING_KEY`; then Phase P approvals.
+
+---
+
+## 20. Ponytail review of the 8 fixes: 11 findings resolved — 2026-10-26
+
+**VERIFIED now (full suite 231 passed / 0 failed — `python -m pytest backend/tests -q -o addopts=""`; related subset 86 passed):**
+1. Dashboard auth: `frontend/index.html` `getApiToken/setApiToken/authHeaders` + 🔑 button; all 9 POST fetches send `X-API-TOKEN` from localStorage. Tests: `test_audit_fixes_corr1.py` (node-evaluated `authHeaders`, POST-fetch scan, token-entry presence).
+2. `mt5.order_send` exception → REJECTED row + released idempotency (`demo_executor.py`, try/except around dispatch). Test: `test_order_send_exception_marks_record_rejected`.
+3. H7 RAM limit documented at `documents.py` full-read site (path-based ingest is the real fix, still open).
+4. Ambiguities double-escape removed (`r.ambiguities.map(esc).join('<br>')`) + regression test.
+5. `ModelRegistry.attach_walk_forward_metrics(model_id, wf, validation_metrics=None, test_metrics=None)` — the only supported post-registration metric write; re-attests digest and syncs artifact. Test copies `_re_attest` deleted; `data_ml/test_ml_governance.py` and `test_audit_fixes_h1.py` use the real path (7 tests in h1 file).
+6. Loser of concurrent dispatch race gets "Duplicate order prevented" instead of IntegrityError 500 (`_commit_pending_safely`). Test simulates colliding second commit.
+7. README section 2 now states `alembic upgrade head` is mandatory on existing DBs (init_db no longer ALTERs); section 3 documents the dashboard token flow.
+8. Dead `_os.environ.get("API_TOKEN")` branch removed from `config.py` (BaseSettings already reads env/.env).
+9. 11 model imports in test fixture replaced by `import backend.app.models`.
+10. Unused warm-up subprocess removed from the H2 node test.
+11. After post-fill commit failure, response returns the store's PENDING record (`demo_executor.py` rollback + requery), never a fake FILLED.
+
+**Unchanged constraints:** `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, no orders; all changes UNCOMMITTED awaiting user authorization (working tree now holds §19+§20 changes together).
+
+**Still open:** MT5 ~3h timestamp blocker; real-browser render of the dashboard (finding 1 verified against the real JS via node, not a browser); path-based `ingest_document` for true chunk-bounded memory.
+
+---
+
+## 21. Final safety & correctness fixes (3 items) — 2026-10-27
+
+**VERIFIED now (full suite 244 passed / 0 failed — `python -m pytest backend/tests -q -o addopts=""`; targeted 65 passed):**
+1. **Path-based upload:** `DocumentParser.parse_file_path` (PDF→pymupdf path, XLSX→openpyxl path, DOCX/ZIP→ZipFile path, TXT/CSV→text-mode read) + `KnowledgeManager.ingest_document_path` (chunk-wise SHA-256 `_hash_file_chunked`, `shutil.copyfile` raw storage) + upload endpoint streams to temp and ingests from the temp path; `stored.read()` removed — the raw file is never one bytes object. Known structural limit: extracted text is persisted as `Document.raw_text`, so text-format content still reaches memory/DB by design. Temp files cleaned on success/failure. Tests: `backend/tests/unit/test_final_safety_fixes.py` (5).
+2. **Unknown MT5 outcome:** `order_send` exception → `DemoOrder.status="EXECUTION_UNKNOWN"` (idempotency key stays reserved; NOT auto-REJECTED) + `_reconcile_unknown_order` best-effort `mt5.history_orders_get` match on the request comment promotes to FILLED with the broker ticket; retry on an unknown-outcome signal is blocked without a second dispatch; definitive pre-send blocks and retcode refusals stay REJECTED. `DemoOrder.status` doc updated (no migration needed; String(32) column). Tests: 5 scenarios in `test_audit_fixes_h6.py`.
+3. **Dashboard token in memory only:** `frontend/index.html` dropped localStorage/sessionStorage entirely; `let apiToken` page-memory + prompt on every load; all 9 POST fetches still send `X-API-TOKEN`; backend 401 on missing/wrong token re-verified. Tests: web-storage ban (code lines), node-eval of real `authHeaders` with no storage defined, no-token leak into console/alert, backend rejection.
+
+All MT5 paths tested with stubs; no real MT5 dispatch, no orders, `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`. Nothing committed; working tree now spans §19–§21 (44 changed/untracked paths).
+
+---
+
+## 22. Reconciler fix against documented MT5 return shape — 2026-10-27
+
+**VERIFIED now (full suite 246 passed / 0 failed; targeted 47 passed):**
+- Doc check (mql5.com `mt5historyordersget_py`): the date-range form of `history_orders_get` returns a **tuple of TradeOrder objects directly** (a structseq of 24 fields: ticket…comment…state), and `None` on error/no-match. The old test built `([row],)` — a tuple wrapping a list — which hid the bug: `entries = history[0]` grabbed the FIRST TradeOrder instead of the sequence, so the match loop iterated its fields and never promoted to FILLED.
+- Fix in `demo_executor.py::_reconcile_unknown_order`: `if history is None: return; entries = history` (no unwrapping).
+- Real-shape regression tests in `test_audit_fixes_h6.py` now build genuine `MetaTrader5.TradeOrder` structseqs (positional 24-field construction, `ORDER_STATE_FILLED=4`): FILLED promotion with broker ticket, no-match stays EXECUTION_UNKNOWN, error shapes (None result + raised exception) stay EXECUTION_UNKNOWN. Red recorded first (test failed against the buggy unwrapping), green after the fix. An early false-red (state=0 default) was diagnosed and the FILLED scenario now sets state explicitly.
+- Not verified against a live MT5 terminal (unreachable in session); stubs use the real TradeOrder structseq type and documented call/return contract.
+
+---
+
+## 23. Alembic safety hardening round 2: no prod-DB test dependency, no URL leak — 2026-10-29
+
+**VERIFIED (this session):**
+1. `backend/tests/unit/test_worker_cycle_backfill_migration.py`: `test_production_migration_state_after_wcbf` (read the real `adaptive_trader.db`; skipped when absent) REMOVED from the automated suite per user order — real-DB state is no longer a pass/skip condition. The backfill behavior test runs entirely on an isolated tmp DB via `ALEMBIC_DATABASE_URL`; the contradictory module docstring (claimed "production DB is never touched" while pinning prod drift facts) was rewritten.
+2. Production DB facts preserved and re-verified READ-ONLY this session (2026-10-29, sqlite `mode=ro`, SELECT/PRAGMA only, no migration run): version `20261029_wcbf`, 609 `worker_cycle_records` rows, 0 NULL `updated_at`, 0 NULL `lifecycle_phase`, both columns NOT NULL (`PRAGMA table_info` notnull=1). The earlier pre-migration figure (599 NULLs at `20261024_mdig`) remains historical/superseded.
+3. `migrations/env.py::get_url` no longer prints `settings.DATABASE_URL` in the fail-closed RuntimeError (credentials-into-logs class); the message still names `ALEMBIC_DATABASE_URL` and the explicit-destination procedure; the now-unused `settings` import was removed. TDD: new test `backend/tests/unit/test_alembic_destination_safety.py::test_missing_destination_error_hides_database_url` was RED first (leak reproduced against the old message), GREEN after the fix — asserts the secret URL, its password, host and user never appear while `ALEMBIC_DATABASE_URL` does.
+4. Tests: migration+safety subset (`test_worker_cycle_backfill_migration.py` + `test_alembic_destination_safety.py` + `test_audit_fixes_h4.py`) → 7 passed. Full suite `python -m pytest backend/tests -q -o addopts=""` → 317 passed / 0 failed / 479 warnings, reproduced twice (second run logged to `/tmp/pytest_full_20261029.log`). For tests, `ALEMBIC_DATABASE_URL` was only ever set to tmp DBs via monkeypatch.
+
+**Warnings remaining (pre-existing, unaddressed):** `datetime.datetime.utcnow()` DeprecationWarning (majority across worker/phase/audit tests), PydanticDeprecatedSince20 class-based `config` in `backend/app/schemas/rule_schema.py` and `document_schema.py`, alembic `path_separator` config deprecation, StarletteDeprecationWarning (`httpx` with `starlette.testclient`).
+
+**Scope notes:** Hindsight MCP unavailable this session — no live recall/retention; this section is the memory record. All changes UNCOMMITTED; working tree on branch `reveo` @ `48d7d43` spans §19–§23. No migration was executed against the production DB.
+
+**Next action:** user reviews diff and authorizes commit(s); the four warning categories are candidates for a later cleanup pass.
+
+---
+
+## 24. Seven-batch audit remediation (M5–M23 + minor items) — 2026-10-29
+
+**VERIFIED this session (full suite `python -m pytest backend/tests -q -o addopts=""` → 335 passed / 0 failed / 47 warnings, run twice at the end; 18 new tests; warnings down from 479 to 47):**
+
+- **Investigation first:** 5 read-only Explore agents verified the current state of every ID before any edit. Already-fixed (no change): M7 (registry status guard), M20 (create_all-only boot), M19-core (fmtUtcTime), item 18 (POST handling), item 14 (per-side commission), item 16 signal-candle linkage, M23 (CI full-suite on reveo), CORS (pinned allowlist), item 13 TP/SL-last-candle.
+- **M5 fixed (red→green), `demo_executor.py`:** `TRADE_RETCODE_DONE_PARTIAL` (10010) now FILLED with `result.volume` (was REJECTED, fill discarded); reconciler computes `filled = volume_initial − volume_current` per mql5 semantics (volume_current = REMAINING) and promotes `ORDER_STATE_PARTIAL` too; sweeper now includes `EXECUTION_UNKNOWN` rows; sweep un-gated from `DEMO_TRADING_ENABLED` (read-only `history_orders_get`); non-fill error marker appended once. h6 fixtures that pinned the wrong `volume_current`-as-filled contract rewritten to correct semantics + 2 new tests.
+- **M6:** account-wide daily-loss scope PINNED by test (`test_mt5_server_offset.py::test_daily_loss_is_account_wide_manual_deals_included`); docs contradiction 5.0% vs configured 3.0% resolved in `docs/strategy-specification.md` toward the configured 3.0% with an explicit "operator decision required" note; UTC-midnight day boundary documented. **OPEN DECISION:** operator must confirm 3.0% vs the spec's original 5.0%.
+- **M8 fixed (red→green), `registry.py`:** `_verify_backtest_provenance` compares wf payload numbers (net_profit/profit_factor/max_drawdown_percent isclose, trade_count) against the stored `BacktestRun` at BOTH attach and promote; promotion fails closed when wf lacks `backtest_run_id` or the run was deleted. Fixtures (h1/ml_governance/promotion_governance) updated to seed genuinely consistent runs.
+- **M11 fixed, `documents.py`:** ingest path (`pymupdf/openpyxl` parse + hashing + copy + index refresh) wrapped in `asyncio.to_thread`; thread-identity test proves it runs off the loop. Residual: sync 1MB-chunk temp writes stay on the loop (documented).
+- **Item 8 fixed + measured, `retriever.py`/`market_worker.py`:** corpus index now builds LAZILY on first search (query-count test: retriever construction = 0 `knowledge_chunks` queries, repeated searches reuse the cache); worker `trading_ready`/`trading_readiness_reason` query `TradingRule` directly (approved-only invariant preserved, behaviorally pinned). O(N)-per-query BM25 scoring itself unchanged (structural rewrite out of scope, recorded).
+- **Item 16 wired:** `WORKER_CYCLE_RETENTION_DAYS` / `AUDIT_LOG_RETENTION_DAYS` (default 0 = disabled, nothing deleted without explicit operator window) applied in lifespan startup; wiring test proves configured windows run and defaults never prune.
+- **M21 hardened:** baseline `downgrade()` refuses without `ALEMBIC_ALLOW_DESTRUCTIVE_DOWNGRADE=yes` (red→green test; h4 cycle test updated to opt in explicitly); README destructive-downgrade warning; alembic.ini stale comment fixed + `path_separator = os` added (kills the alembic deprecation warning).
+- **M20 behavioral test:** `test_init_db_is_a_noop_on_an_existing_populated_database` (tmp DB, engine-bound). NOTE: the first buggy run of this test called the real `init_db()` on the production engine — verified READ-ONLY afterwards: version still `20261029_wcbf`, 609 worker rows, 0 probe rows, no writes (create_all idempotent, seed branch skipped).
+- **M22 fixed:** promote endpoint maps ValueError→404 / ModelGovernanceError→409 / unexpected→sanitized 500 (no more blanket 400); `ml.py` train 500s sanitized (no `str(e)` leak); backtest no-approved-rules → 409; `signals.py` `_execution_failure_status` maps executor messages to 409/403/503/400. GET routes remain open by documented C1 policy (risk note: `/signals/orders` + `/system/audit-logs` are sensitive if the host ever leaves 127.0.0.1).
+- **Item 3:** security-headers middleware added (nosniff / frame-options DENY / no-referrer / CSP). Independent review found the first CSP broke Swagger `/docs` (cdn.jsdelivr.net) and the dashboard Vazirmatn font (fonts.googleapis/gstatic) — FIXED by allowing exactly those origins; header test pins them.
+- **Item 5/4:** README corrected (token = page memory only, never localStorage; random bootstrap token is NOT in any log — `.env.example` now documents setting `API_TOKEN`); `API_AUTH_MISSING` logged; corr1 web-storage-ban test added.
+- **M19 finished:** the two worker-telemetry clocks (`last_cycle_time`, `last_processed_bar_time`) now render through `fmtUtcTime` (red→green node test with an offset-carrying stamp).
+- **Item 19:** `datetime.utcnow` eliminated from `backend/app` (shared `utc_now_naive` in `db/base.py`; naive-UTC DB contract preserved); pydantic class-Config → `ConfigDict` in 2 schemas; `path_separator = os`. Kept deliberately: the scoped fastapi.testclient filter (upstream httpx2), and `test_phase_q2_1_consistency.py` 0.05s sleep (≥2 Windows clock ticks; changing it trades one flake class for another). Coverage tooling (pytest-cov) NOT added — needs a dependency decision.
+- **Independent review (general-purpose agent, skeptical pass):** ran 200 tests independently (all green), verified constraint compliance (no commit/push, no real-DB migration, EXECUTION_MODE/DEMO flags untouched, no secrets) and MQL5 semantics. Verdict: SHIP after the two CSP fixes (applied). Remaining noted residuals: reconciler fails-safe (no false FILLED) but cannot promote when a broker row carries `volume_initial=0`; per-order full-history `history_orders_get` is O(history) per stale order; `_execution_failure_status` string-matching is coupled to pinned executor messages; `int()` truncation possible for non-integer wf trade_count at attach (very low).
+
+**Scope notes:** Hindsight MCP unavailable all session. All changes UNCOMMITTED; branch `reveo` @ `48d7d43`, working tree spans §19–§24. Real browser not available — dashboard verified via node-executed real-script tests only. `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, no orders, no rule approvals.
+
+**Next action:** user authorizes commit(s); decides the 3.0-vs-5.0 daily-loss threshold and whether to add pytest-cov; the reconciler O(history) sweep can be optimized if unresolved orders ever accumulate.
+
+---
+
+## 25. Final approval push: M5 deals-based reconciliation, M8 real walk-forward, M15 gated reads — 2026-10-30
+
+**VERIFIED this session (final suite `python -m pytest backend/tests -q -o addopts=''` → 351 passed / 0 failed / 66 warnings; `git diff --check` clean; HEAD unchanged `48d7d43`; no commit/push):**
+
+- **M5 (deals-first reconciliation, `demo_executor.py`):** evidence ladder per the real MT5 contract — `history_deals_get(position=ticket)` deals with `deal.order == ticket` AND `deal.entry == DEAL_ENTRY_IN` are the authoritative executed volume (exit deals excluded); fallback to `volume_initial − volume_current` (mql5: volume_current = REMAINING); missing history/API error → row stays EXECUTION_UNKNOWN; only terminal-negative states (CANCELED/REJECTED/EXPIRED) with zero execution resolve to CANCELLED/REJECTED — STARTED/PLACED/PARTIAL stay unresolved; repeated sweeps idempotent (terminal rows leave the filter, executed_at stamped once). TradeDeal 18-field positional order VERIFIED against the installed package. Two real bugs found and fixed during red→green: an `or`-coercion discarding `entry==0` (DEAL_ENTRY_IN) deals, and non-terminal states resolving to CANCELLED. Tests: full fill via deals, partial-then-cancel with same-ticket exit-deal exclusion, multi-IN-deal sum, no-execution → CANCELLED/REJECTED, deals-unavailable fallback, no-evidence-at-all stays UNKNOWN, missing history/API error, idempotency.
+- **M8 (real walk-forward, `services/backtest/walk_forward.py` NEW + `registry.py::_verify_walk_forward_provenance`):** a REAL evaluation now exists — chronological contiguous OOS folds run by the same RealisticBacktestEngine with the same costs, one persisted run per fold, one aggregate run (strategy_name="walk_forward") carrying assumptions["walk_forward"] provenance (fold boundaries/run_ids/per-fold metrics, dataset_fingerprint sha256, engine_config). Registry verifies at attach AND promote: strategy marker, provenance block, fold_count ≥ MIN, payload folds == persisted folds, chronological windows, per-fold re-aggregation == run fields AND payload, fingerprint match, trade_count must be a true int (no truncation). `POST /backtest/run?walk_forward=true` wires it through the API. THE negative test: a hand-made plain BacktestRun with EXACTLY matching top-level numbers is rejected ("not a walk-forward evaluation"). Governance fixtures now share `_wf_evidence.py` (simulated evaluator output, honestly labelled) — real-evaluator tests live separately. Honest limits (documented in walk_forward.py docstring): the chain is CONSISTENCY not AUTHENTICITY — a DB-writing forger can fabricate the whole block; METRIC_SIGNING_KEY HMAC covers the model payload only, not BacktestRun rows; fold run_ids are not re-queried; no per-fold ML retraining (attests strategy-level OOS robustness).
+- **M15 (sensitive GETs gated):** 12 GETs now require the token — documents/ (raw_text), system/status (account context), worker/status, worker/cycles, audit-logs, rules/, rules/conflicts, signals/ (entry/SL/TP), signals/orders (broker tickets/prices), ml/models, ml/models/{id}/compare, backtest/runs. Open by documented policy: /health (liveness probe) and /market-data/* (public market data, no account context). Frontend: all 5 GET fetches send authHeaders(); 401s degrade to error rows (ensureOk), token stays page-memory-only. corr1 test pins the 401 matrix + valid-token pass + dashboard fetch scan (future-proofed against method:"GET" fetches). Integration/q1/q2_1 tests updated to the new contract.
+- **Leftovers resolved this session:** executor failure fragments are now single-source constants (EXEC_MSG_* in demo_executor.py) imported by the signals classifier — identity test pins the coupling; `trade_count` float truncation fixed (must be int); 3.0-vs-5.0 daily-loss discrepancy remains BLOCKED on owner decision (documented in config.py + strategy-specification.md, NOT decided unilaterally); remaining 66 warnings all originate in 6 TEST files (datetime.utcnow in test fixtures; app code clean since §24) + the deliberately scoped starlette/httpx filter — non-critical, scheduled cleanup.
+- **Independent review (skeptical subagent):** ran 122 tests across 3 suites (all green), verified TradeDeal/TradeOrder field orders against the installed package, the no-look-ahead property of the fold slicing (FeatureEngineer uses only shift/rolling/ewm), all-GET-route enumeration (no sensitive route left open), and constraint compliance. Verdict: SHIP ×3; its finding A (dead None-evidence branch from `or`-coercion) fixed, docstring staleness fixed, test-strength items applied (same-ticket exit-deal exclusion, multi-IN-deal sum, no-evidence test, future-proofed dashboard scan).
+- **GH Actions:** `gh run list` works; latest runs are 2026-10-17 on fix/core-correctness-audit. NO Actions run exists for this uncommitted work and none is possible without push — local runs are not CI evidence.
+
+**Next action:** owner decides the 3.0/5.0 risk cap; commit authorization; future phase: expose attach_walk_forward_metrics through an operator flow (the API already produces wf runs; attaching is currently programmatic).
+
+---
+
+## 26. Full-repo audit round 3 (6 sub-agents + independent verification, 22 fixes) — 2026-10-30
+
+**VERIFIED this session (full suite `python -m pytest backend/tests -q -o addopts=""` → 362 passed / 0 failed / 69 warnings, up from the §25 baseline 351; new module `backend/tests/unit/test_audit_round3_fixes.py` = 11 tests; fresh-DB Alembic up→down(20261015)→up smoke green (head 20261029_wcbf, 12 tables); `from backend.app.main import app` OK). Method: 6 read-only general-purpose sub-agents (trading-core / data+ML / knowledge+backtest / API+core+db+models / migrations+configs+frontend / test-suite) read every in-scope file COMPLETELY with file:line evidence; every load-bearing claim was then re-verified against the CURRENT tree by hand before any edit — the tree was concurrently updated mid-audit by the §25 session, so agents' stale claims (open sensitive GETs, arithmetic-only reconciler) were discarded.
+
+**CONFIRMED & FIXED (code):**
+1. `demo_executor.py` — TRADE_RETCODE_PLACED (10008) fell into the definitive-refusal branch (REJECTED while the broker may execute; idempotency reserved = stranded position) → added to `_AMBIGUOUS_RETCODES` (EXECUTION_UNKNOWN + reconciliation). 2. Sweep loop isolates a failing order (per-order try/except + rollback) instead of aborting the whole sweep on the first bad commit (PendingRollbackError cascaded into the worker cycle). 3. `_reconcile_unknown_order` except-path rolls back the session. 4. Simulated (non-MT5) dispatch branch now uses `_commit_pending_safely` — duplicate race returns "Duplicate order prevented", not a 500.
+5. `risk_engine.py` — `account=None` fails closed (REJECTED_INVALID_ACCOUNT) instead of AttributeError outside the try (both call sites pre-guarded; latent).
+6. `market_worker.py` — reservation failure (non-IntegrityError) now SKIPS the cycle (RESERVATION_FAILED, analysis_executed=False) instead of running the analysis unreserved and colliding with the unique bar_key on finalize; dead `_record_cycle_in_db` + else-branch removed (only caller was the rec=None fallback); stale `last_error_message` no longer written into COMPLETED records; `trading_governance_probe()` consolidates the rules+artifact probe — /health and get_diagnostics deserialize the pickle artifact ONCE per poll instead of twice.
+7. `registry.py::load_active_model_artifact` verifies the artifact's embedded `metrics_digest` against the attested store digest (H1 contract at inference time); digest-less/tampered → None (fail-closed). 8. `attach_walk_forward_metrics` enforces the same artifact-path containment as promote/load (attach rewrites the artifact file). 9. `_verify_walk_forward_provenance` round 3: payload cost flags must MATCH the persisted run's `engine_config` + `costs_included`; the wf payload writer (`walk_forward.py`) previously hardcoded all three flags True even for zero-cost runs (zero-cost evidence could satisfy the promotion costs gate) — writer now emits honest flags, registry cross-checks, `_wf_evidence.py` fixture aligned (costs_included block added).
+10. `evaluator.py` — measurement-failure AND single-class brier sentinels 0.25 → 1.0: 0.25 exactly satisfied the promotion gate (`val_brier > 0.25` passes at 0.25), fabricating passing evidence; 1.0 always fails it.
+11. `signals.py`/`system.py` — `limit` bounded `Query(50, ge=1, le=500)` on 4 list endpoints (SQLite LIMIT -1 = unlimited table dump).
+12. `backtest.py`/`ml.py` — `int(symbol_info.spread)` guarded (broker None/invalid → 503, not raw 500); ml.py spreads converted once (`broker_spread`).
+13. `config.py` — dead keys MT5_LOGIN / MT5_TIMEOUT_MS / MAX_CONSECUTIVE_EXECUTION_ERRORS removed (grep-verified zero references; operators would have tuned an inert abort counter); `.env.example` synced + ALEMBIC_DATABASE_URL / ALEMBIC_ALLOW_DESTRUCTIVE_DOWNGRADE documented there for the first time.
+14. `parsers.py` — per-member decompression cap 64MB (`_MAX_MEMBER_BYTES`, bounded `z.open().read()` for ZIP members AND `word/document.xml` = decompression-bomb guard, cap+1 detection); DOCX/ZIP parse failures now RAISE instead of returning empty-success (an empty return became a terminal NO_EXTRACTABLE_CONTENT record = silent data loss; manager's parse-except path marks FAILED with the real cause); duplicate `infolist` line removed.
+15. `manager.py` — hash-dedup query ordered by `Document.id` (deterministic winner when duplicate-hash twins exist); legacy NULL-hash backfill now backfills EVERY proven-identical row (was first-only; remaining NULL twins re-triggered the scan on every re-ingest).
+16. `retriever.py` — query-invariant `total_informative_idf_sum` hoisted out of the per-chunk loop (was O(chunks × query_terms) redundant lookups per search).
+17. `engine.py` — empty-frame ValueError + missing-ATR-column ValueError (hardcoded 0.0015 fallback on XAUUSD ≈ sub-point SL/TP = garbage-in sizing); `labeling.py` same for its 0.0010 fallback.
+18. `pipeline.py` — dataset start/end normalized to naive-UTC before the DB bind (aware index silently stripped by the SQLite dialect).
+19. Dead code: `ConditionItem` schema (zero refs), unused imports (backtest/ml/market/rules endpoints), stale defensive `getattr` on declared attrs (system.py), `init_db` Optional annotation.
+20. README badges corrected (Python 3.11+ per `requires-python`, dehardcoded test count; FastAPI badge shows the real floor).
+
+**TEST-SUITE integrity fixes:** `test_knowledge_retrieval.py` (real-DB dependency — the 2026-10-27 CRITICAL residual) now opens the real corpus via SQLite `mode=ro` URI + corpus-presence probe + explicit skip when absent (real-corpus validation preserved; can never write; fresh-clone/CI-safe). C1 sentinel (`test_api_endpoints.py`) skips when `adaptive_trader.db` is absent (was a hard OperationalError). `test_document_parser_docx` re-anchored from `<OWNER_HOME>\Downloads\...` (silent no-op counting as pass on every other machine) to repo-anchored `فایل ها/` with explicit skip. Session-heading regex extracted to module-level `parsers.SESSION_HEADING_PATTERN` — `test_phase_o_three_defects.py` imports the production object (copy-pasted lookalikes cannot detect drift). `documents_module.get_db` module-attr leaks in corr1/final_safety fixtures → monkeypatch (restored after yield).
+
+**Test contracts deliberately updated to new documented behavior:** `test_docx_entity_expansion_rejected` (now expects EntitiesForbidden propagation — fail-loud contract), `test_database_failure_resilience_and_rollback` (RESERVATION_FAILED fail-closed instead of unreserved analysis + guaranteed DATABASE_WRITE_FAILED churn). Contract updates to deliberate production fixes, not green-washing; both docstrings state the new contract.
+
+**CONFIRMED BUT NOT FIXED (documented residual):** zero FK constraints across models (needs a migration decision; PRAGMA foreign_keys=ON is currently dead enforcement); CSP `script-src 'unsafe-inline'` globally (Swagger inline script requires it; per-route CSP = bigger change); dashboard `onclick="...esc(...)"` attribute context is wrong-in-principle (HTML entity-decoding defeats escaping inside JS strings; ids are hex-only today → unreachable; data-*+addEventListener refactor deferred); market.py 3 GETs + /health unauthenticated (M15-documented policy; API binds 127.0.0.1 by default); `audit_log.created_at` unindexed while retention sweeps filter on it (needs migration); reconciler first-match `return` and PARTIAL-promoted-at-first-evidence residual (§24-documented design tradeoff); `volume_profile` O(N·window·bins) (not invoked by the pipeline today); XLSX parsed by openpyxl's internal parser outside defusedxml scope (third-party posture); `metrics.py` "gross_profit/loss" fields are net-based (semantic mislabel); floating equity marks omit exit-side slippage on non-exit bars (documented worst-case convention gap); TradeSignal/DemoOrder rows unbounded (retention decision needed — WORKER_CYCLE/AUDIT_LOG windows exist, signals/orders do not); promote read-then-mutate race (SQLite serializes writes; two concurrent promotions last-commit-wins); logging.py pseudo-JSON formatter does not escape quotes (malformed lines possible); pyproject all `>=` floating with NO lockfile (non-reproducible builds — process decision); python-dotenv direct pin KEPT deliberately (we rely on env_file; pydantic-settings declares it transitively).
+
+**Also verified this session:** the §24-era "MT5 ~3h timestamp blocker" is RESOLVED in current source — `MT5_SERVER_TIME_OFFSET_HOURS=3.0` is server-gated (applied only when account.server == MT5_SERVER; verified live 2026-10-28 per config comment + provider consistency validation that fails closed on wrong-offset stamps). `**Purpose:**` 0-byte stray file at repo root left untouched (untracked, harmless, owner cleanup). Hindsight MCP unavailable all session. All changes UNCOMMITTED; branch `reveo` @ 48d7d43; working tree now spans §19–§26 (65 modified + ~40 untracked paths). `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, `order_send` reachable only from demo_executor, no orders, no rule approvals, no real-DB migration.
+
+**Next action:** owner reviews diff and authorizes commit(s); decides FK-constraint and lockfile questions; Phase P rule approvals remain pending.
+
+---
+
+## 27. M8 ML walk-forward + migration-chain fix + dedup integrity + 4-scope repo audit — 2026-10-31
+
+**VERIFIED this session (final suite `python -m pytest tests -q` from `backend/` → EXIT=0, ≈391 tests, up from §26's 362; new/updated test files: test_ml_walk_forward.py (16), test_mlwf_migration.py (2), test_dedup_unique_migration.py (3), test_extractor_timeframe_scope.py (3), +1 settings-key test in test_audit_fixes_h1.py, +3 M5 tests in test_audit_fixes_h6.py, +1 rule-stage-failure test in test_phase_o_three_defects.py, head-stamp assertion in test_alembic_destination_safety.py). Context7 unavailable all session (no MCP tools) — MT5 `history_deals_get` semantics verified against official mql5.com docs via WebFetch instead. Hindsight MCP unavailable (protocol rule 9 followed; PROJECT_MEMORY used).
+
+**CRITICAL BUG FIXED — alembic.ini CWD-relative `version_locations` (`alembic.ini:10,37` → `%(here)s`):** running `alembic upgrade head` from any CWD other than the repo root resolved ZERO revision files and "succeeded" WITHOUT executing a single migration (only an empty `alembic_version` table) — caught by `test_migration_runs_on_explicit_tmp_url`, root-caused (pytest fixture pins absolute script_location; version_locations stayed CWD-relative), fixed with `%(here)s` for BOTH script_location and version_locations, and the test now also asserts the stamped version equals the chain head (silent-empty mode can never pass again). Verified from both CWDs (6 "Running upgrade" lines + 12 tables each).
+
+**M8 completed — true per-fold ML walk-forward (`backend/app/services/ml/walk_forward.py` NEW):** `run_ml_walk_forward` re-fits a FRESH model (logistic_regression/random_forest) AND a fresh BaselineModel per fold on expanding-window training partitions that end `purge_window(=horizon_bars=24)+embargo_bars(=12)` before each chronological contiguous OOS window; StandardScaler fitted on each fold's TRAIN ONLY; fixed threshold 0.5 (verifier rejects any other value); payload carries fold boundaries (positions+timestamps), per-fold model+baseline metrics, recomputable aggregates, dataset fingerprint, feature names, hyperparameters, label/cost definition, code_version. Evidence chain: `metrics_integrity.ml_walk_forward_digest` (HMAC w/ SHA-256 fallback) + `verify_ml_walk_forward_payload` (independent re-verification: fold_index sequence, chronology, no overlap, purge>=horizon enforced, purge+embargo gap, aggregate recomputation incl. total_oos_samples, fixed threshold, required provenance). Registry: `attach_ml_walk_forward_metrics` (structural+digest gate, ≥3 folds, candidate-only, artifact-path containment) + promotion-time re-verification `_ml_walk_forward_failure` wired into `promote_candidate` (tampered/absent-digest/overlap/forged-aggregate all refuse promotion). Model column `ml_models.ml_walk_forward_metrics` + migration `20261031_mlwfm` (additive, server_default '{}', reversible — verified on a POPULATED legacy DB: backfill '{}' on legacy rows, data preserved, idempotent re-upgrade, downgrade/upgrade round-trip; `test_worker_cycle_backfill_migration` destination pinned to `20261024_mdig` because the relative `-1` silently changed meaning with the new revision).
+
+**M2 verified + one gap closed:** the transactional ingestion state machine was confirmed by existing failure-injection tests (chunk-stage crash → failed + 0 chunks; retry reuses document_id; repeated failures no duplicates; legacy completed-without-chunks repaired) and a NEW test covers the RULE-stage failure (commit #3): doc stays failed, no partial rules, retry rebuilds exactly once, re-ingest idempotent. State machine now documented on the KnowledgeManager docstring.
+
+**M5 completed per the task's mandatory-test requirement:** the previous stubs accepted ANY arguments (`lambda **kw`), so nothing proved the query semantics. NEW capturing-args test pins `history_deals_get(position=<order ticket>)` exactly (no positional args, no `ticket=`, no other value; semantics verified against official MT5 docs: `position=` filters DEAL_POSITION_ID, `ticket=` filters DEAL_ORDER). Reconciliation now also records deal-derived costs: VWAP executed_price, summed commission+swap over ENTRY_IN deals of OUR order (EXIT deals excluded — test), and the order-row fallback leaves executed_price/commission/swap untouched (no fabricated zeros — test). Ruff dead code removed (`filled_states`).
+
+**Dedup integrity (audit round-3 residual resolved):** `content_sha256` had only a NON-unique index while KnowledgeManager's concurrent-collision path relies on IntegrityError — the protection was illusory. Migration `20261031_dshq` adds UNIQUE `ux_documents_content_sha256` (non-destructive: duplicate twins lose the hash on higher-id rows, never rows; NULL legacy hashes stay legal) + model-level `__table_args__`; old redundant index dropped. Tests: duplicates neutralized without row loss, DB rejects duplicate-hash insert (IntegrityError — the exact mechanism the manager catches), NULL hashes allowed, reversible.
+
+**Audit-log index (round-3 residual resolved):** migration `20261031_auidx` + model `index=True` on `audit_logs.created_at` (retention pruning + time queries).
+
+**Lockfile:** `requirements-lock.txt` pins the project's full transitive closure (47 packages, exact versions the suite ran green against, Python 3.14.4); regeneration note included; backport packages excluded by their own markers.
+
+**METRIC_SIGNING_KEY honoring fixed:** the digest layer read ONLY `os.environ`, but pydantic-settings loads .env into Settings WITHOUT injecting into os.environ — a .env-only key was silently ignored (silent degradation to non-tamper-evident SHA-256). `_signing_key()` now falls back to `settings.METRIC_SIGNING_KEY` (new Settings field, default ""), documented in `.env.example`; test pins HMAC-via-Settings + tamper detection.
+
+**Other fixes from the 4-scope audit:** H-1 executor MT5 calls now hold the process-global `_mt5_lock` (order_send, terminal_info, history_orders_get, history_deals_get — sweep runs on a worker thread while API threads call the provider; MT5 package not thread-safe); M-4 extractor timeframe substring bug fixed with word-boundary regex ("M15" no longer also grants "M1"; regression tests pin M1-only, M15-only, both); dead duplicate CSV block removed (parsers.py); retriever dead vars removed (query_stopwords, tokens); backtest endpoint's computed-but-dropped `report_md` generation removed (+unused import); test F811 shadowed import fixed; ml/walk_forward frame validation hardened to the DatasetPipeline OHLC contract (finite/positive/high>=low).
+
+**4-scope repo audit (read-only sub-agents, file:line evidence, ~8.5k lines fully reviewed in-scope + targeted cross-checks):** scope = API/core/schemas/db (19 files, 1801 lines), services/execution/risk/signal/worker/market_data/knowledge (15 files, 4860 lines), ML/dataset/backtest/metrics_integrity (15 files, 2576 lines), models/migrations/tests/frontend/CI/PROJECT_MEMORY. Inventory: 184 files, ~30k lines (backend_app 71/10271, tests 55/12335, migrations 8/438→now 9, frontend 1/1270, docs 38/5663, other 11/500). MIMOSA's ETIMEDOUT report superseded by this executable audit + compileall (exit 0) + full suite. Trading-safety verdict (evidence-chained): NO path reaches mt5.order_send under SIGNAL_ONLY + DEMO_TRADING_ENABLED=False — 12 enumerated gates; no runtime writer of the two settings; worker hard-asserts SIGNAL_ONLY. Frontend: no fully-unescaped sink (L-1 onclick attribute-context escaping is wrong-in-principle but unreachable with hex-only IDs — defense-in-depth TODO). No test writes the real DB (two read-only mode=ro sentinels documented).
+
+**CONFIRMED BUT NOT FIXED (documented, ordered):** ML-WF evidence is self-attesting at attach (no binding to a persisted run/dataset like the strategy-WF path; mitigations: no HTTP route, optional for promotion, independent gates still enforced — design follow-up recommended); attach endpoints have NO HTTP surface at all so the governance chain needs an in-process step before /ml promote (owner decision: operator endpoint vs documented script); MT5-dependent safety tests skip on ubuntu CI (Windows runner decision); zero FK constraints (SQLite table-rebuild migration decision, previously owner-deferred); per-request provider.disconnect() cuts the shared terminal connection (worker self-heals; lifecycle redesign needed); emergency-stop activation commit failure loses the audit trail (fail-closed direction preserved); concurrent-ingest loser surfaces 500 + orphan raw file (winner-must-be-completed); CSP 'unsafe-inline' (documented structural need of the inline dashboard bundle); signals/trades retention disabled by default (owner decision; WORKER_CYCLE/AUDIT_LOG windows exist); CI python 3.11 vs local 3.14; logging formatter no rotation/escape; Ruff ~1100 findings are bulk style classes (UP006/UP045/I001/F401/UP017/UP035) — batch deferred to a dedicated typing-modernization pass (no blind --fix per task constraint); 3.0/5.0 daily-loss cap remains BLOCKED on owner decision.
+
+**Runtime validation:** uvicorn boot on an ISOLATED temp DB (real `backend/adaptive_trader.db` never touched): /health 200; dashboard 200; auth fail-closed verified (401 without X-API-TOKEN, 200 with — 10 POST routes token-gated; market GETs open per M15 policy); document upload → completed + 1 rule; duplicate upload → SAME document_id (idempotent, now DB-enforced); documents list, ml/models, worker/status, signals 200; knowledge retrieval + grounded query verified service-level; /system/status reports SIGNAL_ONLY + demo gate disabled. Browser console validation NOT performed — the browser-use tool (mcp__node_repl__js) is not exposed in this environment; HTTP-level frontend checks done instead.
+
+**Git:** branch `reveo` @ 48d7d43, all changes UNCOMMITTED (commit/push forbidden by task); ~120 modified/untracked paths spanning §19–§27. GitHub Actions: latest real run 2026-10-17 success on fix/core-correctness-audit; NO CI run exists for this work without push. `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, zero orders, zero rule approvals, real DB untouched (migrations tested only on temp copies).
+
+**Next action:** owner reviews diff and authorizes commit(s); decides: ML-WF attach binding design + operator attach endpoint, Windows CI runner for MT5 tests, FK migration, CSP refactor, signals/orders retention, METRIC_SIGNING_KEY provisioning, 3.0/5.0 cap.
+
+---
+
+## 28. Remediation round 2: position_id semantics, APPROVED-rule preservation, replay guard — 2026-10-31 (same day)
+
+**VERIFIED this session (final suite `python -m pytest tests -o addopts="" --junitxml` → EXIT=0, junit counts: 400 tests / 400 passed / 0 failed / 0 errors / 0 skipped; `git diff --check` and `git diff --cached --check` both clean). Method: coordinator implemented root-caused fixes, then FOUR independent read-only sub-agents (A: M5 reconciliation, B: M2 atomicity, C: ML-WF provenance, D: migrations/git/safety) re-audited every change with file:line evidence and raw command outputs; A: 7/7 VERIFIED, B: 6/6 VERIFIED, C: 8/8 VERIFIED, D: all items VERIFIED, no blocking defect.
+
+**M5 — position_id semantics corrected (task-mandated):** the deals query now reads `TradeOrder.position_id` FROM THE ORDER RECORD (never assumes order ticket == position id; netting add-on orders attach to an EXISTING position). `position_id=0` → deals query is skipped entirely (test asserts history_deals_get is NEVER called) and the order-row arithmetic decides. All deal fixtures now use deliberately DIFFERENT identifiers (order_ticket 911xxx vs position_id 900xxx) and the capturing test asserts `position == 900777 AND position != 911777`. New tests: deals-API exception = distinct evidence state (fallback resolves, no fabricated costs); unrelated order's ENTRY deal on the same position excluded from volume/VWAP/commission/swap. Agent A independently re-verified semantics against official mql5.com docs and confirmed real TradeOrder/TradeDeal field ordering of the fixtures.
+
+**M2 — two real defects fixed:** (1) SAWarning root cause: after a mid-ingest rollback, `Query.delete()` removes DB rows but does NOT evict identity-map entries, so re-created rows reusing freed autoincrement PKs collide — recovery now expunges stale matched objects BEFORE deleting (proven with `-W error::sqlalchemy.exc.SAWarning`). (2) Agent-B finding: recovery deleted ALL rules including HUMAN-APPROVED ones and rebuilt fresh PENDING clones with new rule_ids — silent de-approval. Recovery now preserves APPROVED rules with their identity and fresh extraction skips exact (name, category) clones of preserved approved rules (regression test: approve → boundary-4 failure → retry → approved rule survives with same rule_id/status, zero clones). Failure-injection coverage now spans ALL five persistence boundaries (document/chunks/rules/completion-status/audit) with DB-state assertions; new boundary-4 and boundary-5 tests.
+
+**M8 — replay guard + idempotency fixed (Agent-C driven):** (1) attach re-signing a replayed payload for a DIFFERENT model used to overwrite the foreign digest silently — replay guard now refuses a digest not signed for the target model (test). (2) Agent-C found idempotent re-attach of a model's OWN payload produced evidence the promotion verifier would reject as tampered (digest computed over payload still containing the stale digest key) — attach now strips the digest key before re-signing (test: re-attach → promotion verifier passes). (3) Non-string digest → clean ModelGovernanceError instead of raw TypeError. (4) Verifier rejects non-numeric aggregate mean/std instead of raising. Honest-limitation statement (self-attestation residual; optional-for-promotion) re-confirmed in PROJECT_MEMORY.
+
+**Chores:** ChainedAssignmentError in test_walk_forward_provenance.py fixed via `.loc` (pandas CoW); staged EOF whitespace in test_phase_o_three_defects.py normalized and that ONE file re-staged (`git add` of a single file only — index now matches the working copy); zero-byte repo-root file identified precisely: name = PUA codepoints U+F02A/U+F03A rendering as "**Purpose:**" — accidental shell redirect from an earlier agent session (REPORTED origin, 0 bytes, untracked, harmless; owner may delete manually). `adaptive_trader.db-wal` no longer exists (checkpointed); only `adaptive_trader_backup.db-wal` (zero-byte sidecar, gitignored) remains.
+
+**Agent D verdict (migrations/git/safety):** single head 20261031_auidx, linear 9-revision chain; fresh upgrade from a NON-repo CWD ran all 9 migrations and built 12 tables (raw output captured); dshq has NO DELETE (keeps MIN(id), NULLs higher-id twins); every 20261031_* upgrade additive-only with guarded downgrades; the ONLY `mt5.order_send` call site remains demo_executor.py behind the fail-closed gates (EXECUTION_MODE/DEMO_TRADING_ENABLED defaults+validator untouched by today's diffs); env.py refuses to migrate without explicit ALEMBIC_DATABASE_URL.
+
+**Still deferred (unchanged, owner decisions):** race-loser 500 + orphan raw file; FK constraints; CSP 'unsafe-inline'; signals/orders retention; ML-WF binding to a persisted run (anti-self-attestation design follow-up — digest-stripping replay is closed, but fresh-payload re-signing at attach remains possible with no HTTP route exposed); Windows CI for MT5 tests; browser console validation (tool unavailable); Ruff style-class debt; 3.0/5.0 daily-loss cap.
+
+**Git:** branch `reveo` @ 48d7d43; 118 changed/untracked paths (52 untracked); 7 staged entries preserved (test_phase_o_three_defects.py re-staged with EOF fix + today's additions); nothing committed/pushed. `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, zero orders, real DB untouched.
+
+---
+
+## 29. ML engineering knowledge base (`ata-ml-engineering`) — 2026-10-31
+
+**VERIFIED this session (knowledge-building only; zero code/config/trading changes, zero installs, no test runs claimed):** Owner-mandated mission to turn awesome-machine-learning (https://github.com/josephmisiti/awesome-machine-learning) into usable repo expertise. Method: ground truth from `requirements-lock.txt` + live `python -I` version probe (both agree: numpy 2.5.3, pandas 3.0.6, scipy 1.18.1, scikit-learn 1.9.1, joblib 1.6.0, fastapi 0.143.0, sqlalchemy 2.1.4, alembic 1.20.0, pydantic 2.13.4/pydantic-settings 2.14.2, pymupdf 1.28.2, openpyxl 3.1.5, MetaTrader5 5.0.6231; NOT installed: statsmodels, optuna, xgboost, lightgbm, catboost, sktime, river, imbalanced-learn, shap, skforecast), then FOUR research sub-agents (ML/eval, TS/financial ML, data engineering, backend/infra) read actual source and fetched official vendor docs; coordinator integrated and de-conflicted. Context7 MCP was unavailable this session — vendor docs fetched directly via WebFetch with URL+version+review-date recorded per file; no doc text copied verbatim.
+
+**Deliverables (6 new files):** `docs/engineering/ml-library-map.md` (coordinator map: environment table, installed-stack code facts, candidate verdicts, BUY/SELL asymmetry, 10-item gap list) + `.agents/skills/ata-ml-engineering/` — `SKILL.md` (non-negotiables, decision guides, reference pointers) and `references/ml-algorithms-evaluation.md`, `references/timeseries-financial-ml.md`, `references/data-engineering.md`, `references/backend-model-infra.md` (1104 reference lines total, each ending with Provenance + Gaps).
+
+**Key code facts encoded (file-verified):** ML walk-forward = purge 24 (≥ horizon, enforced) + embargo 12 (`horizon//2`) + retrain per fold + fixed 0.5 threshold (`ml/walk_forward.py`, pinned by `tests/unit/test_ml_walk_forward.py:132-140`); static chronological split in `dataset/pipeline.py` purges but has NO separate embargo (UNRESOLVED: intentional or gap); `label_buy_barrier` is BUY-only (ask entry with historical per-bar spread, ATR TP/SL fail-loud, conservative same-bar collision → 0; no SELL labeler — direction-classifier ≠ barrier-success-classifier documented); evaluator computes acc/prec/recall/f1/ROC-AUC/Brier/LogLoss + manual 5-bin calibration (sentinel constants gate-failing by design; log_loss informational); imbalance handled only via LR `class_weight="balanced"` (RF unweighted; no resampling; balanced_accuracy/average_precision NOT logged — cheapest zero-dep next step); calibration measured but NO calibrator fitted anywhere (owner decision); registry = candidate→active→archived, promotion only via token-gated `/models/{id}/promote` with 9 gates, HMAC digest via `METRIC_SIGNING_KEY` else SHA-256, walk-forward attach has no HTTP surface; MT5 provider fully RLock-wrapped + read-only + fail-closed time offset; alembic.ini `%(here)s`-based + env.py fail-closed without `ALEMBIC_DATABASE_URL`; pandas 3.0 CoW/str-dtype semantics documented and codebase is CoW-compliant.
+
+**Candidate verdicts (all NOT INSTALLED — adding requires explicit user approval):** defer by default (Optuna, XGBoost, LightGBM, CatBoost, statsmodels, sktime, River, imbalanced-learn, shap); skforecast BLOCKED (dev docs pin `pandas < 3.0` vs installed 3.0.6). py3.14/Windows wheel support UNVERIFIED for every candidate (statsmodels docs cap at 3.13; LightGBM python-package and River install pages 404'd; mql5 `copy_rates_from` page 404'd — output contract verified from mql5 overview + code). imbalanced-learn floor ok (sklearn ≥1.4.2), ceiling vs 1.9.1 UNVERIFIED.
+
+**Safety verdict:** no source/config file touched; 6 new knowledge files + this entry only; trading settings untouched; no orders; no rule approvals; nothing installed; nothing committed.
+
+**Next action:** owner reviews the 6 files; decides on the gap list (esp. static-split embargo intent, calibration fitting, per-side metrics logging, py3.14 wheel verification if any candidate is ever wanted); commit decision per standing rule.

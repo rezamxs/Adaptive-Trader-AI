@@ -86,6 +86,21 @@ def tokenize(text: str) -> List[str]:
     return [t for t in norm.split() if len(t) >= 2]
 
 
+NON_SEMANTIC_PLACEHOLDER_REGEX = re.compile(
+    r"^\[Page \d+: (?:Visual / Image Only|Vector Graphics Only|Blank Page).*\]$",
+    re.IGNORECASE
+)
+
+
+def is_semantic_chunk(chunk: KnowledgeChunk) -> bool:
+    """Evaluates whether a chunk contains real semantic evidence versus placeholder text."""
+    if isinstance(chunk.parameters, dict) and chunk.parameters.get("is_semantic_content") is False:
+        return False
+    if NON_SEMANTIC_PLACEHOLDER_REGEX.match(chunk.content.strip()):
+        return False
+    return True
+
+
 class KnowledgeRetriever:
     """Performs deterministic, evidence-grounded search over parsed knowledge chunks.
     
@@ -101,7 +116,25 @@ class KnowledgeRetriever:
         self._avg_dl: float = 1.0
         self._df: Dict[str, int] = {}
         self._idf: Dict[str, float] = {}
-        self._build_corpus_index()
+        # Item 32: per-chunk normalized text + token counts are precomputed at
+        # index build (and on refresh) instead of being recomputed for EVERY
+        # chunk on EVERY query.
+        self._norm_content: Dict[str, str] = {}
+        self._norm_title: Dict[str, str] = {}
+        self._norm_concepts: Dict[str, str] = {}
+        self._norm_loc: Dict[str, str] = {}
+        self._norm_src: Dict[str, str] = {}
+        self._token_counts: Dict[str, Dict[str, int]] = {}
+        self._passages: Dict[str, List[tuple]] = {}
+        # Item 8: the corpus index is built on FIRST SEARCH, not in __init__ —
+        # request-scoped managers (one per API request / worker cycle) that
+        # only ingest or only list rules must not pay a full corpus rebuild.
+        self._corpus_cached = False
+
+    def _ensure_index(self) -> None:
+        """Builds the corpus index on first search use (lazy, once per instance)."""
+        if not self._corpus_cached:
+            self._build_corpus_index()
 
     def refresh(self) -> None:
         """Reload chunks after ingestion so a long-lived manager sees new documents."""
@@ -112,12 +145,22 @@ class KnowledgeRetriever:
         self._avg_dl = 1.0
         self._df = {}
         self._idf = {}
+        self._norm_content = {}
+        self._norm_title = {}
+        self._norm_concepts = {}
+        self._norm_loc = {}
+        self._norm_src = {}
+        self._token_counts = {}
+        self._passages = {}
         self._build_corpus_index()
 
     def _build_corpus_index(self):
         """Indexes knowledge chunks, computing document frequencies and BM25 IDF weights."""
         self._chunks_cache = self.db.query(KnowledgeChunk).all()
         N = len(self._chunks_cache)
+        # Set BEFORE the early return: an empty corpus is a built (trivial)
+        # index and must not be re-queried on every search.
+        self._corpus_cached = True
         if N == 0:
             return
 
@@ -129,12 +172,32 @@ class KnowledgeRetriever:
             title_tokens = tokenize(chunk.title or "")
             concept_tokens = tokenize(" ".join(chunk.key_concepts or []))
             loc_tokens = tokenize(chunk.location_reference or "")
-            
+
             all_tokens = tokens + title_tokens + concept_tokens + loc_tokens
             self._doc_tokens[chunk.chunk_id] = tokens
             doc_len = max(len(tokens), 5)
             self._doc_lens[chunk.chunk_id] = doc_len
             total_words += doc_len
+
+            # Precompute the per-chunk normalized fields and token counts the
+            # scoring loop needs (item 32) — once per index build, not per query.
+            token_counts: Dict[str, int] = {}
+            for t in tokens:
+                token_counts[t] = token_counts.get(t, 0) + 1
+            self._token_counts[chunk.chunk_id] = token_counts
+            self._norm_content[chunk.chunk_id] = normalize_persian_text(chunk.content)
+            self._norm_title[chunk.chunk_id] = normalize_persian_text(chunk.title or "")
+            self._norm_concepts[chunk.chunk_id] = normalize_persian_text(" ".join(chunk.key_concepts or []))
+            self._norm_loc[chunk.chunk_id] = normalize_persian_text(chunk.location_reference or "")
+            self._norm_src[chunk.chunk_id] = normalize_persian_text(chunk.source_file)
+
+            # Passage extraction + per-passage normalization/tokenization are
+            # deterministic per chunk — cache them for the scoring loop.
+            processed_passages = []
+            for heading, p_text in self._extract_passages(chunk.content):
+                norm_p = normalize_persian_text(p_text)
+                processed_passages.append((heading, p_text, norm_p, norm_p.split()))
+            self._passages[chunk.chunk_id] = processed_passages
 
             unique_tokens = set(all_tokens)
             for t in unique_tokens:
@@ -150,6 +213,7 @@ class KnowledgeRetriever:
 
     def get_idf(self, token: str) -> float:
         """Returns BM25 IDF for a token, defaulting to max IDF for unseen terms."""
+        self._ensure_index()
         if token in self._idf:
             return self._idf[token]
         N = len(self._chunks_cache)
@@ -200,14 +264,15 @@ class KnowledgeRetriever:
         query: str,
         top_k: int = 5,
         source_file: Optional[str] = None,
-        min_score: float = 2.0
+        min_score: float = 2.0,
+        exclude_non_semantic: bool = False,
     ) -> List[Dict[str, Any]]:
         """Searches knowledge chunks and ranks by BM25 relevance and passage specificity."""
+        self._ensure_index()
         raw_tokens = tokenize(query)
         if not raw_tokens:
             return []
 
-        query_stopwords = [t for t in raw_tokens if t in STOPWORDS]
         query_intent = [t for t in raw_tokens if t in INTENT_WORDS]
         
         param_keywords = {"اهرم", "موجودی", "حداقل", "تنظیمات", "سرمایه", "دلار", "لات"}
@@ -231,6 +296,11 @@ class KnowledgeRetriever:
         norm_query = normalize_persian_text(query)
         scored_candidates = []
 
+        # Query-invariant, hoisted out of the chunk loop: this sum depends only
+        # on the query tokens and the IDF table, yet was recomputed for EVERY
+        # chunk of EVERY search (O(chunks x query_terms) redundant lookups).
+        total_informative_idf_sum = sum(self.get_idf(t) for t in all_informative_tokens)
+
         k1 = 1.5
         b = 0.75
 
@@ -238,19 +308,24 @@ class KnowledgeRetriever:
             if source_file and source_file.lower() not in chunk.source_file.lower():
                 continue
 
-            chunk_id = chunk.chunk_id
-            tokens = self._doc_tokens.get(chunk_id, [])
-            doc_len = self._doc_lens.get(chunk_id, 10)
-            
-            norm_content = normalize_persian_text(chunk.content)
-            norm_title = normalize_persian_text(chunk.title or "")
-            norm_concepts = normalize_persian_text(" ".join(chunk.key_concepts or []))
-            norm_loc = normalize_persian_text(chunk.location_reference or "")
-            norm_src = normalize_persian_text(chunk.source_file)
+            chunk_is_semantic = is_semantic_chunk(chunk)
+            if exclude_non_semantic and not chunk_is_semantic:
+                continue
 
-            token_counts: Dict[str, int] = {}
-            for t in tokens:
-                token_counts[t] = token_counts.get(t, 0) + 1
+            chunk_id = chunk.chunk_id
+            doc_len = self._doc_lens.get(chunk_id, 10)
+
+            # Cached at index build (item 32) — no per-query reprocessing.
+            # Direct indexing: build populates every field for every cached
+            # chunk (a .get(k, normalize(...)) default would be evaluated
+            # eagerly and defeat the cache).
+            norm_content = self._norm_content[chunk_id]
+            norm_title = self._norm_title[chunk_id]
+            norm_concepts = self._norm_concepts[chunk_id]
+            norm_loc = self._norm_loc[chunk_id]
+            norm_src = self._norm_src[chunk_id]
+
+            token_counts = self._token_counts.get(chunk_id) or {}
 
             bm25_score = 0.0
             matched_terms = []
@@ -258,7 +333,6 @@ class KnowledgeRetriever:
             informative_hits = 0
             param_hits = 0
             matched_idf_sum = 0.0
-            total_informative_idf_sum = sum(self.get_idf(t) for t in all_informative_tokens)
 
             for t in all_informative_tokens:
                 t_idf = self.get_idf(t)
@@ -339,14 +413,13 @@ class KnowledgeRetriever:
                 matched_terms.append("exact_phrase_in_content")
 
             # 4. Passage-Level Extraction & Scoring
-            passages = self._extract_passages(chunk.content)
+            passages = self._passages[chunk_id]
+
             best_passage_score = 0.0
             best_passage_text = chunk.content[:400]
             best_passage_heading = "متن اصلی"
 
-            for heading, p_text in passages:
-                norm_p = normalize_persian_text(p_text)
-                p_tokens = norm_p.split()
+            for heading, p_text, norm_p, p_tokens in passages:
                 p_len = max(len(p_tokens), 5)
                 p_bm25 = 0.0
                 for t in all_informative_tokens:
@@ -386,6 +459,7 @@ class KnowledgeRetriever:
                     "exceptions_and_limits": chunk.exceptions_and_limits or [],
                     "score": round(score, 2),
                     "coverage_ratio": round(idf_coverage, 2),
+                    "is_semantic_content": chunk_is_semantic,
                     "matched_evidence": list(set(matched_terms))[:6]
                 })
 
@@ -399,9 +473,16 @@ class KnowledgeRetriever:
         source_file: Optional[str] = None
     ) -> Dict[str, Any]:
         """Queries knowledge base and returns verifiable grounded citations."""
-        results = self.search(query=query, top_k=top_k, source_file=source_file)
+        results = self.search(
+            query=query,
+            top_k=top_k,
+            source_file=source_file,
+            exclude_non_semantic=True
+        )
 
-        if not results:
+        semantic_results = [r for r in results if r.get("is_semantic_content", True)]
+
+        if not semantic_results:
             return {
                 "status": "NOT_FOUND",
                 "evidence_found": False,
@@ -410,7 +491,7 @@ class KnowledgeRetriever:
                 "results": []
             }
 
-        top_match = results[0]
+        top_match = semantic_results[0]
         return {
             "status": "GROUNDED_EVIDENCE_FOUND",
             "evidence_found": True,
@@ -418,6 +499,6 @@ class KnowledgeRetriever:
             "primary_source": top_match["source_file"],
             "primary_location": top_match["location_reference"],
             "primary_title": top_match["title"],
-            "results_count": len(results),
-            "results": results
+            "results_count": len(semantic_results),
+            "results": semantic_results
         }

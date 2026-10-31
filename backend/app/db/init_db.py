@@ -1,4 +1,6 @@
 """Database table creation and initial safety state seeding."""
+from typing import Optional
+
 from sqlalchemy.orm import Session
 from backend.app.db.base import Base
 from backend.app.db.session import engine, SessionLocal
@@ -7,36 +9,14 @@ from backend.app.models.audit_log import AuditLog
 from backend.app.core.logging import logger
 
 
-def init_db(db: Session = None) -> None:
-    """Creates all database tables and verifies initial safety state."""
+def init_db(db: Optional[Session] = None) -> None:
+    """Creates missing database tables and verifies initial safety state.
+
+    Schema drift beyond create_all (new columns on pre-existing tables) is
+    owned by the Alembic chain (migrations/versions); boot must not ALTER.
+    """
     logger.info("Initializing database tables...")
     Base.metadata.create_all(bind=engine)
-
-    # Lightweight schema migration for SQLite if columns are added
-    try:
-        from sqlalchemy import inspect, text
-        inspector = inspect(engine)
-        if "worker_cycle_records" in inspector.get_table_names():
-            columns = [col["name"] for col in inspector.get_columns("worker_cycle_records")]
-            with engine.connect() as conn:
-                if "lifecycle_phase" not in columns:
-                    conn.execute(text("ALTER TABLE worker_cycle_records ADD COLUMN lifecycle_phase VARCHAR(30) DEFAULT 'COMPLETED'"))
-                    conn.commit()
-                if "updated_at" not in columns:
-                    conn.execute(text("ALTER TABLE worker_cycle_records ADD COLUMN updated_at DATETIME"))
-                    conn.commit()
-
-        # create_all does not add columns to pre-existing tables. Apply the small
-        # additive model-metrics migration on any supported SQLAlchemy database.
-        if "ml_models" in inspect(engine).get_table_names():
-            ml_columns = [col["name"] for col in inspect(engine).get_columns("ml_models")]
-            if "validation_metrics" not in ml_columns:
-                with engine.begin() as conn:
-                    conn.execute(
-                        text("ALTER TABLE ml_models ADD COLUMN validation_metrics JSON NOT NULL DEFAULT '{}'")
-                    )
-    except Exception as e:
-        logger.warning(f"Schema check error (non-fatal): {e}")
 
     close_session = False
     if db is None:

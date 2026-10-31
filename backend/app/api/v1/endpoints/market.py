@@ -1,18 +1,21 @@
 """Market Data Endpoints."""
-from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from backend.app.services.market_data.base import TimeFrame
 from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
-from backend.app.services.market_data.mock_provider import MockMarketDataProvider
 
 router = APIRouter()
 
 
-def get_market_provider():
+def get_market_provider() -> MT5MarketDataProvider:
+    """Returns a connected MT5 provider or raises 503; never serves mock data silently."""
     provider = MT5MarketDataProvider()
     if provider.connect():
         return provider
-    return MockMarketDataProvider()
+    provider.disconnect()
+    raise HTTPException(
+        status_code=503,
+        detail="MT5 is unavailable; market data endpoints refuse to serve mock data.",
+    )
 
 
 @router.get("/symbols")

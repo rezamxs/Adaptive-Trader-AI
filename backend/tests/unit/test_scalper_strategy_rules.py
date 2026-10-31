@@ -266,13 +266,25 @@ def test_martingale_drawdown_ceiling(memory_db, dummy_symbol_gold, dummy_quote_g
 
 
 def test_document_parser_docx():
-    """Test DocumentParser native support for DOCX files."""
-    test_docx_path = r"<OWNER_HOME>\Downloads\فایل ها\اصطلاح پرکاربرد در ترید.docx"
-    if os.path.exists(test_docx_path):
-        with open(test_docx_path, "rb") as f:
-            content_bytes = f.read()
-        full_text, pages, chunks = DocumentParser.parse_file("اصطلاح پرکاربرد در ترید.docx", content_bytes)
-        assert len(full_text) > 100
-        assert pages >= 1
-        assert len(chunks) >= 1
-        assert "Market" in full_text
+    """Test DocumentParser native support for DOCX files.
+
+    Anchored to the repo-local source folder (`فایل ها/`, gitignored) instead
+    of a user-home Downloads path: the previous absolute C:\\Users\\... path
+    made this test a silent no-op on every other machine (an empty body
+    counted as a pass). Now it is a REAL parser regression when the source is
+    present and an explicit, reported skip when it is not.
+    """
+    from pathlib import Path as _Path
+    test_docx_path = _Path(__file__).resolve().parents[3] / "فایل ها" / "اصطلاح پرکاربرد در ترید.docx"
+    if not test_docx_path.is_file():
+        pytest.skip(
+            f"source DOCX not present in this environment ({test_docx_path}); "
+            "real-corpus parser regression requires the operator's source folder"
+        )
+    with open(test_docx_path, "rb") as f:
+        content_bytes = f.read()
+    full_text, pages, chunks = DocumentParser.parse_file("اصطلاح پرکاربرد در ترید.docx", content_bytes)
+    assert len(full_text) > 100
+    assert pages >= 1
+    assert len(chunks) >= 1
+    assert "Market" in full_text

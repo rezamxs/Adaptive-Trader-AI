@@ -111,6 +111,10 @@ class RealisticBacktestEngine:
         """Executes chronological bar-by-bar backtest."""
         run_id = f"bt_{uuid.uuid4().hex[:10]}"
         n_bars = len(df)
+        if n_bars == 0:
+            # Fail loud: an empty frame previously produced a silent
+            # "successful" empty run, or an IndexError from the DB-save block.
+            raise ValueError("Backtest received an empty frame; nothing to simulate.")
         trades: List[Dict[str, Any]] = []
 
         times = df.index
@@ -118,15 +122,24 @@ class RealisticBacktestEngine:
         highs = df["high"].values
         lows = df["low"].values
         closes = df["close"].values
-        atrs = df[atr_col].values if atr_col in df.columns else np.full(n_bars, 0.0015)
+        if atr_col not in df.columns:
+            # Fail loud instead of fabricating a hardcoded ATR: on XAUUSD
+            # (~$2000) a 0.0015 fallback ATR yields sub-point SL/TP and
+            # near-max lots — silently garbage-in position sizing.
+            raise ValueError(
+                f"Backtest requires the ATR column '{atr_col}' in the frame; "
+                "refusing to substitute a hardcoded fallback ATR."
+            )
+        atrs = df[atr_col].values
         sig_values = signals.values
 
         balance = self.initial_balance
         open_trade: Optional[Dict[str, Any]] = None
+        # Chronological equity marks (floating + closed) for drawdown (M2).
+        equity_timeline: List[Dict[str, Any]] = []
 
-        for i in range(n_bars - 1):
+        for i in range(n_bars):
             current_time = times[i]
-            next_open = opens[i + 1]
 
             # 1. Manage Active Trade on bar i
             if open_trade is not None:
@@ -149,11 +162,12 @@ class RealisticBacktestEngine:
                     sl_hit = (low_bar <= sl)
 
                     if tp_hit and sl_hit:
-                        # Conservative same-bar collision: SL hit first
-                        exit_price = sl - (self.slippage_points * self.point_value)
+                        # Conservative same-bar collision: SL hit first. A bar
+                        # that OPENED beyond the stop fills at the open (gap).
+                        exit_price = min(opens[i], sl) - (self.slippage_points * self.point_value)
                         exit_reason = "STOP_LOSS_COLLISION"
                     elif sl_hit:
-                        exit_price = sl - (self.slippage_points * self.point_value)
+                        exit_price = min(opens[i], sl) - (self.slippage_points * self.point_value)
                         exit_reason = "STOP_LOSS"
                     elif tp_hit:
                         exit_price = tp - (self.slippage_points * self.point_value)
@@ -170,10 +184,10 @@ class RealisticBacktestEngine:
                     sl_hit = (ask_high >= sl)
 
                     if tp_hit and sl_hit:
-                        exit_price = sl + (self.slippage_points * self.point_value)
+                        exit_price = max(opens[i] + spread_cost, sl) + (self.slippage_points * self.point_value)
                         exit_reason = "STOP_LOSS_COLLISION"
                     elif sl_hit:
-                        exit_price = sl + (self.slippage_points * self.point_value)
+                        exit_price = max(opens[i] + spread_cost, sl) + (self.slippage_points * self.point_value)
                         exit_reason = "STOP_LOSS"
                     elif tp_hit:
                         exit_price = tp + (self.slippage_points * self.point_value)
@@ -182,14 +196,60 @@ class RealisticBacktestEngine:
                         exit_price = closes[i] + spread_cost + slippage_cost
                         exit_reason = "TIME_EXPIRY"
 
+                # M2 floating-equity marks. OHLC cannot prove the real intra-bar
+                # tick path, so a conservative convention is booked (documented
+                # in assumptions/limitations — NOT a tick-level simulation):
+                #   - bar with no barrier hit: FAVORABLE extreme first, then
+                #     ADVERSE extreme, so a floating peak before a possible
+                #     drop is never lost (peak-to-trough inside one bar);
+                #   - TP-exit bar: the ADVERSE extreme may precede the limit
+                #     fill (dip booked first); nothing beyond the fill accrues;
+                #   - SL-exit bar: the FAVORABLE extreme may precede the stop
+                #     fill (rally booked first); nothing beyond the fill
+                #     accrues (gap fills included via the fill price).
+                # Marks are net of the exit-side commission (entry side already
+                # deducted from balance). On the FINAL bar with no barrier hit
+                # the END_OF_DATA block books the peak/trough marks exactly
+                # once — booking them here too would duplicate them.
+                if exit_price is not None or i < n_bars - 1:
+                    exit_side_commission = round(self.commission_per_lot * vol, 2)
+                    base_equity = balance - exit_side_commission
+                    if direction == "BUY":
+                        favorable_price, adverse_price = high_bar, low_bar
+                    else:
+                        favorable_price = low_bar + spread_cost
+                        adverse_price = high_bar + spread_cost
+                    if exit_reason == "TAKE_PROFIT":
+                        favorable_price = None  # limit fill caps the favorable excursion
+                    elif exit_reason in ("STOP_LOSS", "STOP_LOSS_COLLISION"):
+                        adverse_price = None  # stop fill caps the adverse excursion
+                    if favorable_price is not None:
+                        equity_timeline.append({
+                            "time": str(current_time),
+                            "equity": float(base_equity + self._calculate_gross_pnl(
+                                open_trade["entry_price"], favorable_price, direction, vol)),
+                            "kind": "floating_peak",
+                        })
+                    if adverse_price is not None:
+                        equity_timeline.append({
+                            "time": str(current_time),
+                            "equity": float(base_equity + self._calculate_gross_pnl(
+                                open_trade["entry_price"], adverse_price, direction, vol)),
+                            "kind": "floating_trough",
+                        })
+
                 if exit_price is not None:
-                    # Calculate PnL
-                    gross_pnl = self._calculate_gross_pnl(
+                    # CENTS_AT_EVENT rounding contract: every money event is
+                    # rounded to cents when it happens and net derives from the
+                    # rounded components, so gross - commission == net and each
+                    # balance step agrees with the recorded fields exactly.
+                    gross_pnl = round(self._calculate_gross_pnl(
                         open_trade["entry_price"], exit_price, direction, vol
-                    )
-                    commission = self.commission_per_lot * vol
-                    net_pnl = gross_pnl - commission
-                    balance += net_pnl
+                    ), 2)
+                    exit_commission = round(self.commission_per_lot * vol, 2)
+                    total_commission = round(
+                        open_trade["entry_commission"] + exit_commission, 2)
+                    balance += round(gross_pnl - exit_commission, 2)
 
                     trades.append({
                         "trade_id": f"t_{len(trades)+1}",
@@ -203,15 +263,18 @@ class RealisticBacktestEngine:
                         "stop_loss": float(round(sl, 5)),
                         "holding_bars": int(holding_bars),
                         "exit_reason": str(exit_reason),
-                        "gross_profit": float(round(gross_pnl, 2)),
-                        "commission": float(round(commission, 2)),
-                        "net_profit": float(round(net_pnl, 2)),
+                        "gross_profit": float(gross_pnl),
+                        "commission": float(total_commission),
+                        "net_profit": float(round(gross_pnl - total_commission, 2)),
                         "balance_after": float(round(balance, 2)),
                     })
+                    equity_timeline.append(
+                        {"time": str(current_time), "equity": float(balance), "kind": "closed"})
                     open_trade = None
 
             # 2. Check for New Signal on bar i (Executed at open of bar i+1)
             if open_trade is None and i < n_bars - 1:
+                next_open = opens[i + 1]
                 sig = sig_values[i]
                 if sig != 0 and not np.isnan(sig):
                     atr = atrs[i]
@@ -234,6 +297,11 @@ class RealisticBacktestEngine:
 
                         lots = self.calculate_lot_size(balance, entry_price, stop_loss)
                         if lots > 0:
+                            # commission_per_lot is PER SIDE: charge the entry
+                            # side now (rounded to cents); the exit side is
+                            # charged at exit under the same contract.
+                            entry_commission = round(self.commission_per_lot * lots, 2)
+                            balance -= entry_commission
                             open_trade = {
                                 "direction": direction,
                                 "volume": lots,
@@ -242,6 +310,7 @@ class RealisticBacktestEngine:
                                 "entry_price": entry_price,
                                 "stop_loss": stop_loss,
                                 "take_profit": take_profit,
+                                "entry_commission": entry_commission,
                             }
 
         # 3. Liquidate any position still open at the final available close.
@@ -259,12 +328,37 @@ class RealisticBacktestEngine:
                 # Closing a short is a buy at Ask; bid OHLC needs spread added.
                 exit_price += spread_cost + slippage_cost
 
-            gross_pnl = self._calculate_gross_pnl(
+            # Final bar exposure: both extremes were live (no barrier hit), so
+            # book the favorable-then-adverse marks before the close. They MUST
+            # use the PRE-close equity base: computing them from the post-close
+            # balance would bake the realized close P&L into both marks
+            # (review regression — artificial curve values).
+            exit_side_commission = round(self.commission_per_lot * vol, 2)
+            base_equity = balance - exit_side_commission
+            if direction == "BUY":
+                favorable_price, adverse_price = highs[final_idx], lows[final_idx]
+            else:
+                favorable_price = lows[final_idx] + spread_cost
+                adverse_price = highs[final_idx] + spread_cost
+            equity_timeline.append({
+                "time": str(times[final_idx]),
+                "equity": float(base_equity + self._calculate_gross_pnl(
+                    open_trade["entry_price"], favorable_price, direction, vol)),
+                "kind": "floating_peak",
+            })
+            equity_timeline.append({
+                "time": str(times[final_idx]),
+                "equity": float(base_equity + self._calculate_gross_pnl(
+                    open_trade["entry_price"], adverse_price, direction, vol)),
+                "kind": "floating_trough",
+            })
+
+            gross_pnl = round(self._calculate_gross_pnl(
                 open_trade["entry_price"], exit_price, direction, vol
-            )
-            commission = self.commission_per_lot * vol
-            net_pnl = gross_pnl - commission
-            balance += net_pnl
+            ), 2)
+            exit_commission = exit_side_commission
+            total_commission = round(open_trade["entry_commission"] + exit_commission, 2)
+            balance += round(gross_pnl - exit_commission, 2)
             trades.append({
                 "trade_id": f"t_{len(trades)+1}",
                 "direction": direction,
@@ -277,20 +371,30 @@ class RealisticBacktestEngine:
                 "stop_loss": float(round(open_trade["stop_loss"], 5)),
                 "holding_bars": int(max(0, final_idx - open_trade["entry_bar_idx"])),
                 "exit_reason": "END_OF_DATA",
-                "gross_profit": float(round(gross_pnl, 2)),
-                "commission": float(round(commission, 2)),
-                "net_profit": float(round(net_pnl, 2)),
+                "gross_profit": float(gross_pnl),
+                "commission": float(total_commission),
+                "net_profit": float(round(gross_pnl - total_commission, 2)),
                 "balance_after": float(round(balance, 2)),
             })
+            equity_timeline.append(
+                {"time": str(times[final_idx]), "equity": float(balance), "kind": "closed"})
             open_trade = None
 
         # 4. Calculate Performance Metrics
-        metrics = BacktestMetrics.calculate(trades, initial_balance=self.initial_balance)
+        metrics = BacktestMetrics.calculate(
+            trades, initial_balance=self.initial_balance, equity_timeline=equity_timeline
+        )
 
         assumptions = {
             "spread_points": self.spread_points,
             "slippage_points": self.slippage_points,
             "commission_per_lot": self.commission_per_lot,
+            "commission_model": "PER_SIDE",
+            "rounding_contract": "CENTS_AT_EVENT",
+            "max_drawdown_includes_floating": True,
+            "floating_mark_policy": (
+                "FAVORABLE_THEN_ADVERSE_WHILE_OPEN; "
+                "ADVERSE_BEFORE_TP_FILL; FAVORABLE_BEFORE_STOP_FILL"),
             "risk_per_trade_pct": self.risk_per_trade_pct,
             "lot_step": self.lot_step,
             "min_lot": self.min_lot,
@@ -298,6 +402,7 @@ class RealisticBacktestEngine:
             "contract_size": self.contract_size,
             "execution_delay_bars": 1,
             "same_bar_collision_policy": "CONSERVATIVE_STOP_LOSS",
+            "gap_through_stop_policy": "FILL_AT_BAR_OPEN",
             "price_basis": "MT5_BID_OHLC",
             "tick_size": self.tick_size,
             "tick_value": self.tick_value,
@@ -306,6 +411,8 @@ class RealisticBacktestEngine:
         limitations = [
             "Tick-level slippage may vary during major macroeconomic news releases.",
             "Historical spread is modeled as fixed average points rather than dynamic tick spreads.",
+            "A gap through the stop is filled at the bar's printed open plus slippage; in extreme gaps the printed open may not be tradeable.",
+            "Intra-bar equity marks use OHLC extremes with a conservative ordering (favorable extreme booked before the adverse one while a trade is open). OHLC cannot prove the real tick path, so these marks are a worst-case convention, not a tick-level simulation.",
             "Swap/financing fees are not included for weekend holds.",
             "No historical result can guarantee future performance in different market regimes."
         ]

@@ -9,7 +9,6 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from alembic import context
 
-from backend.app.core.config import settings
 from backend.app.db.base import Base
 import backend.app.models  # load all models
 
@@ -21,7 +20,26 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 def get_url():
-    return settings.DATABASE_URL
+    """Alembic destination safety: migrations run ONLY against an explicitly
+    pinned ALEMBIC_DATABASE_URL. A silent fallback to the application
+    settings URL is exactly how a stray `alembic upgrade head` in the wrong
+    working directory could reach the production database (H4-incident
+    class). Fail closed with a clear operator error instead; the settings
+    URL is deliberately NOT echoed here so credentials never reach logs —
+    the operator copies the intended value into the env var themselves."""
+    url = os.environ.get("ALEMBIC_DATABASE_URL", "").strip()
+    if not url:
+        raise RuntimeError(
+            "ALEMBIC_DATABASE_URL is not set — refusing to migrate. Alembic "
+            "never guesses its destination: export "
+            "ALEMBIC_DATABASE_URL='<full database URL>' to pin the target "
+            "database explicitly before running any migration. The "
+            "application settings URL is intentionally not printed here to "
+            "keep credentials out of logs; copy the intended value from your "
+            "own environment only if you really mean to migrate that "
+            "database."
+        )
+    return url
 
 def run_migrations_offline() -> None:
     url = get_url()

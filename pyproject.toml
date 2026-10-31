@@ -49,5 +49,9 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-ra -q --strict-markers"
 filterwarnings = [
-    "ignore::DeprecationWarning",
+    # Item 43: the blanket `ignore::DeprecationWarning` hid ALL deprecations,
+    # including first-party regressions. Only the known third-party noise is
+    # suppressed: fastapi's TestClient still imports httpx-backed
+    # starlette.testclient (upstream migration to httpx2 pending).
+    "ignore::DeprecationWarning:fastapi.testclient",
 ]

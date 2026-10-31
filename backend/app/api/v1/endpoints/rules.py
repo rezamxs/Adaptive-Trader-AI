@@ -5,7 +5,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.app.db.session import get_db
-from backend.app.schemas.rule_schema import TradingRuleResponse, ApprovalStatus
+from backend.app.core.auth import require_api_token
+from backend.app.schemas.rule_schema import TradingRuleResponse
 from backend.app.services.knowledge.manager import KnowledgeManager
 
 router = APIRouter()
@@ -21,14 +22,14 @@ class ApproveRuleRequest(BaseModel):
 
 
 @router.get("/", response_model=List[TradingRuleResponse])
-def list_rules(approval_status: Optional[str] = None, db: Session = Depends(get_db)):
-    """Lists trading rules, optionally filtered by status ('pending', 'approved', 'rejected')."""
+def list_rules(approval_status: Optional[str] = None, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+    """Lists trading rules, optionally filtered by status ('pending', 'approved', 'rejected'). M15: strategy definitions are gated."""
     km = KnowledgeManager(db)
     return km.get_rules(approval_status=approval_status)
 
 
 @router.post("/{rule_id}/approve", response_model=TradingRuleResponse)
-def approve_rule(rule_id: str, req: ApproveRuleRequest, db: Session = Depends(get_db)):
+def approve_rule(rule_id: str, req: ApproveRuleRequest, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
     """Human approval of a candidate trading rule. Authorizes it for strategy use."""
     km = KnowledgeManager(db)
     try:
@@ -38,7 +39,7 @@ def approve_rule(rule_id: str, req: ApproveRuleRequest, db: Session = Depends(ge
 
 
 @router.post("/{rule_id}/reject", response_model=TradingRuleResponse)
-def reject_rule(rule_id: str, req: RejectRuleRequest, db: Session = Depends(get_db)):
+def reject_rule(rule_id: str, req: RejectRuleRequest, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
     """Human rejection of a trading rule with an explicit rationale."""
     km = KnowledgeManager(db)
     try:
@@ -48,7 +49,7 @@ def reject_rule(rule_id: str, req: RejectRuleRequest, db: Session = Depends(get_
 
 
 @router.get("/conflicts")
-def check_rule_conflicts(db: Session = Depends(get_db)):
-    """Checks for contradictory rules among approved strategy rules."""
+def check_rule_conflicts(db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+    """Checks for contradictory rules among approved strategy rules (M15: gated)."""
     km = KnowledgeManager(db)
     return km.check_rule_conflicts()

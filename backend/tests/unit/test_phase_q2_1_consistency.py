@@ -22,6 +22,11 @@ from fastapi.testclient import TestClient
 from backend.app.core.config import settings, ExecutionMode
 from backend.app.db.base import Base
 from backend.app.models.worker_cycle import WorkerCycleRecord
+
+
+def _api_headers() -> dict:
+    """M15: gated GET reads require the same shared-secret header as POSTs."""
+    return {"X-API-TOKEN": settings.API_TOKEN}
 from backend.app.models.emergency_stop import EmergencyStopState
 from backend.app.models.rule import TradingRule
 from backend.app.services.market_data.base import TimeFrame, Candle, Quote
@@ -305,7 +310,7 @@ def test_test_f_analysis_success_vs_signal_generation_separation(test_db_session
 
 
 # Test G: Three-way readiness separation & API verification
-def test_test_g_separated_readiness_states_and_endpoints(test_db_session):
+def test_test_g_separated_readiness_states_and_endpoints(test_db_session, isolated_app_db):
     """Test G: Validates that service_ready, market_data_ready, and trading_ready evaluate independently,
     and checks their exposure via FastAPI endpoints /health and /api/v1/system/status.
     """
@@ -356,8 +361,8 @@ def test_test_g_separated_readiness_states_and_endpoints(test_db_session):
         assert "trading_readiness_reason" in health_data
         assert health_data["trading_ready"] is False
 
-        # /api/v1/system/status endpoint
-        status_resp = client.get("/api/v1/system/status")
+        # /api/v1/system/status endpoint (M15: token-gated read)
+        status_resp = client.get("/api/v1/system/status", headers=_api_headers())
         assert status_resp.status_code == 200
         status_data = status_resp.json()
         assert "service_ready" in status_data

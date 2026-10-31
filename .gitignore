@@ -65,3 +65,11 @@ frontend/.vite/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Agent/session runtime state and local tooling (never commit)
+.mimosa/
+backend/.mimosa/
+.backup-spec-kit-20261029/
+backend/artifacts/
+backend/data/
+*Purpose*

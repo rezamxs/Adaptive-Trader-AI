@@ -1,6 +1,8 @@
 """Core Security and Safety Gate Enforcement.
 Implements dual verification for Demo accounts and blocks any unauthorized actions.
 """
+import re
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from backend.app.core.config import ExecutionMode, settings
 from backend.app.core.errors import (
@@ -13,6 +15,16 @@ from backend.app.core.errors import (
 MT5_ACCOUNT_TRADE_MODE_DEMO = 0
 MT5_ACCOUNT_TRADE_MODE_CONTEST = 1
 MT5_ACCOUNT_TRADE_MODE_REAL = 2
+
+# Filename safety: reject path separators, Windows-reserved metacharacters,
+# traversal sequences, and control characters. Persian/Unicode letters are
+# legitimate in uploaded document names and remain allowed.
+_UNSAFE_FILENAME_RE = re.compile(r'[\\/:*?"<>|\x00-\x1f]|\.\.')
+
+# Windows reserved device names (case-insensitive, any extension) — writing
+# to e.g. "nul" silently targets the NUL device instead of a file.
+_WINDOWS_RESERVED_RE = re.compile(
+    r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$", re.IGNORECASE)
 
 
 def mask_login(login: Any) -> str:
@@ -93,3 +105,34 @@ def assert_safe_to_execute_demo_order(
         raise AccountAuthenticationError(
             "Execution blocked: Account could not be verified as a genuine DEMO account."
         )
+
+
+def build_contained_path(root, *segments: str) -> Path:
+    """Build a filesystem path under `root` from validated segments (path
+    traversal hardening, centralised so every dynamic file construction in
+    the application enforces the same contract).
+
+    Segments are joined with "_" and must be non-empty basenames: path
+    separators, traversal sequences (".."), reserved metacharacters and
+    control characters are refused BEFORE anything touches the filesystem.
+    The resolved candidate must stay inside the resolved root — the return
+    value is therefore provably contained and safe to open for I/O.
+
+    Raises:
+        ValueError: if any segment is empty, unsafe, or the joined path
+            escapes `root`.
+    """
+    cleaned = [str(segment) for segment in segments if str(segment)]
+    if not cleaned:
+        raise ValueError("build_contained_path requires at least one non-empty segment")
+    joined = "_".join(cleaned)
+    if _UNSAFE_FILENAME_RE.search(joined):
+        raise ValueError(f"Unsafe filename component: {joined!r}")
+    for segment in cleaned:
+        if _WINDOWS_RESERVED_RE.match(segment.split(".")[0] or segment):
+            raise ValueError(f"Filename uses a Windows reserved device name: {segment!r}")
+    root_resolved = Path(root).resolve()
+    candidate = (root_resolved / joined).resolve()
+    if not candidate.is_relative_to(root_resolved):
+        raise ValueError(f"Resolved path escaped the storage root: {candidate}")
+    return candidate

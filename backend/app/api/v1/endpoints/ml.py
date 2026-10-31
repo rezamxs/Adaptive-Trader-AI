@@ -1,11 +1,14 @@
 """Machine Learning and Model Training Endpoints."""
-from typing import Any, Dict, Literal, Optional
+from typing import Literal, Optional
 import math
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.app.db.session import get_db
+from backend.app.core.auth import require_api_token
+from backend.app.core.errors import ModelGovernanceError
+from backend.app.core.logging import logger
 from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
 from backend.app.services.market_data.base import TimeFrame
 from backend.app.services.dataset.pipeline import DatasetPipeline
@@ -30,8 +33,8 @@ class PromoteModelRequest(BaseModel):
 
 
 @router.get("/models")
-def list_models(db: Session = Depends(get_db)):
-    """Lists trained models and candidate artifacts."""
+def list_models(db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+    """Lists trained models and candidate artifacts (M15: model governance data — gated)."""
     registry = ModelRegistry(db)
     models = registry.list_models()
     return [{
@@ -47,7 +50,7 @@ def list_models(db: Session = Depends(get_db)):
 
 
 @router.post("/train")
-def train_model(req: TrainModelRequest, db: Session = Depends(get_db)):
+def train_model(req: TrainModelRequest, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
     """Trains a new candidate model on historical data with strict temporal splitting."""
     provider = MT5MarketDataProvider()
     if not provider.connect():
@@ -64,10 +67,16 @@ def train_model(req: TrainModelRequest, db: Session = Depends(get_db)):
 
     if symbol_info is None:
         raise HTTPException(status_code=503, detail=f"MT5 did not return broker specifications for {req.symbol}.")
+    # symbol_info.spread may be None/invalid on broker failures — convert once,
+    # guarded, instead of leaking a raw TypeError as a 500 from either use site.
+    try:
+        broker_spread = int(symbol_info.spread)
+    except (TypeError, ValueError, OverflowError):
+        raise HTTPException(status_code=503, detail=f"MT5 returned invalid point/spread data for {req.symbol}.")
     if (
         not math.isfinite(float(symbol_info.point))
         or float(symbol_info.point) <= 0
-        or int(symbol_info.spread) < 0
+        or broker_spread < 0
     ):
         raise HTTPException(status_code=503, detail=f"MT5 returned invalid point/spread data for {req.symbol}.")
 
@@ -82,11 +91,15 @@ def train_model(req: TrainModelRequest, db: Session = Depends(get_db)):
             symbol=req.symbol,
             timeframe=req.timeframe.value,
             horizon_bars=req.horizon_bars,
-            spread_points=max(0, int(symbol_info.spread)),
+            spread_points=max(0, broker_spread),
             point_value=float(symbol_info.point),
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Dataset construction failed: {str(e)}")
+        logger.error(f"Dataset construction failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Dataset construction failed due to an internal error.",
+        )
 
     # Train model
     trainer = ModelTrainer(db=db)
@@ -96,7 +109,11 @@ def train_model(req: TrainModelRequest, db: Session = Depends(get_db)):
             algorithm=req.algorithm
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Model training failed: {str(e)}")
+        logger.error(f"Model training failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Model training failed due to an internal error.",
+        )
 
     return {
         "model_id": train_res["model_id"],
@@ -108,8 +125,8 @@ def train_model(req: TrainModelRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/models/{model_id}/compare")
-def compare_model(model_id: str, db: Session = Depends(get_db)):
-    """Compares candidate model metrics against active model."""
+def compare_model(model_id: str, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+    """Compares candidate model metrics against active model (M15: gated)."""
     registry = ModelRegistry(db)
     try:
         return registry.compare_models(model_id)
@@ -118,11 +135,26 @@ def compare_model(model_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/models/{model_id}/promote")
-def promote_model(model_id: str, req: PromoteModelRequest, db: Session = Depends(get_db)):
-    """Promotes candidate model to active status."""
+def promote_model(model_id: str, req: PromoteModelRequest, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+    """Promotes candidate model to active status.
+
+    M22: the failure classes must stay distinguishable — an unknown model id
+    is 404, a governance/provenance gate rejection is 409 (conflict with
+    current server state), and an unexpected bug is a sanitized 500 (never a
+    blanket 400, and never raw internals in the detail)."""
     registry = ModelRegistry(db)
     try:
         promoted = registry.promote_candidate(model_id, actor=req.actor, notes=req.notes)
         return {"status": "SUCCESS", "model_id": promoted.model_id, "state": promoted.status}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ModelGovernanceError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception(f"Model promotion failed with an internal error for {model_id}")
+        raise HTTPException(
+            status_code=500,
+            detail="Model promotion failed due to an internal error.",
+        )

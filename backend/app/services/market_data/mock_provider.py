@@ -52,6 +52,10 @@ class MockMarketDataProvider(IMarketDataProvider):
         """Synthetic providers have no actual open broker positions."""
         return 0 if self._connected else None
 
+    def get_open_positions(self) -> Optional[list]:
+        """Synthetic providers hold no open positions; an empty grid."""
+        return [] if self._connected else None
+
     def get_daily_loss_percent(self) -> Optional[float]:
         """Synthetic provider reports only its fixed demo fixture state."""
         return 0.0 if self._connected else None

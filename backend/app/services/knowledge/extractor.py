@@ -145,10 +145,12 @@ class RuleExtractor:
             if sym.lower() in lower_text:
                 detected_symbols.append(sym)
 
-        # Timeframes detection
+        # Timeframes detection — word-boundary match on the lowercased text: a
+        # plain substring test makes "M15" also detect "M1" (and "H1" inside
+        # other tokens), which would give a rule a wrong timeframe_scope.
         detected_timeframes = []
         for tf in ["M1", "M5", "M15", "M30", "H1", "H4", "D1"]:
-            if tf.lower() in lower_text or f"{tf}".lower() in lower_text:
+            if re.search(rf"\b{re.escape(tf.lower())}\b", lower_text):
                 detected_timeframes.append(tf)
 
         # Invalidation conditions

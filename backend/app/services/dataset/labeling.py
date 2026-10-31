@@ -35,7 +35,15 @@ class BarrierLabeler:
         close_prices = df["close"].values
         high_prices = df["high"].values
         low_prices = df["low"].values
-        atrs = df[atr_col].values if atr_col in df.columns else np.full(n, 0.0010)
+        if atr_col not in df.columns:
+            # Fail loud instead of a hardcoded 0.0010 fallback ATR: on XAUUSD
+            # (~$2000) that barrier is sub-tick and degenerates every label
+            # to 0 with no warning — silently corrupt training targets.
+            raise ValueError(
+                f"Barrier labeling requires the ATR column '{atr_col}' in the frame; "
+                "refusing to substitute a hardcoded fallback ATR."
+            )
+        atrs = df[atr_col].values
 
         # Prefer historical per-bar spread, available in MT5 rates, over today's
         # broker spread. This avoids labeling all history with the current spread.
