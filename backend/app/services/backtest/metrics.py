@@ -1,5 +1,5 @@
 """Backtest Performance Metrics and Statistical Evaluation."""
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
@@ -8,7 +8,11 @@ class BacktestMetrics:
     """Computes comprehensive quantitative metrics for simulated trade histories."""
 
     @staticmethod
-    def calculate(trades: List[Dict[str, Any]], initial_balance: float = 10000.0) -> Dict[str, Any]:
+    def calculate(
+        trades: List[Dict[str, Any]],
+        initial_balance: float = 10000.0,
+        equity_timeline: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
         """Calculates profit, risk, drawdowns, and expectancy metrics."""
         if not trades:
             return {
@@ -41,6 +45,13 @@ class BacktestMetrics:
         gross_loss = float(abs(np.sum(losses))) if losses else 0.0
         net_profit = float(np.sum(profits))
         final_balance = initial_balance + net_profit
+        # The engine's realized balance path carries full float precision while
+        # recorded net_profit values are rounded to cents; the last recorded
+        # balance_after is authoritative so final_balance stays consistent with
+        # the trade records down to the cent.
+        if trades and trades[-1].get("balance_after") is not None:
+            final_balance = float(trades[-1]["balance_after"])
+            net_profit = round(final_balance - initial_balance, 2)
 
         total_trades = len(trades)
         winning_trades = len(wins)
@@ -58,27 +69,49 @@ class BacktestMetrics:
         holding_bars = [t.get("holding_bars", 1) for t in trades]
         avg_holding_bars = float(np.mean(holding_bars)) if holding_bars else 0.0
 
-        # Construct Equity Curve & Calculate Max Drawdown
-        equity = initial_balance
-        equity_curve = [{"time": "START", "equity": initial_balance}]
-        peak = initial_balance
+        # Construct Equity Curve & Calculate Max Drawdown. When the engine
+        # supplies an equity_timeline it contains BOTH closed marks and
+        # worst-case intra-bar floating marks (M2), so unrealized losses
+        # register in the drawdown; without one, fall back to the
+        # closed-trades-only path.
         max_dd_amount = 0.0
         max_dd_pct = 0.0
+        if equity_timeline:
+            equity_curve = [{"time": "START", "equity": round(initial_balance, 2)}]
+            peak = initial_balance
+            for event in equity_timeline:
+                eq = float(event["equity"])
+                equity_curve.append({
+                    "time": str(event.get("time", "N/A")),
+                    "equity": round(eq, 2),
+                })
+                if eq > peak:
+                    peak = eq
+                dd_amount = peak - eq
+                dd_pct = (dd_amount / peak) * 100.0 if peak > 0 else 0.0
+                if dd_amount > max_dd_amount:
+                    max_dd_amount = dd_amount
+                if dd_pct > max_dd_pct:
+                    max_dd_pct = dd_pct
+        else:
+            equity = initial_balance
+            equity_curve = [{"time": "START", "equity": initial_balance}]
+            peak = initial_balance
 
-        for t in trades:
-            equity += t["net_profit"]
-            equity_curve.append({
-                "time": str(t.get("exit_time", "N/A")),
-                "equity": round(equity, 2),
-            })
-            if equity > peak:
-                peak = equity
-            dd_amount = peak - equity
-            dd_pct = (dd_amount / peak) * 100.0 if peak > 0 else 0.0
-            if dd_amount > max_dd_amount:
-                max_dd_amount = dd_amount
-            if dd_pct > max_dd_pct:
-                max_dd_pct = dd_pct
+            for t in trades:
+                equity += t["net_profit"]
+                equity_curve.append({
+                    "time": str(t.get("exit_time", "N/A")),
+                    "equity": round(equity, 2),
+                })
+                if equity > peak:
+                    peak = equity
+                dd_amount = peak - equity
+                dd_pct = (dd_amount / peak) * 100.0 if peak > 0 else 0.0
+                if dd_amount > max_dd_amount:
+                    max_dd_amount = dd_amount
+                if dd_pct > max_dd_pct:
+                    max_dd_pct = dd_pct
 
         return {
             "initial_balance": round(initial_balance, 2),

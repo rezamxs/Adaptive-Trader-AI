@@ -18,6 +18,22 @@ async def lifespan(app: FastAPI):
     """Controlled application lifespan managing DB initialization and background worker."""
     # Startup phase
     init_db()
+    # Item 16: operator-configured retention for the operationally-growing
+    # tables. Both windows default to 0 = disabled, so audit history is
+    # never pruned unless the operator explicitly sets a window.
+    try:
+        from backend.app.db.session import SessionLocal
+        from backend.app.services.worker.market_worker import prune_operational_records
+        if settings.WORKER_CYCLE_RETENTION_DAYS or settings.AUDIT_LOG_RETENTION_DAYS:
+            with SessionLocal() as db:
+                pruned = prune_operational_records(
+                    db,
+                    worker_cycle_days=settings.WORKER_CYCLE_RETENTION_DAYS,
+                    audit_log_days=settings.AUDIT_LOG_RETENTION_DAYS,
+                )
+            logger.info("Retention sweep at startup: %s", pruned)
+    except Exception as e:
+        logger.warning(f"Retention sweep failed at startup: {e}")
     worker = None
     if settings.WORKER_ENABLED:
         try:
@@ -54,6 +70,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """Baseline hardening headers on every response. CSP allows the inline
+    dashboard bundle plus the exact third-party origins the app actually
+    loads (independent review findings 1-2): the local Swagger UI assets from
+    cdn.jsdelivr.net (FastAPI default) and the Vazirmatn webfont from
+    fonts.googleapis.com / fonts.gstatic.com. Everything else stays 'self'.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com "
+        "https://cdn.jsdelivr.net; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; frame-ancestors 'none'",
+    )
+    return response
+
 # Include API Router
 app.include_router(api_router, prefix="/api/v1")
 
@@ -73,6 +114,9 @@ if frontend_dir.exists():
 def health_check():
     """Liveness and separated readiness check with worker status."""
     worker = get_market_worker()
+    # One shared governance probe for both trading-readiness fields: a single
+    # model-artifact load per health poll instead of two pickle deserializations.
+    probe_ready, probe_reason = worker.trading_governance_probe()
     return {
         "status": "healthy",
         "app": settings.APP_NAME,
@@ -83,8 +127,8 @@ def health_check():
         "service_ready_reason": worker.service_ready_reason,
         "market_data_ready": worker.market_data_ready,
         "market_data_reason": worker.market_data_reason,
-        "trading_ready": worker.trading_ready,
-        "trading_readiness_reason": worker.trading_readiness_reason,
+        "trading_ready": probe_ready,
+        "trading_readiness_reason": probe_reason,
         "worker_running": worker.is_running,
     }
 

@@ -237,13 +237,19 @@ def test_database_failure_resilience_and_rollback(test_db_session):
 
     worker = MarketMonitoringWorker(data_provider=mock_provider, db_factory=session_factory)
 
-    # Patch session commit to raise error on final save
+    # Patch session commit to raise error on the reservation save
     with patch.object(db, "commit", side_effect=Exception("Simulated SQLite lock error")):
         # Mock session_factory to return the patched db
         worker.db_factory = lambda: db
         res = worker.run_single_cycle()
-        assert res["status_code"] in ["NO_APPROVED_RULES_AND_NO_ACTIVE_MODEL", "NO_VALID_SIGNAL"]
-        assert worker.last_status_code == "DATABASE_WRITE_FAILED"
+        # Contract (audit 2026-10-30, fail-closed): a failed bar RESERVATION
+        # now SKIPS the cycle instead of running the analysis unreserved and
+        # colliding with the unique bar_key on the final save. The worker
+        # still never crashes — the failure is a graceful, reported early
+        # return, and the same bar is retried on the next poll.
+        assert res["status_code"] == "RESERVATION_FAILED"
+        assert res["analysis_executed"] is False
+        assert worker.last_status_code == "RESERVATION_FAILED"
 
 
 # 7. MT5 temporary error and reconnection
@@ -288,9 +294,18 @@ def test_unexpected_worker_error_and_backoff(test_db_session):
 
     async def _run_test():
         await worker.start()
-        await asyncio.sleep(0.6)
+        # Item 43: replaced the fixed asyncio.sleep(0.6) with a conditional
+        # wait — the assertion is reached as soon as the first failed cycle
+        # lands, and the deadline bounds a genuinely hung worker.
+        deadline = asyncio.get_event_loop().time() + 5.0
+        while (
+            worker.consecutive_errors < 1
+            and asyncio.get_event_loop().time() < deadline
+        ):
+            await asyncio.sleep(0.02)
         # Verify error tracking while active
-        assert worker.consecutive_errors >= 1
+        assert worker.consecutive_errors >= 1, (
+            "worker did not register a failed cycle within the 5s deadline")
         assert worker.total_errors >= 1
         assert worker.last_status_code == "WORKER_EXCEPTION"
         diag = worker.get_diagnostics()

@@ -1,15 +1,65 @@
-"""Unit and integration tests for grounded Knowledge Retrieval across all 6 learning sources."""
+"""Grounded Knowledge Retrieval regression suite against the REAL ingested corpus.
+
+These tests validate the actually-ingested learning corpus (the six source
+documents) end-to-end — that is their entire value, so they deliberately run
+against the real database instead of a synthetic lookalike corpus.
+
+Isolation contract (audit 2026-10-30): the fixture opens the real SQLite file
+in READ-ONLY mode (`mode=ro`), so no test in this module can ever write the
+production database, and the module SKIPS cleanly when the corpus is absent
+(fresh clones / CI) instead of failing on missing content.
+"""
+from pathlib import Path
+
 import pytest
-from backend.app.db.session import SessionLocal
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from backend.app.core.config import settings
 from backend.app.services.knowledge.manager import KnowledgeManager
 from backend.app.services.knowledge.retriever import KnowledgeRetriever
 
 
+def _corpus_is_available() -> bool:
+    raw_path = settings.DATABASE_URL.replace("sqlite:///", "", 1)
+    db_path = Path(raw_path)
+    if not db_path.is_file():
+        return False
+    # A database file can exist without the corpus (fresh init): probe it
+    # read-only for at least one ingested document.
+    engine = create_engine(f"sqlite:///file:{db_path.as_posix()}?mode=ro&uri=true")
+    try:
+        from backend.app.models.document import Document
+        with engine.connect() as conn:
+            from sqlalchemy import select, func
+            count = conn.execute(select(func.count(Document.id))).scalar_one()
+        return count > 0
+    except Exception:
+        return False
+    finally:
+        engine.dispose()
+
+
+pytestmark = pytest.mark.skipif(
+    not _corpus_is_available(),
+    reason="real corpus database (adaptive_trader.db with ingested documents) "
+           "not present in this environment; suite validates the actually-"
+           "ingested corpus and is skipped on fresh clones/CI",
+)
+
+
 @pytest.fixture
 def db_session():
-    db = SessionLocal()
-    yield db
-    db.close()
+    """READ-ONLY session over the real corpus database (mode=ro)."""
+    raw_path = settings.DATABASE_URL.replace("sqlite:///", "", 1)
+    engine = create_engine(f"sqlite:///file:{Path(raw_path).as_posix()}?mode=ro&uri=true")
+    Session = sessionmaker(bind=engine)
+    db = Session()
+    try:
+        yield db
+    finally:
+        db.close()
+        engine.dispose()
 
 
 def test_retrieval_specific_detail_from_page(db_session):

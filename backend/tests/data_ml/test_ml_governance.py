@@ -65,36 +65,32 @@ def test_controlled_model_promotion_and_archiving(db_session, sample_dataset):
     m2 = trainer.train_candidate(sample_dataset, algorithm="random_forest")
 
     passing_wf = {
-        "fold_count": 5,
-        "trade_count": 50,
-        "net_profit": 150.0,
-        "profit_factor": 1.25,
-        "max_drawdown_percent": 4.0,
-        "spread_costs_included": True,
-        "slippage_costs_included": True,
-        "commission_costs_included": True,
+        "backtest_run_id": "bt_wf_governance",
+        # M8 round 2: the remaining numbers come from the shared builder so
+        # the seeded run IS a walk-forward evaluation with re-aggregatable
+        # fold records (the builder keeps the historical 150.0/50/1.25/4.0).
     }
+    from backend.tests.unit._wf_evidence import build_walk_forward_payload, seed_walk_forward_run
+    passing_wf = build_walk_forward_payload("bt_wf_governance")
+    seed_walk_forward_run(db_session, "bt_wf_governance")
 
     # Attach required walk-forward metrics and passing validation/test metrics
     rec1 = db_session.query(MLModelRecord).filter_by(model_id=m1["model_id"]).first()
-    rec1.walk_forward_metrics = passing_wf
     val1 = dict(rec1.validation_metrics or {})
     val1.update({"roc_auc": 0.55, "brier_score": 0.20, "sample_count": 50})
     test1 = dict(rec1.test_metrics or {})
     test1.update({"roc_auc": 0.55, "brier_score": 0.20, "sample_count": 50})
-    rec1.validation_metrics = val1
-    rec1.test_metrics = test1
 
     rec2 = db_session.query(MLModelRecord).filter_by(model_id=m2["model_id"]).first()
-    rec2.walk_forward_metrics = passing_wf
     val2 = dict(rec2.validation_metrics or {})
     val2.update({"roc_auc": 0.65, "brier_score": 0.18, "sample_count": 50})
     test2 = dict(rec2.test_metrics or {})
     test2.update({"roc_auc": 0.65, "brier_score": 0.18, "sample_count": 50})
-    rec2.validation_metrics = val2
-    rec2.test_metrics = test2
 
-    db_session.commit()
+    # Finding 5: walk-forward evidence flows through the registry's supported
+    # path, which re-attests the digest and syncs the artifact in one write.
+    registry.attach_walk_forward_metrics(m1["model_id"], passing_wf, validation_metrics=val1, test_metrics=test1)
+    registry.attach_walk_forward_metrics(m2["model_id"], passing_wf, validation_metrics=val2, test_metrics=test2)
 
     # Promote Model 1
     promoted_1 = registry.promote_candidate(m1["model_id"], actor="QUANT_LEAD")

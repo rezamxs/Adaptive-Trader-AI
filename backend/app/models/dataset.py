@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 from sqlalchemy import String, Integer, DateTime, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 
 
 class DatasetVersion(Base):
@@ -23,4 +23,4 @@ class DatasetVersion(Base):
     target_stats: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     
     file_path: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)

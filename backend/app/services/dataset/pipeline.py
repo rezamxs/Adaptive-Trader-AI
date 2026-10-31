@@ -1,6 +1,6 @@
 """Dataset Pipeline Orchestrator with Temporal Purged/Embargoed Splits."""
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
 from backend.app.core.logging import logger
+from backend.app.db.base import utc_now_naive
 from backend.app.models.dataset import DatasetVersion
 from backend.app.services.dataset.features import FeatureEngineer
 from backend.app.services.dataset.labeling import BarrierLabeler
@@ -161,8 +162,16 @@ class DatasetPipeline:
 
         # 8. Record in DB if session available
         if self.db:
-            start_t = clean_df.index[0] if isinstance(clean_df.index[0], datetime) else datetime.utcnow()
-            end_t = clean_df.index[-1] if isinstance(clean_df.index[-1], datetime) else datetime.utcnow()
+            start_t = clean_df.index[0] if isinstance(clean_df.index[0], datetime) else utc_now_naive()
+            end_t = clean_df.index[-1] if isinstance(clean_df.index[-1], datetime) else utc_now_naive()
+            # Naive-UTC DB contract (db/base.py): the MT5 provider emits
+            # tz-aware UTC stamps and the SQLite bind silently strips tzinfo,
+            # so normalize explicitly — a non-UTC aware index would otherwise
+            # be stored with silently shifted wall-clock values.
+            if getattr(start_t, "tzinfo", None) is not None:
+                start_t = start_t.astimezone(timezone.utc).replace(tzinfo=None)
+            if getattr(end_t, "tzinfo", None) is not None:
+                end_t = end_t.astimezone(timezone.utc).replace(tzinfo=None)
             
             existing_record = self.db.query(DatasetVersion).filter_by(version_tag=version_tag).first()
             if existing_record is None:

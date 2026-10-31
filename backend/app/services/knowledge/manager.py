@@ -3,9 +3,11 @@ Ensures unapproved rules NEVER enter the active trading strategy.
 """
 import uuid
 import shutil
+import hashlib
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from backend.app.core.config import settings
 from backend.app.core.logging import logger, log_security_event
@@ -20,11 +22,49 @@ from backend.app.services.knowledge.retriever import KnowledgeRetriever
 
 
 class KnowledgeManager:
-    """Orchestrates document ingestion, extraction, ambiguity tracking, and human review."""
+    """Orchestrates document ingestion, extraction, ambiguity tracking, and human review.
+
+    Document processing state machine (processing_status):
+
+        (new/recovery) ──► processing ──► completed
+                              │               ▲
+                              │               └── retry: incomplete docs are
+                              │                   detected by hash, partial
+                              │                   chunks/rules deleted, and
+                              │                   the whole parse+persist
+                              │                   re-run exactly once more
+                              ▼
+                           failed ───────────────┘
+
+        - `completed` is committed ONLY after the chunk batch and the rule
+          batch have both been committed (never before; failure between the
+          two keeps the document recoverable, not completed-without-chunks).
+        - `failed` is committed after a rollback, so no partial chunk/rule
+          batch survives inside a committed 'failed' row; chunk batches
+          committed before a later rule-stage failure are removed by the
+          recovery path on the next ingestion of the same content hash.
+        - There is no transition out of `completed` except recovery for the
+          legacy corrupted case (completed with zero chunks and no
+          NO_EXTRACTABLE_CONTENT marker).
+    """
+
+    _CHUNK = 1024 * 1024
 
     def __init__(self, db: Session):
         self.db = db
         self.retriever = KnowledgeRetriever(db)
+
+    @classmethod
+    def _hash_file_chunked(cls, path: Path) -> str:
+        """SHA-256 over the file read in 1MB chunks; never holds the whole file."""
+        digest = hashlib.sha256()
+        with open(path, "rb") as f:
+            while True:
+                block = f.read(cls._CHUNK)
+                if not block:
+                    break
+                digest.update(block)
+        return digest.hexdigest()
 
     def ingest_document(
         self,
@@ -32,9 +72,38 @@ class KnowledgeManager:
         file_bytes: bytes,
         source_description: Optional[str] = None
     ) -> Tuple[Document, List[TradingRule]]:
-        """Ingests a file, saves to raw storage, parses content, and extracts pending rules."""
+        """Ingests file bytes (kept for API compatibility; the upload endpoint
+        uses ingest_document_path so raw files never become one bytes object)."""
+        return self._ingest(file_name, source_description, file_bytes=file_bytes)
+
+    def ingest_document_path(
+        self,
+        file_name: str,
+        file_path,
+        source_description: Optional[str] = None
+    ) -> Tuple[Document, List[TradingRule]]:
+        """Ingests a file directly from disk: chunk-wise hashing, file-to-file
+        raw storage, and path-based parsing. The raw file is never materialized
+        as one bytes object."""
+        return self._ingest(file_name, source_description, source_path=Path(file_path))
+
+    def _ingest(
+        self,
+        file_name: str,
+        source_description: Optional[str],
+        *,
+        file_bytes: Optional[bytes] = None,
+        source_path: Optional[Path] = None,
+    ) -> Tuple[Document, List[TradingRule]]:
+        """Shared ingestion body; exactly one of file_bytes/source_path is set."""
+        # (name, category) of human-approved rules preserved during recovery —
+        # empty for fresh documents; populated only on the recovery path.
+        approved_rule_keys: set = set()
         document_id = f"doc_{uuid.uuid4().hex[:12]}"
-        file_size = len(file_bytes)
+        if source_path is not None:
+            file_size = source_path.stat().st_size
+        else:
+            file_size = len(file_bytes)
 
         # Validate file size (max 250MB to support large trading course books)
         if file_size > 250 * 1024 * 1024:
@@ -44,26 +113,159 @@ class KnowledgeManager:
         safe_file_name = Path(str(file_name).replace("\\", "/")).name
         ext = Path(safe_file_name).suffix.lower()
 
-        # Idempotency check: prevent duplicate document and chunk ingestion
+        # Compute cryptographic content hash (chunk-wise for path sources)
+        if source_path is not None:
+            content_sha256 = self._hash_file_chunked(source_path)
+        else:
+            content_sha256 = hashlib.sha256(file_bytes).hexdigest()
+
+        # Idempotency check: query existing document record by cryptographic content hash.
+        # Deterministic winner: lowest id (oldest row) when duplicate hash rows
+        # exist (e.g. a failed + a completed twin from a pre-fix race) — an
+        # unordered .first() made recovery nondeterministic.
         existing_doc = self.db.query(Document).filter(
-            Document.file_name == safe_file_name,
-            Document.file_size_bytes == file_size,
-            Document.processing_status == "completed"
-        ).first()
+            Document.content_sha256 == content_sha256,
+        ).order_by(Document.id).first()
+
+        # Provenance-verified fallback for legacy records where content_sha256 is null:
+        # Crucial: Never assume equality based solely on filename and file size.
+        # Equality must be cryptographically proven against stored file bytes or exact raw_text.
+        # If equality cannot be proven, the incoming content MUST NOT be merged or attributed to legacy.
+        if not existing_doc:
+            legacy_candidates = self.db.query(Document).filter(
+                Document.file_name == safe_file_name,
+                Document.file_size_bytes == file_size,
+                Document.content_sha256.is_(None),
+                Document.processing_status == "completed"
+            ).all()
+
+            for legacy_doc in legacy_candidates:
+                is_identical = False
+                legacy_file_path = settings.DATA_RAW_DIR / f"{legacy_doc.document_id}_{safe_file_name}"
+
+                # 1. Cryptographically verify exact raw bytes on disk if available
+                if legacy_file_path.is_file():
+                    try:
+                        if self._hash_file_chunked(legacy_file_path) == content_sha256:
+                            is_identical = True
+                    except Exception as e:
+                        logger.warning(f"Could not verify legacy file on disk: {e}")
+
+                # 2. Cryptographically verify against raw_text if text-based and exact match
+                if not is_identical and legacy_doc.raw_text:
+                    try:
+                        raw_bytes = legacy_doc.raw_text.encode("utf-8")
+                        if hashlib.sha256(raw_bytes).hexdigest() == content_sha256:
+                            is_identical = True
+                    except Exception:
+                        pass
+
+                if is_identical:
+                    # Content equality strictly proven: safe to backfill hash.
+                    # Backfill EVERY proven-identical legacy row (not just the
+                    # first): a remaining NULL-hash twin would re-trigger this
+                    # legacy scan on every future re-ingest of the same bytes.
+                    legacy_doc.content_sha256 = content_sha256
+                    self.db.commit()
+                    if existing_doc is None:
+                        existing_doc = legacy_doc
+
         if existing_doc:
-            logger.info(f"Document {safe_file_name} already ingested. Returning existing record.")
-            existing_rules = self.db.query(TradingRule).filter(TradingRule.source_document == existing_doc.document_id).all()
-            return existing_doc, existing_rules
+            # Check whether existing document is genuinely complete (has persisted chunks or was empty)
+            existing_chunks_count = self.db.query(KnowledgeChunk).filter(
+                KnowledgeChunk.document_id == existing_doc.document_id
+            ).count()
+            is_complete = (
+                existing_doc.processing_status == "completed"
+                and (existing_chunks_count > 0 or existing_doc.pages_count == 0)
+            )
+            # Item 35: an empty/blank source is a TERMINAL completed state —
+            # there is genuinely nothing to chunk, so recovery would re-parse
+            # it forever. The explicit marker records WHY it has zero chunks.
+            if (
+                not is_complete
+                and existing_doc.processing_status == "completed"
+                and existing_chunks_count == 0
+                and not (existing_doc.raw_text or "").strip()
+            ):
+                existing_doc.error_message = "NO_EXTRACTABLE_CONTENT: source yielded no usable text chunks."
+                self.db.commit()
+                logger.info(
+                    f"Document {existing_doc.document_id} is a blank/empty source "
+                    "(terminal completed state); returning it without recovery."
+                )
+                return existing_doc, []
+            if is_complete:
+                logger.info(f"Document with hash {content_sha256} already ingested. Returning existing record.")
+                existing_rules = self.db.query(TradingRule).filter(TradingRule.source_document == existing_doc.document_id).all()
+                return existing_doc, existing_rules
 
-        storage_path = settings.DATA_RAW_DIR / f"{document_id}_{safe_file_name}"
+            logger.warning(
+                f"Document {existing_doc.document_id} with hash {content_sha256} found in incomplete state "
+                f"(status={existing_doc.processing_status}, chunks={existing_chunks_count}). Initiating recovery."
+            )
+            # Reusing existing_doc to prevent duplicate Document records
+            document_id = existing_doc.document_id
+            doc_record = existing_doc
+            # HUMAN-APPROVED rules are governance state, not processing
+            # artifacts: recovery must preserve them with their identity
+            # (rule_id + approval_status). Deleting everything would silently
+            # de-approve rules the user already approved if a later boundary
+            # failed after their approval. Only PENDING/REJECTED rules are
+            # rebuilt; fresh extraction below skips exact duplicates of the
+            # preserved approved rules.
+            approved_rules = self.db.query(TradingRule).filter(
+                TradingRule.source_document == document_id,
+                TradingRule.approval_status == ApprovalStatus.APPROVED.value,
+            ).all()
+            approved_rule_keys = {(r.name, r.category) for r in approved_rules}
+            # Clean up partial chunks/rules before re-populating. The matched
+            # ORM objects are expunged FIRST: after a mid-ingest rollback,
+            # Query.delete() removes the DB rows but does NOT evict the
+            # identity-map entries, and the re-created rows reuse the freed
+            # autoincrement PKs — SQLAlchemy then warns "Identity map already
+            # had an identity" and can silently bind the stale object.
+            stale_chunks = self.db.query(KnowledgeChunk).filter(
+                KnowledgeChunk.document_id == document_id).all()
+            stale_rules = self.db.query(TradingRule).filter(
+                TradingRule.source_document == document_id,
+                TradingRule.approval_status != ApprovalStatus.APPROVED.value,
+            ).all()
+            for stale_obj in (*stale_chunks, *stale_rules):
+                self.db.expunge(stale_obj)
+            self.db.query(KnowledgeChunk).filter(KnowledgeChunk.document_id == document_id).delete()
+            self.db.query(TradingRule).filter(
+                TradingRule.source_document == document_id,
+                TradingRule.approval_status != ApprovalStatus.APPROVED.value,
+            ).delete(synchronize_session=False)
+            self.db.commit()
+        else:
+            document_id = f"doc_{uuid.uuid4().hex[:12]}"
+            doc_record = None
+
+        # Defense-in-depth for path construction: document_id is
+        # server-generated ("doc_" + hex) and safe_file_name is a bare
+        # basename (see sanitization above). The centralised helper validates
+        # both segments, refuses separators/traversal, and containment-checks
+        # the resolved path BEFORE any byte is written.
+        from backend.app.core.security import build_contained_path
+
+        storage_path = build_contained_path(
+            settings.DATA_RAW_DIR, document_id, safe_file_name)
         storage_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(storage_path, "wb") as f:
-            f.write(file_bytes)
+        if source_path is not None:
+            shutil.copyfile(source_path, storage_path)
+        else:
+            storage_path.write_bytes(file_bytes)
 
-        # Parse file
+        # Parse file (path-based when the source is a file, so raw bytes are
+        # never held as one bytes object for the binary formats)
         try:
-            full_text, pages_count, page_chunks = DocumentParser.parse_file(safe_file_name, file_bytes)
-            status = "completed"
+            if source_path is not None:
+                full_text, pages_count, page_chunks = DocumentParser.parse_file_path(safe_file_name, source_path)
+            else:
+                full_text, pages_count, page_chunks = DocumentParser.parse_file(safe_file_name, file_bytes)
+            status = "processing"
             error_msg = None
         except Exception as e:
             logger.error(f"Failed to parse document {file_name}: {e}")
@@ -73,97 +275,168 @@ class KnowledgeManager:
             status = "failed"
             error_msg = str(e)
 
-        # Create Document record
-        doc_record = Document(
-            document_id=document_id,
-            file_name=safe_file_name,
-            file_type=ext.lstrip("."),
-            file_size_bytes=file_size,
-            source_description=source_description or "Uploaded knowledge document",
-            processing_status=status,
-            pages_count=pages_count,
-            raw_text=full_text,
-            error_message=error_msg,
-        )
-        self.db.add(doc_record)
-        self.db.commit()
-        self.db.refresh(doc_record)
+        if doc_record is None:
+            # Create new Document record in processing status
+            doc_record = Document(
+                document_id=document_id,
+                file_name=safe_file_name,
+                file_type=ext.lstrip("."),
+                file_size_bytes=file_size,
+                source_description=source_description or "Uploaded knowledge document",
+                processing_status=status,
+                pages_count=pages_count,
+                raw_text=full_text,
+                error_message=error_msg,
+                content_sha256=content_sha256,
+            )
+            self.db.add(doc_record)
+            try:
+                self.db.commit()
+                self.db.refresh(doc_record)
+            except IntegrityError:
+                self.db.rollback()
+                logger.info(f"Concurrent ingestion collision detected for hash {content_sha256}. Returning existing document.")
+                concurrent_doc = self.db.query(Document).filter(
+                    Document.content_sha256 == content_sha256,
+                    Document.processing_status == "completed"
+                ).first()
+                if concurrent_doc:
+                    concurrent_rules = self.db.query(TradingRule).filter(TradingRule.source_document == concurrent_doc.document_id).all()
+                    return concurrent_doc, concurrent_rules
+                raise
+        else:
+            # Update existing record for recovery
+            doc_record.file_name = safe_file_name
+            doc_record.file_type = ext.lstrip(".")
+            doc_record.file_size_bytes = file_size
+            if source_description:
+                doc_record.source_description = source_description
+            doc_record.processing_status = status
+            doc_record.pages_count = pages_count
+            doc_record.raw_text = full_text
+            doc_record.error_message = error_msg
+            doc_record.content_sha256 = content_sha256
+            self.db.commit()
+            self.db.refresh(doc_record)
 
         # Persist searchable evidence chunks before extracting rules. Retrieval reads
         # KnowledgeChunk, so saving only Document.raw_text would make uploads invisible.
         created_chunks: List[KnowledgeChunk] = []
         created_rules: List[TradingRule] = []
-        if status == "completed" and page_chunks:
-            for index, part in enumerate(page_chunks, start=1):
-                if not isinstance(part, dict):
-                    continue
-                chunk_text = str(part.get("text", "")).strip()
-                if not chunk_text:
-                    continue
-                sheet_name = part.get("sheet")
-                page_value = part.get("page", index)
-                try:
-                    page_number = int(page_value) if page_value is not None else None
-                except (TypeError, ValueError):
-                    page_number = None
 
-                loc_type = part.get("location_type")
-                loc_ref = part.get("location_reference")
-                if loc_type and loc_ref:
-                    location_type = loc_type
-                    location_reference = loc_ref
-                elif sheet_name:
-                    location_type = "sheet"
-                    location_reference = f"Sheet: {str(sheet_name)[:100]}"
+        if status == "processing":
+            try:
+                if page_chunks:
+                    for index, part in enumerate(page_chunks, start=1):
+                        if not isinstance(part, dict):
+                            continue
+                        chunk_text = str(part.get("text", "")).strip()
+                        if not chunk_text:
+                            continue
+                        sheet_name = part.get("sheet")
+                        page_value = part.get("page", index)
+                        try:
+                            page_number = int(page_value) if page_value is not None else None
+                        except (TypeError, ValueError):
+                            page_number = None
+
+                        loc_type = part.get("location_type")
+                        loc_ref = part.get("location_reference")
+                        if loc_type and loc_ref:
+                            location_type = loc_type
+                            location_reference = loc_ref
+                        elif sheet_name:
+                            location_type = "sheet"
+                            location_reference = f"Sheet: {str(sheet_name)[:100]}"
+                        else:
+                            location_type = "page"
+                            location_reference = f"Page {page_number or index}"
+
+                        first_line = next((line.strip() for line in chunk_text.splitlines() if line.strip()), "")
+                        title = part.get("title") or (first_line[:255] if first_line else safe_file_name)
+                        chunk_params = dict(part.get("parameters") or {})
+                        if "page_type" in part and "page_type" not in chunk_params:
+                            chunk_params["page_type"] = part["page_type"]
+                        if "is_semantic_content" in part and "is_semantic_content" not in chunk_params:
+                            chunk_params["is_semantic_content"] = part["is_semantic_content"]
+                        if "image_count" in part and "image_count" not in chunk_params:
+                            chunk_params["image_count"] = part["image_count"]
+                        if "image_dimensions" in part and "image_dimensions" not in chunk_params:
+                            chunk_params["image_dimensions"] = part["image_dimensions"]
+
+                        chunk = KnowledgeChunk(
+                            chunk_id=f"chunk_{uuid.uuid4().hex[:16]}",
+                            document_id=document_id,
+                            source_file=safe_file_name,
+                            location_type=location_type,
+                            location_reference=location_reference,
+                            page_number=page_number,
+                            title=title,
+                            content=chunk_text,
+                            key_concepts=[],
+                            parameters=chunk_params,
+                            exceptions_and_limits=[],
+                        )
+                        self.db.add(chunk)
+                        created_chunks.append(chunk)
+
+                    self.db.commit()
+                    self.retriever.refresh()
+
+                    rule_creates = RuleExtractor.extract_from_pages(document_id, page_chunks)
+                    for rc in rule_creates:
+                        # Recovery only: a fresh PENDING clone of a rule the
+                        # user already APPROVED (same name+category on the
+                        # same document) must not be re-created — the approved
+                        # original was preserved above with its identity.
+                        if (rc.name, rc.category) in approved_rule_keys:
+                            continue
+                        rule_id = f"rule_{uuid.uuid4().hex[:8]}"
+                        rule_record = TradingRule(
+                            rule_id=rule_id,
+                            name=rc.name,
+                            category=rc.category.value,
+                            description=rc.description,
+                            conditions=rc.conditions,
+                            parameters=rc.parameters,
+                            symbol_scope=rc.symbol_scope,
+                            timeframe_scope=rc.timeframe_scope,
+                            invalidation_conditions=rc.invalidation_conditions,
+                            source_document=rc.source_document,
+                            source_pages=rc.source_pages,
+                            assumptions=rc.assumptions,
+                            ambiguities=rc.ambiguities,
+                            confidence=rc.confidence,
+                            approval_status=ApprovalStatus.PENDING.value,
+                            version=1,
+                        )
+                        self.db.add(rule_record)
+                        created_rules.append(rule_record)
+
+                    self.db.commit()
+
+                # Transition status to completed only after chunks and rules are committed
+                doc_record.processing_status = "completed"
+                if created_chunks:
+                    doc_record.error_message = None
                 else:
-                    location_type = "page"
-                    location_reference = f"Page {page_number or index}"
-
-                first_line = next((line.strip() for line in chunk_text.splitlines() if line.strip()), "")
-                title = part.get("title") or (first_line[:255] if first_line else safe_file_name)
-                chunk = KnowledgeChunk(
-                    chunk_id=f"chunk_{uuid.uuid4().hex[:16]}",
-                    document_id=document_id,
-                    source_file=safe_file_name,
-                    location_type=location_type,
-                    location_reference=location_reference,
-                    page_number=page_number,
-                    title=title,
-                    content=chunk_text,
-                    key_concepts=[],
-                    parameters={},
-                    exceptions_and_limits=[],
-                )
-                self.db.add(chunk)
-                created_chunks.append(chunk)
-            self.db.commit()
-            self.retriever.refresh()
-
-            rule_creates = RuleExtractor.extract_from_pages(document_id, page_chunks)
-            for rc in rule_creates:
-                rule_id = f"rule_{uuid.uuid4().hex[:8]}"
-                rule_record = TradingRule(
-                    rule_id=rule_id,
-                    name=rc.name,
-                    category=rc.category.value,
-                    description=rc.description,
-                    conditions=rc.conditions,
-                    parameters=rc.parameters,
-                    symbol_scope=rc.symbol_scope,
-                    timeframe_scope=rc.timeframe_scope,
-                    invalidation_conditions=rc.invalidation_conditions,
-                    source_document=rc.source_document,
-                    source_pages=rc.source_pages,
-                    assumptions=rc.assumptions,
-                    ambiguities=rc.ambiguities,
-                    confidence=rc.confidence,
-                    approval_status=ApprovalStatus.PENDING.value,
-                    version=1,
-                )
-                self.db.add(rule_record)
-                created_rules.append(rule_record)
-
-            self.db.commit()
+                    # Explicit terminal state for sources that genuinely yield
+                    # no extractable text: without this marker the doc would be
+                    # treated as "incomplete" forever and re-parsed on every
+                    # re-ingest (item 35).
+                    doc_record.error_message = "NO_EXTRACTABLE_CONTENT: source yielded no usable text chunks."
+                self.db.commit()
+                self.db.refresh(doc_record)
+            except Exception as e:
+                self.db.rollback()
+                logger.error(f"Failed during chunk or rule persistence for document {document_id}: {e}")
+                doc_record.processing_status = "failed"
+                doc_record.error_message = f"Chunk/rule persistence failed: {str(e)}"
+                try:
+                    self.db.commit()
+                except Exception:
+                    self.db.rollback()
+                raise
 
         # Audit log
         audit = AuditLog(

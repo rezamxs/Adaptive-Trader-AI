@@ -1,10 +1,11 @@
 """initial_schema
 
 Revision ID: 01f57c481926
-Revises: 
+Revises:
 Create Date: 2026-10-10 17:34:37.255878
 
 """
+import os
 from typing import Sequence, Union
 
 from alembic import op
@@ -29,10 +30,22 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Keep downgrade non-destructive for databases that predate this migration.
+    """Drop every application table this revision's create_all can produce.
 
-    The upgrade uses create_all against existing databases. We cannot safely infer
-    which tables were created by this revision, so dropping metadata here could erase
-    user data.
+    The upgrade is Base.metadata.create_all, so the faithful inverse is
+    Base.metadata.drop_all. Running it on a populated database is destructive
+    by definition; that is inherent to a schema-creating baseline revision and
+    is why real downgrades must only run on disposable/test databases.
+
+    M21 guard: this downgrade refuses to run unless the operator explicitly
+    opts in per invocation with ALEMBIC_ALLOW_DESTRUCTIVE_DOWNGRADE=yes. It
+    still requires the destination to be pinned via ALEMBIC_DATABASE_URL.
     """
-    pass
+    if os.environ.get("ALEMBIC_ALLOW_DESTRUCTIVE_DOWNGRADE", "").strip().lower() != "yes":
+        raise RuntimeError(
+            "Refusing destructive downgrade to 'base': the baseline downgrade "
+            "is Base.metadata.drop_all and drops every table with all data. "
+            "To run it on a disposable database, re-run with "
+            "ALEMBIC_ALLOW_DESTRUCTIVE_DOWNGRADE=yes set for this command only."
+        )
+    Base.metadata.drop_all(bind=op.get_bind())

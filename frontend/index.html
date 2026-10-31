@@ -321,6 +321,9 @@
       <span id="badge-mt5">MT5: در حال بررسی...</span>
     </div>
     <div class="header-actions">
+      <button class="btn" onclick="setApiToken()" title="توکن API برای endpointهای تغییردهنده وضعیت">
+        🔑 توکن API
+      </button>
       <button id="btn-emergency-toggle" class="btn-emergency" onclick="toggleEmergencyStop()">
         ⛔ توقف اضطراری (غیرفعال)
       </button>
@@ -412,7 +415,7 @@
             <label>توضیح کوتاه منبع:</label>
             <input type="text" id="input-doc-desc" placeholder="مثال: جزوه پرایس اکشن یا قوانین حد ضرر">
           </div>
-          <button class="btn btn-primary" onclick="uploadDocument()">بارگذاری و استخراج قوانین</button>
+          <button class="btn btn-primary" onclick="uploadDocument(this)">بارگذاری و استخراج قوانین</button>
         </div>
 
         <div class="card">
@@ -473,7 +476,7 @@
             <label>تعداد کندل‌های آموزش (M15):</label>
             <input type="number" id="ml-bars" value="300" min="100" max="1000">
           </div>
-          <button class="btn btn-primary" onclick="trainModel()">شروع آموزش و ارزیابی زمانی</button>
+          <button class="btn btn-primary" onclick="trainModel(this)">شروع آموزش و ارزیابی زمانی</button>
         </div>
 
         <div class="card">
@@ -533,7 +536,7 @@
             <input type="number" id="bt-comm" value="7">
           </div>
           <div style="align-self: flex-end;">
-            <button class="btn btn-primary" onclick="runBacktest()">اجرای شبیه‌سازی و تحلیل استرس</button>
+            <button class="btn btn-primary" onclick="runBacktest(this)">اجرای شبیه‌سازی و تحلیل استرس</button>
           </div>
         </div>
       </div>
@@ -588,7 +591,7 @@
               بررسی قواعد تأییدشده و مدل هوش مصنوعی فعال بر روی آخرین کندل بسته شده.
             </p>
           </div>
-          <button class="btn btn-primary" onclick="generateSignal()">ارزیابی و صدور سیگنال</button>
+          <button class="btn btn-primary" onclick="generateSignal(this)">ارزیابی و صدور سیگنال</button>
         </div>
       </div>
 
@@ -660,6 +663,73 @@
   <script>
     const API_BASE = "/api/v1";
 
+    // C1: state-changing endpoints require the X-API-TOKEN header. The token
+    // lives ONLY in this page's memory: it never touches localStorage or
+    // sessionStorage (XSS-resilient) and a page reload requires re-entry.
+    // No server-side session exists, so a HttpOnly cookie swap is out of scope.
+    let apiToken = "";
+
+    function getApiToken() {
+      return apiToken;
+    }
+
+    function setApiToken() {
+      const value = prompt("توکن API را وارد کنید (پس از هر بارگذاری مجدد صفحه دوباره لازم است):", "");
+      if (value === null) return;
+      apiToken = value.trim();
+      loadSystemStatus();
+    }
+
+    function authHeaders(extra) {
+      const headers = Object.assign({}, extra || {});
+      const token = getApiToken();
+      if (token) headers["X-API-TOKEN"] = token;
+      return headers;
+    }
+
+    // Mirrors the last server-known state so click handlers never infer intent
+    // from rendered button text (M18).
+    var uiState = { emergencyStopActive: false };
+
+    // Throws a readable Error for any non-2xx response so no handler can ever
+    // render a success message from a failed request (M17). FastAPI error
+    // bodies are {"detail": <string | array>}.
+    async function ensureOk(res) {
+      if (res.ok) return res;
+      let message = "HTTP " + res.status;
+      try {
+        const body = await res.json();
+        if (body && body.detail) {
+          message = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+        }
+      } catch (_) { /* non-JSON error body */ }
+      throw new Error(message);
+    }
+
+    // Numeric formatter that never throws on missing/invalid values (M17).
+    function fmtFixed(value, digits) {
+      return (typeof value === "number" && isFinite(value)) ? value.toFixed(digits) : "-";
+    }
+
+    // Backend timestamps are naive UTC (datetime.utcnow().isoformat(), no
+    // offset). Offset-less strings are tagged as UTC before parsing so they
+    // are never misread as local time; strings that already carry Z or an
+    // explicit offset pass through untouched (M19).
+    function asUtcIso(value) {
+      if (typeof value !== "string") return value;
+      if (/^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9:.]+$/.test(value)) {
+        return value.replace(" ", "T") + "Z";
+      }
+      return value;
+    }
+
+    // The single formatter for every dashboard clock: always explicit UTC.
+    function fmtUtcTime(value) {
+      const parsed = new Date(asUtcIso(value));
+      if (isNaN(parsed.getTime())) return esc(String(value ?? "-"));
+      return parsed.toLocaleTimeString("fa-IR", {timeZone: "UTC"}) + " UTC";
+    }
+
     function switchTab(tabName) {
       document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
       document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
@@ -690,7 +760,8 @@
 
     async function loadSystemStatus() {
       try {
-        const res = await fetch(`${API_BASE}/system/status`);
+        const res = await fetch(`${API_BASE}/system/status`, { headers: authHeaders() });
+        await ensureOk(res);
         const data = await res.json();
 
         // Backend Liveness
@@ -725,12 +796,12 @@
         }
         const elWorkerCycleTime = document.getElementById("val-worker-cycle-time");
         if (elWorkerCycleTime) {
-          elWorkerCycleTime.innerText = worker.last_cycle_time ? `آخرین چرخه: ${worker.last_cycle_time.substring(11, 19)} UTC` : "هنوز اجرا نشده";
+          elWorkerCycleTime.innerText = worker.last_cycle_time ? `آخرین چرخه: ${fmtUtcTime(worker.last_cycle_time)}` : "هنوز اجرا نشده";
         }
 
         const elWorkerBar = document.getElementById("val-worker-bar");
         if (elWorkerBar) {
-          elWorkerBar.innerText = worker.last_processed_bar_time ? worker.last_processed_bar_time.substring(0, 16).replace("T", " ") : "در انتظار کندل جدید";
+          elWorkerBar.innerText = worker.last_processed_bar_time ? `کندل: ${fmtUtcTime(worker.last_processed_bar_time)}` : "در انتظار کندل جدید";
         }
         const elWorkerBarKey = document.getElementById("val-worker-bar-key");
         if (elWorkerBarKey) {
@@ -767,6 +838,7 @@
 
         // Emergency Stop
         const isStop = data.emergency_stop.is_active;
+        uiState.emergencyStopActive = isStop;
         const btnStop = document.getElementById("btn-emergency-toggle");
         if (isStop) {
           btnStop.innerText = "🚨 رفع قفل اضطراری";
@@ -802,31 +874,38 @@
 
     async function toggleEmergencyStop() {
       const btn = document.getElementById("btn-emergency-toggle");
-      const isCurrentlyActive = btn.innerText.includes("رفع قفل");
-
-      if (isCurrentlyActive) {
-        await fetch(`${API_BASE}/system/emergency-stop/deactivate`, {
+      if (!btn || btn.disabled) return;  // double-submit guard (M18)
+      btn.disabled = true;
+      try {
+        // Intent comes from the last server state, never from button text (M18).
+        const action = uiState.emergencyStopActive ? "deactivate" : "activate";
+        const res = await fetch(`${API_BASE}/system/emergency-stop/${action}`, {
           method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({notes: "Resumed from dashboard by user"})
+          headers: authHeaders({"Content-Type": "application/json"}),
+          body: action === "deactivate"
+            ? JSON.stringify({notes: "Resumed from dashboard by user"})
+            : JSON.stringify({reason: "Manual emergency stop triggered via Web Dashboard", actor: "USER"})
         });
-      } else {
-        await fetch(`${API_BASE}/system/emergency-stop/activate`, {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({reason: "Manual emergency stop triggered via Web Dashboard", actor: "USER"})
-        });
+        await ensureOk(res);
+      } catch (e) {
+        alert("خطا در تغییر وضعیت توقف اضطراری: " + (e.message || e));
+      } finally {
+        // Re-render from the real server state on success AND failure, so the
+        // visible emergency-stop state can never be flipped by a failed call.
+        await loadSystemStatus();
+        btn.disabled = false;
       }
-      loadSystemStatus();
     }
 
-    async function uploadDocument() {
+    async function uploadDocument(btn) {
       const fileInput = document.getElementById("input-doc-file");
       const descInput = document.getElementById("input-doc-desc");
       if (!fileInput.files[0]) {
         alert("لطفاً یک فایل انتخاب کنید.");
         return;
       }
+      if (btn && btn.disabled) return;  // double-submit guard (M18)
+      if (btn) btn.disabled = true;
 
       const fd = new FormData();
       fd.append("file", fileInput.files[0]);
@@ -835,22 +914,44 @@
       try {
         const res = await fetch(`${API_BASE}/documents/upload`, {
           method: "POST",
+          headers: authHeaders(),
           body: fd,
         });
+        await ensureOk(res);
         const data = await res.json();
-        alert(`سند با موفقیت پردازش شد. تعداد ${data.rules_extracted_count} قانون استخراج گردید.`);
+        const count = (data && typeof data.rules_extracted_count === "number") ? data.rules_extracted_count : 0;
+        alert(`سند با موفقیت پردازش شد. تعداد ${count} قانون استخراج گردید.`);
         fileInput.value = "";
         descInput.value = "";
         loadRules();
       } catch (e) {
-        alert("خطا در بارگذاری سند: " + e);
+        // On failure the form keeps its values so the user can retry (M17).
+        alert("خطا در بارگذاری سند: " + (e.message || e));
+      } finally {
+        if (btn) btn.disabled = false;
       }
     }
 
+    // HTML-escapes server-controlled values before any innerHTML sink (XSS fix).
+    // Aliased to `esc` for use inside template literals.
+    function escapeHtml(value) {
+      if (value === null || value === undefined) return "";
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+        .replace(/`/g, "&#96;");
+    }
+    const esc = escapeHtml;
+
     async function loadRules() {
       try {
-        const res = await fetch(`${API_BASE}/rules/`);
+        const res = await fetch(`${API_BASE}/rules/`, { headers: authHeaders() });
+        await ensureOk(res);
         const rules = await res.json();
+        if (!Array.isArray(rules)) throw new Error("پاسخ غیرمنتظره سرور");
         const tbody = document.getElementById("tbody-rules");
         if (rules.length === 0) {
           tbody.innerHTML = `<tr><td colspan="7" style="text-align: center;">قانونی یافت نشد. سندی بارگذاری کنید.</td></tr>`;
@@ -862,75 +963,110 @@
           if (r.approval_status === "approved") badgeClass = "badge-success";
           if (r.approval_status === "rejected") badgeClass = "badge-danger";
 
-          const ambigText = r.ambiguities && r.ambiguities.length > 0 
-            ? `<span style="color: #fbbf24;">⚠️ ${r.ambiguities.join('<br>')}</span>`
+          const ambigText = r.ambiguities && r.ambiguities.length > 0
+            ? `<span style="color: #fbbf24;">⚠️ ${r.ambiguities.map(esc).join('<br>')}</span>`
             : "صریح و بدون ابهام";
 
+          const safeRuleId = esc(r.rule_id);
           const actions = r.approval_status === "pending" ? `
-            <button class="btn btn-primary btn-sm" onclick="approveRule('${r.rule_id}')">تأیید</button>
-            <button class="btn btn-emergency btn-sm" onclick="rejectRule('${r.rule_id}')" style="margin-right: 0.25rem;">رد</button>
+            <button class="btn btn-primary btn-sm" onclick="approveRule('${safeRuleId}', this)">تأیید</button>
+            <button class="btn btn-emergency btn-sm" onclick="rejectRule('${safeRuleId}', this)" style="margin-right: 0.25rem;">رد</button>
           ` : `<span style="color: var(--text-muted); font-size: 0.8rem;">تکمیل‌شده</span>`;
 
           return `
             <tr>
-              <td><code>${r.rule_id}</code></td>
-              <td><strong>${r.name}</strong></td>
-              <td>${r.category}</td>
-              <td>صفحه ${r.source_pages.join(', ') || '1'}</td>
+              <td><code>${esc(r.rule_id)}</code></td>
+              <td><strong>${esc(r.name)}</strong></td>
+              <td>${esc(r.category)}</td>
+              <td>صفحه ${esc((r.source_pages || []).join(', ') || '1')}</td>
               <td style="max-width: 250px; font-size: 0.8rem;">${ambigText}</td>
-              <td><span class="badge ${badgeClass}">${r.approval_status}</span></td>
+              <td><span class="badge ${badgeClass}">${esc(r.approval_status)}</span></td>
               <td>${actions}</td>
             </tr>
           `;
         }).join("");
       } catch (e) {
         console.error("Rules load error", e);
+        const tbody = document.getElementById("tbody-rules");
+        if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--danger);">خطا در بارگذاری قوانین — با تعویض تب دوباره تلاش کنید</td></tr>`;
       }
     }
 
-    async function approveRule(ruleId) {
-      await fetch(`${API_BASE}/rules/${ruleId}/approve`, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({actor: "USER"})
-      });
-      loadRules();
+    async function approveRule(ruleId, btn) {
+      if (btn && btn.disabled) return;  // double-submit guard (M18)
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch(`${API_BASE}/rules/${ruleId}/approve`, {
+          method: "POST",
+          headers: authHeaders({"Content-Type": "application/json"}),
+          body: JSON.stringify({actor: "USER"})
+        });
+        await ensureOk(res);
+      } catch (e) {
+        alert("خطا در تأیید قانون: " + (e.message || e));
+      } finally {
+        if (btn) btn.disabled = false;
+        loadRules();
+      }
     }
 
-    async function rejectRule(ruleId) {
+    async function rejectRule(ruleId, btn) {
       const reason = prompt("علت رد این قانون را وارد کنید:", "قانون مبهم است یا با سیستم ناسازگار است.");
       if (!reason) return;
-      await fetch(`${API_BASE}/rules/${ruleId}/reject`, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({reason: reason, actor: "USER"})
-      });
-      loadRules();
+      if (btn && btn.disabled) return;  // double-submit guard (M18)
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch(`${API_BASE}/rules/${ruleId}/reject`, {
+          method: "POST",
+          headers: authHeaders({"Content-Type": "application/json"}),
+          body: JSON.stringify({reason: reason, actor: "USER"})
+        });
+        await ensureOk(res);
+      } catch (e) {
+        alert("خطا در رد قانون: " + (e.message || e));
+      } finally {
+        if (btn) btn.disabled = false;
+        loadRules();
+      }
     }
 
-    async function trainModel() {
+    async function trainModel(btn) {
       const sym = document.getElementById("ml-symbol").value;
       const algo = document.getElementById("ml-algo").value;
-      const bars = document.getElementById("ml-bars").value;
+      const barsNum = Number.parseInt(document.getElementById("ml-bars").value, 10);
+      if (!Number.isFinite(barsNum) || barsNum <= 0) {
+        alert("تعداد کندل‌های آموزش نامعتبر است؛ یک عدد مثبت وارد کنید.");
+        return;
+      }
+      if (btn && btn.disabled) return;  // double-submit guard (M18)
+      if (btn) btn.disabled = true;
 
       try {
         const res = await fetch(`${API_BASE}/ml/train`, {
           method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({symbol: sym, algorithm: algo, bars_count: parseInt(bars)})
+          headers: authHeaders({"Content-Type": "application/json"}),
+          body: JSON.stringify({symbol: sym, algorithm: algo, bars_count: barsNum})
         });
+        await ensureOk(res);
         const data = await res.json();
-        alert(`آموزش مدل نامزد ${data.model_id} با موفقیت انجام شد. AUC تست: ${data.test_metrics.roc_auc || 'N/A'}`);
+        const modelId = (data && data.model_id) ? data.model_id : "-";
+        const auc = (data && data.test_metrics && data.test_metrics.roc_auc != null)
+          ? data.test_metrics.roc_auc : "N/A";
+        alert(`آموزش مدل نامزد ${modelId} با موفقیت انجام شد. AUC تست: ${auc}`);
         loadModels();
       } catch (e) {
-        alert("خطا در آموزش مدل: " + e);
+        alert("خطا در آموزش مدل: " + (e.message || e));
+      } finally {
+        if (btn) btn.disabled = false;
       }
     }
 
     async function loadModels() {
       try {
-        const res = await fetch(`${API_BASE}/ml/models`);
+        const res = await fetch(`${API_BASE}/ml/models`, { headers: authHeaders() });
+        await ensureOk(res);
         const models = await res.json();
+        if (!Array.isArray(models)) throw new Error("پاسخ غیرمنتظره سرور");
         const tbody = document.getElementById("tbody-models");
         if (models.length === 0) {
           tbody.innerHTML = `<tr><td colspan="6" style="text-align: center;">هنوز مدلی آموزش داده نشده است.</td></tr>`;
@@ -939,146 +1075,189 @@
 
         tbody.innerHTML = models.map(m => {
           let badge = m.status === "active" ? "badge-success" : (m.status === "candidate" ? "badge-warning" : "badge-danger");
+          const safeModelId = esc(m.model_id);
           const promoteBtn = m.status === "candidate" ? `
-            <button class="btn btn-primary btn-sm" onclick="promoteModel('${m.model_id}')">ارتقا به فعال</button>
-          ` : `<span style="color: var(--text-muted); font-size: 0.8rem;">${m.status}</span>`;
+            <button class="btn btn-primary btn-sm" onclick="promoteModel('${safeModelId}', this)">ارتقا به فعال</button>
+          ` : `<span style="color: var(--text-muted); font-size: 0.8rem;">${esc(m.status)}</span>`;
 
-          const mStr = `AUC: ${m.test_metrics.roc_auc ?? '-'} | Brier: ${m.test_metrics.brier_score ?? '-'} | F1: ${m.test_metrics.f1 ?? '-'}`;
+          const metrics = m.test_metrics || {};
+          const mStr = `AUC: ${esc(metrics.roc_auc ?? '-')} | Brier: ${esc(metrics.brier_score ?? '-')} | F1: ${esc(metrics.f1 ?? '-')}`;
 
           return `
             <tr>
-              <td><code>${m.model_id}</code></td>
-              <td>${m.algorithm}</td>
-              <td><span class="badge ${badge}">${m.status}</span></td>
+              <td><code>${esc(m.model_id)}</code></td>
+              <td>${esc(m.algorithm)}</td>
+              <td><span class="badge ${badge}">${esc(m.status)}</span></td>
               <td>${mStr}</td>
-              <td>${new Date(m.trained_at).toLocaleTimeString('fa-IR')}</td>
+              <td>${fmtUtcTime(m.trained_at)}</td>
               <td>${promoteBtn}</td>
             </tr>
           `;
         }).join("");
       } catch (e) {
         console.error("Models load error", e);
+        const tbody = document.getElementById("tbody-models");
+        if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--danger);">خطا در بارگذاری مدل‌ها — با تعویض تب دوباره تلاش کنید</td></tr>`;
       }
     }
 
-    async function promoteModel(modelId) {
-      await fetch(`${API_BASE}/ml/models/${modelId}/promote`, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({notes: "Manual promotion via dashboard"})
-      });
-      loadModels();
+    async function promoteModel(modelId, btn) {
+      if (btn && btn.disabled) return;  // double-submit guard (M18)
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch(`${API_BASE}/ml/models/${modelId}/promote`, {
+          method: "POST",
+          headers: authHeaders({"Content-Type": "application/json"}),
+          body: JSON.stringify({notes: "Manual promotion via dashboard"})
+        });
+        await ensureOk(res);
+      } catch (e) {
+        alert("خطا در ارتقای مدل: " + (e.message || e));
+      } finally {
+        if (btn) btn.disabled = false;
+        loadModels();
+      }
     }
 
-    async function runBacktest() {
+    async function runBacktest(btn) {
       const sym = document.getElementById("bt-symbol").value;
-      const spread = document.getElementById("bt-spread").value;
-      const slip = document.getElementById("bt-slip").value;
-      const comm = document.getElementById("bt-comm").value;
+      const spread = Number.parseInt(document.getElementById("bt-spread").value, 10);
+      const slip = Number.parseInt(document.getElementById("bt-slip").value, 10);
+      const comm = Number.parseFloat(document.getElementById("bt-comm").value);
+      if (![spread, slip, comm].every(Number.isFinite)) {
+        alert("ورودی‌های عددی بکتست نامعتبر است؛ برای اسپرد/لغزش/کمیسیون عدد وارد کنید.");
+        return;
+      }
+      if (btn && btn.disabled) return;  // double-submit guard (M18)
+      if (btn) btn.disabled = true;
 
       try {
         const res = await fetch(`${API_BASE}/backtest/run`, {
           method: "POST",
-          headers: {"Content-Type": "application/json"},
+          headers: authHeaders({"Content-Type": "application/json"}),
           body: JSON.stringify({
             symbol: sym,
-            spread_points: parseInt(spread),
-            slippage_points: parseInt(slip),
-            commission_per_lot: parseFloat(comm)
+            spread_points: spread,
+            slippage_points: slip,
+            commission_per_lot: comm
           })
         });
+        await ensureOk(res);
         const data = await res.json();
-        const m = data.metrics;
+        const m = data.metrics || {};
 
-        document.getElementById("bt-net-profit").innerText = `$${m.net_profit.toFixed(2)}`;
-        document.getElementById("bt-max-dd").innerText = `${m.max_drawdown_percent}% ($${m.max_drawdown_amount})`;
-        document.getElementById("bt-profit-factor").innerText = m.profit_factor;
-        document.getElementById("bt-win-rate").innerText = `${m.win_rate}% (${m.winning_trades}/${m.total_trades})`;
+        document.getElementById("bt-net-profit").innerText =
+          (typeof m.net_profit === "number" && isFinite(m.net_profit)) ? `$${m.net_profit.toFixed(2)}` : "-";
+        document.getElementById("bt-max-dd").innerText =
+          `${fmtFixed(m.max_drawdown_percent, 1)}% (${fmtFixed(m.max_drawdown_amount, 2)})`;
+        document.getElementById("bt-profit-factor").innerText = fmtFixed(m.profit_factor, 2);
+        document.getElementById("bt-win-rate").innerText =
+          `${fmtFixed(m.win_rate, 1)}% (${m.winning_trades ?? "-"}/${m.total_trades ?? "-"})`;
 
         // Stress table
         const tbodyStress = document.getElementById("tbody-stress");
         if (data.stress_test && data.stress_test.scenarios) {
-          tbodyStress.innerHTML = Object.entries(data.stress_test.scenarios).map(([scName, sc]) => `
+          tbodyStress.innerHTML = Object.entries(data.stress_test.scenarios).map(([scName, sc]) => {
+            const v = sc || {};
+            return `
             <tr>
-              <td><strong>${scName}</strong></td>
-              <td style="color: ${sc.net_profit >= 0 ? '#34d399' : '#f87171'}">$${sc.net_profit.toFixed(2)}</td>
-              <td>${sc.profit_factor}</td>
-              <td>${sc.max_drawdown_percent}%</td>
-              <td>${sc.win_rate}%</td>
+              <td><strong>${esc(scName)}</strong></td>
+              <td style="color: ${v.net_profit >= 0 ? '#34d399' : '#f87171'}">$${fmtFixed(v.net_profit, 2)}</td>
+              <td>${esc(v.profit_factor)}</td>
+              <td>${esc(v.max_drawdown_percent)}%</td>
+              <td>${esc(v.win_rate)}%</td>
             </tr>
-          `).join("");
+          `;}).join("");
         }
 
         document.getElementById("backtest-results").style.display = "block";
       } catch (e) {
-        alert("خطا در بکتست: " + e);
+        alert("خطا در بکتست: " + (e.message || e));
+      } finally {
+        if (btn) btn.disabled = false;
       }
     }
 
-    async function generateSignal() {
+    async function generateSignal(btn) {
+      if (btn && btn.disabled) return;  // double-submit guard (M18)
+      if (btn) btn.disabled = true;
       try {
         const res = await fetch(`${API_BASE}/signals/generate`, {
           method: "POST",
-          headers: {"Content-Type": "application/json"},
+          headers: authHeaders({"Content-Type": "application/json"}),
           body: JSON.stringify({symbol: "EURUSD"})
         });
+        await ensureOk(res);
         const data = await res.json();
         if (data.status === "NO_SIGNAL") {
-          alert("نتیجه بررسی: " + data.message);
+          alert("نتیجه بررسی: " + (data.message ?? "-"));
         } else {
-          alert(`سیگنال صادر شد! جهت: ${data.direction} | نماد: ${data.symbol} | وضعیت ریسک: ${data.risk_status}`);
+          alert(`سیگنال صادر شد! جهت: ${data.direction ?? "-"} | نماد: ${data.symbol ?? "-"} | وضعیت ریسک: ${data.risk_status ?? "-"}`);
         }
         loadSignals();
       } catch (e) {
-        alert("خطا در صدور سیگنال: " + e);
+        alert("خطا در صدور سیگنال: " + (e.message || e));
+      } finally {
+        if (btn) btn.disabled = false;
       }
     }
 
     async function loadSignals() {
       try {
-        const res = await fetch(`${API_BASE}/signals/`);
+        const res = await fetch(`${API_BASE}/signals/`, { headers: authHeaders() });
+        await ensureOk(res);
         const signals = await res.json();
+        if (!Array.isArray(signals)) throw new Error("پاسخ غیرمنتظره سرور");
         const tbody = document.getElementById("tbody-signals");
         if (signals.length === 0) {
           tbody.innerHTML = `<tr><td colspan="9" style="text-align: center;">هنوز سیگنالی تولید نشده است.</td></tr>`;
           return;
         }
 
-        tbody.innerHTML = signals.map(s => `
+        tbody.innerHTML = signals.map(s => {
+          const dirBadge = s.direction === 'BUY' ? 'badge-success' : 'badge-danger';
+          const riskBadge = s.risk_status === 'APPROVED' ? 'badge-success' : 'badge-danger';
+          return `
           <tr>
-            <td><code>${s.signal_id}</code></td>
-            <td><strong>${s.symbol}</strong></td>
-            <td><span class="badge ${s.direction === 'BUY' ? 'badge-success' : 'badge-danger'}">${s.direction}</span></td>
-            <td>${s.entry_price}</td>
-            <td>${s.stop_loss} / ${s.take_profit}</td>
-            <td><span class="badge ${s.risk_status === 'APPROVED' ? 'badge-success' : 'badge-danger'}">${s.risk_status}</span></td>
-            <td>${s.calculated_volume || '-'}</td>
-            <td><span class="badge badge-info">${s.execution_mode}</span></td>
-            <td>${new Date(s.bar_time).toLocaleTimeString('fa-IR')}</td>
+            <td><code>${esc(s.signal_id)}</code></td>
+            <td><strong>${esc(s.symbol)}</strong></td>
+            <td><span class="badge ${dirBadge}">${esc(s.direction)}</span></td>
+            <td>${esc(s.entry_price)}</td>
+            <td>${esc(s.stop_loss)} / ${esc(s.take_profit)}</td>
+            <td><span class="badge ${riskBadge}">${esc(s.risk_status)}</span></td>
+            <td>${esc(s.calculated_volume || '-')}</td>
+            <td><span class="badge badge-info">${esc(s.execution_mode)}</span></td>
+            <td>${fmtUtcTime(s.bar_time)}</td>
           </tr>
-        `).join("");
+        `;}).join("");
       } catch (e) {
         console.error("Signals load error", e);
+        const tbody = document.getElementById("tbody-signals");
+        if (tbody) tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--danger);">خطا در بارگذاری سیگنال‌ها — با تعویض تب دوباره تلاش کنید</td></tr>`;
       }
     }
 
     async function loadAuditLogs() {
       try {
-        const res = await fetch(`${API_BASE}/system/audit-logs`);
+        const res = await fetch(`${API_BASE}/system/audit-logs`, { headers: authHeaders() });
+        await ensureOk(res);
         const logs = await res.json();
+        if (!Array.isArray(logs)) throw new Error("پاسخ غیرمنتظره سرور");
         const tbody = document.getElementById("tbody-audit");
         tbody.innerHTML = logs.map(l => `
           <tr>
-            <td>#${l.id}</td>
-            <td><strong>${l.event_type}</strong></td>
-            <td><span class="badge badge-warning">${l.severity}</span></td>
-            <td>${l.actor}</td>
-            <td style="font-size: 0.8rem;"><code>${JSON.stringify(l.details)}</code></td>
-            <td>${new Date(l.created_at).toLocaleTimeString('fa-IR')}</td>
+            <td>#${esc(l.id)}</td>
+            <td><strong>${esc(l.event_type)}</strong></td>
+            <td><span class="badge badge-warning">${esc(l.severity)}</span></td>
+            <td>${esc(l.actor)}</td>
+            <td style="font-size: 0.8rem;"><code>${esc(JSON.stringify(l.details))}</code></td>
+            <td>${fmtUtcTime(l.created_at)}</td>
           </tr>
         `).join("");
       } catch (e) {
         console.error("Audit load error", e);
+        const tbody = document.getElementById("tbody-audit");
+        if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--danger);">خطا در بارگذاری لاگ‌ها — با تعویض تب دوباره تلاش کنید</td></tr>`;
       }
     }
 

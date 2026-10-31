@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
 from backend.app.core.logging import logger
+from backend.app.core.metrics_integrity import metric_digest
 from backend.app.models.ml_model import MLModelRecord
 from backend.app.services.ml.models import (
     IStrategyModel,
@@ -100,6 +101,9 @@ class ModelTrainer:
         artifact_dir.mkdir(parents=True, exist_ok=True)
         artifact_path = artifact_dir / f"{model_id}.joblib"
 
+        # H1: attest the metric payload before it is persisted anywhere.
+        metrics_digest = metric_digest(model_id, validation_metrics, test_metrics, walk_forward_metrics={})
+
         artifact_payload = {
             "model_id": model_id,
             "algorithm": algorithm,
@@ -110,6 +114,7 @@ class ModelTrainer:
             "dataset_version_tag": dataset_version_tag,
             "validation_metrics": validation_metrics,
             "test_metrics": test_metrics,
+            "metrics_digest": metrics_digest,
         }
         joblib.dump(artifact_payload, artifact_path)
 
@@ -129,6 +134,7 @@ class ModelTrainer:
                 walk_forward_metrics={},
                 status="candidate",  # NEVER automatically active
                 artifact_path=str(artifact_path),
+                metrics_digest=metrics_digest,
             )
             self.db.add(record)
             self.db.commit()

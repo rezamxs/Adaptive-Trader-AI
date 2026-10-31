@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from backend.app.core.errors import ModelGovernanceError
+from backend.app.core.metrics_integrity import metric_digest
 from backend.app.db.base import Base
 from backend.app.models.ml_model import MLModelRecord
 from backend.app.services.ml.registry import ModelRegistry
@@ -27,31 +28,43 @@ def db_session(tmp_path, monkeypatch):
     engine.dispose()
 
 
-def _write_artifact(path):
+def _write_artifact(path, model_id=None, validation_metrics=None, test_metrics=None, metrics_digest=None):
+    """Write an artifact; when attestation values are supplied the payload
+    carries them so promotion's H1 digest gate can verify it."""
     estimator = DummyClassifier(strategy="prior").fit([[0.0], [1.0]], [0, 1])
-    joblib.dump(
-        {"model": estimator, "scaler": None, "feature_names": ["rsi_14"]},
-        path,
-    )
+    payload = {"model": estimator, "scaler": None, "feature_names": ["rsi_14"]}
+    if metrics_digest is not None:
+        payload["model_id"] = model_id
+        payload["validation_metrics"] = validation_metrics
+        payload["test_metrics"] = test_metrics
+        payload["metrics_digest"] = metrics_digest
+    joblib.dump(payload, path)
 
 
 def _passing_walk_forward_metrics():
-    return {
-        "fold_count": 5,
-        "trade_count": 50,
-        "net_profit": 150.0,
-        "profit_factor": 1.25,
-        "max_drawdown_percent": 4.0,
-        "spread_costs_included": True,
-        "slippage_costs_included": True,
-        "commission_costs_included": True,
-    }
+    """M8 round 2: mirrors a real walk-forward evaluation's payload."""
+    from backend.tests.unit._wf_evidence import build_walk_forward_payload
+    return build_walk_forward_payload("bt_promo_gov")
+
+
+def _seed_backtest_run(session):
+    """M8 round 2: seeds the walk_forward run the payload claims as origin."""
+    from backend.tests.unit._wf_evidence import seed_walk_forward_run
+    return seed_walk_forward_run(session, "bt_promo_gov")
 
 
 def _model(
     model_id, artifact_path, *, status="candidate", auc=0.55, brier=0.20,
     walk_forward_metrics=None,
 ):
+    validation_metrics = {"roc_auc": auc, "brier_score": brier, "sample_count": 50}
+    test_metrics = {"roc_auc": auc, "brier_score": brier, "sample_count": 50}
+    wf = walk_forward_metrics if walk_forward_metrics is not None else {}
+    digest = metric_digest(model_id, validation_metrics, test_metrics, wf)
+    _write_artifact(
+        artifact_path, model_id=model_id, validation_metrics=validation_metrics,
+        test_metrics=test_metrics, metrics_digest=digest,
+    )
     return MLModelRecord(
         model_id=model_id,
         dataset_version_tag="test-dataset-v1",
@@ -60,12 +73,13 @@ def _model(
         features_used=["rsi_14"],
         target_name="target_tp_before_sl",
         train_metrics={},
-        validation_metrics={"roc_auc": auc, "brier_score": brier, "sample_count": 50},
-        test_metrics={"roc_auc": auc, "brier_score": brier, "sample_count": 50},
+        validation_metrics=validation_metrics,
+        test_metrics=test_metrics,
         calibration_metrics={},
-        walk_forward_metrics=(walk_forward_metrics if walk_forward_metrics is not None else {}),
+        walk_forward_metrics=wf,
         status=status,
         artifact_path=str(artifact_path),
+        metrics_digest=digest,
     )
 
 
@@ -142,6 +156,7 @@ def test_promotion_does_not_archive_active_if_candidate_is_weaker(db_session, tm
         "weaker-model", candidate_artifact, auc=0.55, brier=0.20,
         walk_forward_metrics=_passing_walk_forward_metrics(),
     )
+    _seed_backtest_run(db_session)
     db_session.add_all([active, candidate])
     db_session.commit()
 
@@ -164,6 +179,7 @@ def test_promotion_archives_previous_active_after_all_gates_pass(db_session, tmp
         "better-model", candidate_artifact, auc=0.56, brier=0.19,
         walk_forward_metrics=_passing_walk_forward_metrics(),
     )
+    _seed_backtest_run(db_session)
     db_session.add_all([active, candidate])
     db_session.commit()
     monkeypatch.setattr("backend.app.services.ml.registry.log_security_event", lambda *args, **kwargs: None)

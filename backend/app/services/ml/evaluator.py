@@ -38,11 +38,19 @@ class ModelEvaluator:
                 metrics["brier_score"] = float(round(brier_score_loss(y_true, prob_pos), 4))
                 metrics["log_loss"] = float(round(log_loss(y_true, prob_pos, labels=[0, 1]), 4))
             except Exception:
-                metrics["brier_score"] = 0.25
+                # Fail-closed sentinels: the promotion gate rejects Brier scores
+                # strictly above MAX_PROMOTION_BRIER_SCORE (0.25). A sentinel of
+                # 0.25 exactly PASSES that gate, so a measurement failure would
+                # fabricate passing evidence. 1.0 (worst possible Brier for a
+                # binary problem) always fails the gate; roc_auc=0.5 already
+                # fails its >0.52 gate the same way.
+                metrics["brier_score"] = 1.0
                 metrics["log_loss"] = 0.693
         else:
+            # Single-class labels cannot produce an honest probability metric:
+            # fail closed (see comment above) instead of emitting gate-passing 0.25.
             metrics["roc_auc"] = 0.5
-            metrics["brier_score"] = 0.25
+            metrics["brier_score"] = 1.0
             metrics["log_loss"] = 0.693
 
         return metrics

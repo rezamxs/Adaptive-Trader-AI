@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from sqlalchemy import String, Integer, Float, DateTime, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 
 
 class MLModelRecord(Base):
@@ -24,11 +24,19 @@ class MLModelRecord(Base):
     test_metrics: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     calibration_metrics: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     walk_forward_metrics: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    # M8: per-fold-retrained ML walk-forward evidence (classification-metric
+    # generalization). Attached and digest-attested via
+    # ModelRegistry.attach_ml_walk_forward_metrics; re-verified at promotion.
+    ml_walk_forward_metrics: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     
     # Model Lifecycle Status
     status: Mapped[str] = mapped_column(String(32), default="candidate", index=True, nullable=False)  # candidate, active, archived, rejected
     artifact_path: Mapped[str] = mapped_column(String(255), nullable=False)
     promotion_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # H1: attestation digest over (model_id, validation/test/walk-forward metrics),
+    # committed at registration and re-verified at promotion time.
+    metrics_digest: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     
-    trained_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    trained_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, onupdate=utc_now_naive, nullable=False)

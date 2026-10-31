@@ -1,19 +1,27 @@
 """Documents and Knowledge Ingestion Endpoints."""
+import asyncio
+import os
+import tempfile
 from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 from sqlalchemy.orm import Session
 
+from backend.app.core.logging import logger
 from backend.app.db.session import get_db
+from backend.app.core.auth import require_api_token
 from backend.app.models.document import Document
 from backend.app.schemas.document_schema import DocumentResponse
 from backend.app.services.knowledge.manager import KnowledgeManager
 
 router = APIRouter()
 
+_MAX_UPLOAD_BYTES = 250 * 1024 * 1024
+
 
 @router.get("/", response_model=List[DocumentResponse])
-def list_documents(db: Session = Depends(get_db)):
-    """Lists uploaded trading knowledge documents."""
+def list_documents(db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+    """Lists uploaded trading knowledge documents (M15: rows carry raw_text —
+    the user's full source material — so this read is token-gated)."""
     return db.query(Document).order_by(Document.id.desc()).all()
 
 
@@ -21,25 +29,63 @@ def list_documents(db: Session = Depends(get_db)):
 async def upload_document(
     file: UploadFile = File(...),
     description: Optional[str] = Form("Uploaded manual strategy"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _token: str = Depends(require_api_token),
 ):
-    """Uploads a knowledge file (PDF/TXT/CSV/XLSX), extracts text, and parses rules."""
-    max_upload_bytes = 250 * 1024 * 1024
-    file_bytes = await file.read(max_upload_bytes + 1)
-    if len(file_bytes) > max_upload_bytes:
-        raise HTTPException(status_code=413, detail="File exceeds maximum allowed size of 250MB.")
-    if len(file_bytes) == 0:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    """Uploads a knowledge file (PDF/TXT/CSV/XLSX), extracts text, and parses rules.
 
-    km = KnowledgeManager(db)
+    The upload is streamed into a bounded temp file and ingested straight from
+    that path: hashing is chunk-wise, raw storage is a file-to-file copy, and
+    the binary parsers open the file by path. The raw file is never held as one
+    bytes object. (The extracted text itself is persisted as Document.raw_text,
+    so full-text memory for text formats is by design.)
+    """
+    if file.size is not None and file.size > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds maximum allowed size of 250MB.")
+
+    file_path = None
+    size = 0
     try:
-        doc, rules = km.ingest_document(
-            file_name=file.filename,
-            file_bytes=file_bytes,
-            source_description=description
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to ingest document: {str(e)}")
+        with tempfile.NamedTemporaryFile(dir=tempfile.gettempdir(), suffix="_upload", delete=False) as tmp:
+            file_path = tmp.name
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > _MAX_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="File exceeds maximum allowed size of 250MB.")
+                tmp.write(chunk)
+        if size == 0:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+        km = KnowledgeManager(db)
+        try:
+            # M11: parsing (pymupdf/openpyxl), chunk-wise hashing, the raw
+            # storage copy, and the retriever index refresh are pure CPU/IO —
+            # run them in a worker thread so a large upload cannot stall the
+            # event loop for every other request. The engine is configured
+            # with check_same_thread=False and the session is touched only
+            # inside this call.
+            doc, rules = await asyncio.to_thread(
+                km.ingest_document_path,
+                file_name=file.filename,
+                file_path=file_path,
+                source_description=description,
+            )
+        except HTTPException:
+            raise
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception:
+            logger.exception("Document ingestion failed for %r", file.filename)
+            raise HTTPException(status_code=500, detail="Failed to ingest document (internal error logged).")
+    finally:
+        if file_path and os.path.exists(file_path):
+            try:
+                os.unlink(file_path)
+            except OSError:
+                pass
 
     return {
         "document_id": doc.document_id,

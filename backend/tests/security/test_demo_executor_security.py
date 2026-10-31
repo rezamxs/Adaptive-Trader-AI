@@ -12,6 +12,15 @@ from backend.app.services.market_data.mock_provider import MockMarketDataProvide
 from backend.app.services.execution.demo_executor import DemoTradingExecutor
 
 
+@pytest.fixture(autouse=True)
+def _session_filter_disabled_for_security_tests(monkeypatch):
+    """These tests verify OTHER rejection semantics (risk volume, idempotency)
+    at arbitrary wall-clock times. The session-hours gate is now wired into
+    the dispatch path; its behavior is covered separately in
+    test_risk_gates_wiring.py."""
+    monkeypatch.setattr(settings, "ENFORCE_SESSION_FILTER", False)
+
+
 @pytest.fixture
 def db_session():
     engine = create_engine("sqlite:///:memory:")

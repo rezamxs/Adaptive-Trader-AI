@@ -1,10 +1,11 @@
 """Signal Lifecycle Manager with strict idempotency and audit trail."""
 import uuid
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from backend.app.core.config import settings, ExecutionMode
 from backend.app.core.logging import logger, log_security_event
@@ -36,15 +37,27 @@ class SignalManager:
         timeframe: TimeFrame = TimeFrame.M15,
         tp_atr_mult: float = 1.5,
         sl_atr_mult: float = 1.0,
+        precomputed_features: Optional[pd.DataFrame] = None,
     ) -> Optional[TradeSignal]:
-        """Analyzes latest completed bar, runs rules and model, assesses risk, and records signal."""
-        # 1. Fetch historical candles and compute features
-        df_raw = self.data_provider.get_historical_dataframe(symbol, timeframe, count=100)
-        if len(df_raw) < 50:
-            logger.warning(f"Insufficient bars ({len(df_raw)}) to generate signal for {symbol}.")
-            return None
+        """Analyzes latest completed bar, runs rules and model, assesses risk, and records signal.
 
-        df_feats, _ = FeatureEngineer.transform(df_raw)
+        precomputed_features: the caller (worker) may pass the feature frame it
+        ALREADY computed for the reserved bar. Without it this method re-fetches
+        candles — and if a new M1 bar closes between the worker's fetch and this
+        refetch, the signal would be recorded against bar N+1 under cycle N
+        (item 40 race). Passing the precomputed frame pins the signal to the
+        reserved bar.
+        """
+        # 1. Fetch historical candles and compute features (or reuse the
+        # caller's precomputed frame for the reserved bar).
+        if precomputed_features is not None and len(precomputed_features) >= 50:
+            df_feats = precomputed_features
+        else:
+            df_raw = self.data_provider.get_historical_dataframe(symbol, timeframe, count=100)
+            if len(df_raw) < 50:
+                logger.warning(f"Insufficient bars ({len(df_raw)}) to generate signal for {symbol}.")
+                return None
+            df_feats, _ = FeatureEngineer.transform(df_raw)
         latest_bar = df_feats.iloc[-1]
         bar_time = df_feats.index[-1]
         if isinstance(bar_time, pd.Timestamp):
@@ -154,7 +167,24 @@ class SignalManager:
             open_trades_count = None
             daily_loss_percent = None
 
-        if account and symbol_info and quote and quote_is_usable:
+        # Strategy Rules (Pages 14-15): the session window is enforced on
+        # every production risk assessment. The martingale ceiling uses the
+        # floating loss of OUR demo-grid positions only (comment-prefixed),
+        # computed from live broker positions. Unverifiable position data is
+        # fail-closed (REJECTED), never replaced by a zero default (item 4).
+        try:
+            positions_reader = getattr(self.data_provider, "get_open_positions", None)
+            open_positions = positions_reader() if callable(positions_reader) else None
+        except Exception as positions_error:
+            logger.warning(f"Unable to read open positions for {symbol}: {positions_error}")
+            open_positions = None
+        grid_drawdown = RiskEngine.compute_grid_martingale_drawdown(open_positions)
+
+        if not (account and symbol_info and quote and quote_is_usable):
+            risk_reason = "REJECTED_RISK_CONTEXT_UNAVAILABLE: Account, symbol specification, or quote is unavailable."
+        elif grid_drawdown is None:
+            risk_reason = "REJECTED_MARTINGALE_DATA_UNAVAILABLE: Open-position data could not be verified."
+        else:
             is_approved, calculated_lots, risk_reason = self.risk_engine.assess_signal(
                 symbol=symbol,
                 direction=final_direction,
@@ -166,9 +196,10 @@ class SignalManager:
                 quote=quote,
                 open_trades_count=open_trades_count,
                 daily_loss_percent=daily_loss_percent,
+                current_time_utc=datetime.now(timezone.utc),
+                active_martingale_drawdown=grid_drawdown,
+                enforce_session_filter=settings.ENFORCE_SESSION_FILTER,
             )
-        else:
-            risk_reason = "REJECTED_RISK_CONTEXT_UNAVAILABLE: Account, symbol specification, or quote is unavailable."
 
         # 8. Create and persist TradeSignal
         signal_id = f"sig_{uuid.uuid4().hex[:10]}"
@@ -195,7 +226,25 @@ class SignalManager:
             bar_time=bar_time_dt,
         )
         self.db.add(signal_record)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError:
+            # Lost the idempotency race against a concurrent worker/API insert
+            # on the same symbol/timeframe/bar. Surface the existing record
+            # instead of a 500 / WORKER_EXCEPTION.
+            self.db.rollback()
+            winner = self.db.query(TradeSignal).filter(
+                TradeSignal.idempotency_key.in_(
+                    (idempotency_key, f"{idempotency_key}_BUY", f"{idempotency_key}_SELL")
+                )
+            ).first()
+            if winner is not None:
+                logger.info(
+                    f"Concurrent signal for key {idempotency_key} already recorded "
+                    f"as {winner.signal_id}; returning the existing record."
+                )
+                return winner
+            raise
         self.db.refresh(signal_record)
 
         log_security_event(
