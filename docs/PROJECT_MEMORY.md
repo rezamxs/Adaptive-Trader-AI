@@ -933,3 +933,31 @@ All MT5 paths tested with stubs; no real MT5 dispatch, no orders, `EXECUTION_MOD
 **Next action:** owner reviews the 6 files; decides on the gap list (esp. static-split embargo intent, calibration fitting, per-side metrics logging, py3.14 wheel verification if any candidate is ever wanted); commit decision per standing rule.
 
 **Addendum (2026-11-01):** work committed and pushed to `origin/reveo` (commits 591c0b3, 5d10643, 5e6822d). CI "Core Regression Tests" on ubuntu-latest: first full-suite run failed (19) — defusedxml was missing from pyproject (declared only in the local env; root cause of a 500 on /system/status in CI), test_mt5_server_offset lacked the Windows-only skipif, data/processed-dependent tests lacked file-missing skips, and test_security_headers_on_every_response queried the real DB without isolated_app_db (silently DB-dependent locally). All four fixed; latest run: **completed success** (run 41255078662). README refreshed (400 tests, lockfile install). Runtime dirs (.mimosa, .backup-spec-kit-20261029, backend/artifacts, backend/data, zero-byte PUA file) gitignored, not committed.
+
+---
+
+## 30. M4 closed + stale-list reconciliation + SQLite busy_timeout + signal/order retention — 2026-11-01
+
+**VERIFIED this session (full suite `python -m pytest tests -q -o addopts=""` from `backend/` → 420 passed / 0 failed, run twice; commit `8499733` pushed to `origin/reveo` after a rebase onto the two README docs commits `439ab51`/`6aa4979` that had landed remotely).** Hindsight MCP unavailable; Context7 MCP unavailable (no tools exposed this session) — no library/API claims needed it.
+
+**M4 CLOSED (the last critical open item):** explicit rule direction replaces every name-derived vote.
+- `models/rule.py`: `TradingRule.direction` (`String(4)`, nullable — 'BUY' | 'SELL' | NULL).
+- `schemas/rule_schema.py`: `RuleDirection` enum, optional `direction` on Base/Response, `RuleDirectionUpdate` (actor+notes) for the new `POST /api/v1/rules/{rule_id}/direction` (token-gated, `RULE_DIRECTION_SET` audit event) — the ONLY conscious, reviewable assignment path.
+- `signal/generator.py`: direction votes read `rule.direction` ONLY; NULL/unknown casts no vote (fail-closed); the `buy/خرید/sell/فروش` name scan is DELETED (grep-verified zero name-direction lookups left in `backend/app`).
+- `knowledge/manager.py::check_rule_conflicts`: CONTRADICTORY_DIRECTION now decided by explicit directions, never names.
+- Migration `20261101_rdir` (head; inspector-guarded like mlwfm because the initial revision builds tables via `Base.metadata.create_all` — a plain ADD COLUMN double-adds on fresh chains). NO name-based backfill by design: legacy rules keep direction=NULL and stay fail-closed until an operator assigns direction (Phase P human decision stays reviewable).
+- Tests: `test_rule_direction_m4.py` (13: misleading-name→SELL, name-says-BUY-with-NULL-direction→no vote, garbage 'LONG'→no vote, direction-based conflicts (names neutral → no conflict), API set/clear/422/404/401, list exposes direction, migration adds-nullable+no-backfill+reversible). Fixtures in 5 older test files pinned `direction="BUY"` explicitly (previously name-derived).
+
+**Minor item 7 CLOSED:** `DB_BUSY_TIMEOUT_MS` (default 5000) applied via sqlite3 `connect_args["timeout"]` (the native busy handler) — NOT a PRAGMA f-string: the first commit was BLOCKED by the Mimosa pre-commit hook (flagged `session.py:32` f-string-into-execute as SQL-injection class); parameter binding is impossible for PRAGMA (`near "?": syntax error`), so the connect-arg approach was adopted (no SQL string construction at all). Tests `test_sqlite_busy_timeout.py` (5).
+
+**Minor item 16 extended:** `TRADE_SIGNAL_RETENTION_DAYS` / `DEMO_ORDER_RETENTION_DAYS` (default 0 = DISABLED, same contract as the §24 windows) wired into `prune_operational_records` + lifespan; tests `test_signal_order_retention.py` (2) + existing contracts updated to the 4-key dict.
+
+**User's audit list reconciled against the tree (items largely STALE, previously VERIFIED in §24–§28):** M9 (UNIQUE content_sha256 migration `20261031_dshq` + model Index) ✓, M10 (64MB per-member decompression cap in parsers.py) ✓, M13 (lazy BM25 index + consolidated governance probe) ✓, M14/M15 (12 sensitive GETs token-gated; market/health open by documented C1 policy) ✓, M22 (promote maps 404/409/sanitized-500 — no blanket 400) ✓, M23 (CI green on reveo run 41255289820) ✓, minors 3/4/5/6/8/10/12/13/14 previously closed. Minor 15 (old DB files) = owner cleanup decision; adaptive_trader*.db are gitignored. Remaining genuinely open per the roadmap: M12 (Phase 2.1 connection manager), ML-WF→BacktestRun binding (2.4, owner-design), CSP/onclick (2.5), coverage/mypy (2.6), 3.0-vs-5.0 daily-loss (owner decision), signals/orders retention WINDOWS (owner values), M8 volume-reconciliation acceptance (needs the owner's Phase P review).
+
+**CI note:** run 41325881829 FAILED on this push — NOT the M4 change: the remote README-rewrite commits had dropped the exact documented phrase `حافظهٔ همان صفحه` (page-memory token flow) that `test_dashboard_never_persists_token_in_web_storage` pins. README re-pinned (one hamze), corr1 suite 26 passed; follow-up commit restores CI.
+
+**Docs:** `docs/architecture.html` NEW — standalone RTL Persian architecture document (component map with click-through details, document→signal data flow, safety rails, roadmap position, M-item file map; HTML tag-balance + node `--check` verified).
+
+**Constraints:** `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, zero orders, zero rule approvals, real DB untouched (migrations tested only on tmp DBs; M4 leaves legacy rules direction=NULL so nothing silently changes behavior).
+
+**Next action:** owner (1) fixes the README phrase commit/push if not yet — done this session; (2) decides merge reveo→main (roadmap 1.2) — NOT done without explicit authorization; (3) decides the three product decisions (3.0/5.0, retention, METRIC_SIGNING_KEY provisioning); (4) assigns directions to existing rules via the new endpoint before approving them (Phase P); (5) then Phase 2 (2.1 MT5 connection manager first).
