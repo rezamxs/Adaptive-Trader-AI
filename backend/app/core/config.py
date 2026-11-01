@@ -128,6 +128,10 @@ class Settings(BaseSettings):
     DATA_PROCESSED_DIR: Path = BASE_DIR / "data" / "processed"
     ARTIFACTS_MODELS_DIR: Path = BASE_DIR / "artifacts" / "models"
     ARTIFACTS_REPORTS_DIR: Path = BASE_DIR / "artifacts" / "reports"
+    # Step 3.1 (owner request 2026-11-01): documents dropped into this folder
+    # are ingested automatically at application startup (same transactional
+    # pipeline as the upload endpoint; processed/failed files are moved aside).
+    DOCUMENT_INBOX_DIR: Path = BASE_DIR / "data" / "document_inbox"
     DATABASE_URL: str = f"sqlite:///{BASE_DIR / 'adaptive_trader.db'}"
 
     @field_validator("EXECUTION_MODE", mode="before")
