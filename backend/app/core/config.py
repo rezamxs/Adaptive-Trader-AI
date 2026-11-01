@@ -81,11 +81,12 @@ class Settings(BaseSettings):
     # Risk Management Constraints
     DEFAULT_RISK_PER_TRADE_PERCENT: float = 1.0
     MAX_OPEN_TRADES: int = 3
-    # 3.0 vs 5.0: docs/strategy-specification.md (Group D §1) originally said
-    # 5.0%; the configured default everywhere is 3.0%. The discrepancy is
-    # documented in the spec and BLOCKED on an explicit owner decision —
-    # changing a risk cap is a trading-policy decision, never a code fix.
-    MAX_DAILY_LOSS_PERCENT: float = 3.0
+    # OWNER DECISION (2026-11-01): the daily loss cap is 5.0%. The historical
+    # 3.0-vs-5.0 discrepancy (docs/strategy-specification.md originally said
+    # 5.0%, code defaulted to 3.0%) is resolved toward 5.0% by explicit owner
+    # instruction — changing a risk cap is a trading-policy decision, never a
+    # code fix.
+    MAX_DAILY_LOSS_PERCENT: float = 5.0
     MAX_DRAWDOWN_PERCENT: float = 6.0
     MAX_ALLOWED_SPREAD_POINTS: int = 35
     MIN_DATA_POINTS_REQUIRED: int = 100
@@ -104,14 +105,15 @@ class Settings(BaseSettings):
     WORKER_MAX_RETRY_DELAY_SECONDS: float = 60.0
     WORKER_STALE_TICK_SECONDS: int = 120
 
-    # Item 16: retention windows (days) for the operationally-growing tables,
-    # applied once at startup via prune_operational_records. 0 = DISABLED —
-    # nothing is ever deleted without the operator explicitly setting a
-    # window, so audit history is never pruned by default.
-    WORKER_CYCLE_RETENTION_DAYS: int = 0
-    AUDIT_LOG_RETENTION_DAYS: int = 0
-    TRADE_SIGNAL_RETENTION_DAYS: int = 0
-    DEMO_ORDER_RETENTION_DAYS: int = 0
+    # Retention windows (days) for the operationally-growing tables, applied
+    # once at startup via prune_operational_records. OWNER DECISION
+    # (2026-11-01): 30 days for all four tables. A monthly summary is
+    # archived before any pruning pass deletes rows. 0 = DISABLED for a
+    # single table (nothing is deleted for it).
+    WORKER_CYCLE_RETENTION_DAYS: int = 30
+    AUDIT_LOG_RETENTION_DAYS: int = 30
+    TRADE_SIGNAL_RETENTION_DAYS: int = 30
+    DEMO_ORDER_RETENTION_DAYS: int = 30
 
     # Minor item 7: SQLite busy_timeout (ms). Writers wait up to this long for
     # the database lock instead of failing instantly with "database is locked"
