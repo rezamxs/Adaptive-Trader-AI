@@ -327,7 +327,15 @@ class KnowledgeManager:
         if status == "processing":
             try:
                 if page_chunks:
+                    total_chunks = len(page_chunks)
                     for index, part in enumerate(page_chunks, start=1):
+                        # Step 3.2: heavy documents report progress instead of
+                        # appearing to hang during a long page-by-page ingest.
+                        if index == 1 or index % 25 == 0 or index == total_chunks:
+                            logger.info(
+                                "Ingestion progress for %s: chunk %d/%d",
+                                safe_file_name, index, total_chunks,
+                            )
                         if not isinstance(part, dict):
                             continue
                         chunk_text = str(part.get("text", "")).strip()

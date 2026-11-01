@@ -18,9 +18,9 @@ async def lifespan(app: FastAPI):
     """Controlled application lifespan managing DB initialization and background worker."""
     # Startup phase
     init_db()
-    # Item 16: operator-configured retention for the operationally-growing
-    # tables. Both windows default to 0 = disabled, so audit history is
-    # never pruned unless the operator explicitly sets a window.
+    # Owner decision 2026-11-01: retention windows default to 30 days per
+    # table (a monthly summary is archived before pruning; per-table 0 still
+    # disables). See docs/ROADMAP.md, owner-decisions table.
     try:
         from backend.app.db.session import SessionLocal
         from backend.app.services.worker.market_worker import prune_operational_records
@@ -41,6 +41,23 @@ async def lifespan(app: FastAPI):
             logger.info("Retention sweep at startup: %s", pruned)
     except Exception as e:
         logger.warning(f"Retention sweep failed at startup: {e}")
+    # Step 3.1 (owner request 2026-11-01): documents dropped into
+    # data/document_inbox/ are ingested automatically at startup through the
+    # same transactional pipeline as the upload endpoint. Parsing is heavy,
+    # so the scan runs off the event loop (same rule as the M11 fix).
+    try:
+        import asyncio
+        from pathlib import Path as _Path
+
+        from backend.app.db.session import SessionLocal as _SessionLocal
+        from backend.app.services.knowledge.inbox import process_inbox
+
+        if _Path(settings.DOCUMENT_INBOX_DIR).exists():
+            with _SessionLocal() as inbox_db:
+                inbox_summary = await asyncio.to_thread(process_inbox, inbox_db)
+            logger.info("Document inbox scan at startup: %s", inbox_summary)
+    except Exception as e:
+        logger.warning(f"Document inbox scan failed at startup: {e}")
     worker = None
     if settings.WORKER_ENABLED:
         try:
