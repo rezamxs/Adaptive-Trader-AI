@@ -18,9 +18,18 @@ class ApprovalStatus(str, Enum):
     REJECTED = "rejected"
 
 
+class RuleDirection(str, Enum):
+    """M4: explicit direction. The rule name is never used to infer it."""
+
+    BUY = "BUY"
+    SELL = "SELL"
+
+
 class TradingRuleBase(BaseModel):
     name: str
     category: RuleCategory
+    # M4: explicit direction; NULL (undecided) fails closed at execution.
+    direction: Optional[RuleDirection] = None
     description: str
     conditions: List[Dict[str, Any]] = Field(default_factory=list)
     parameters: Dict[str, Any] = Field(default_factory=dict)
@@ -36,6 +45,17 @@ class TradingRuleBase(BaseModel):
 
 class TradingRuleCreate(TradingRuleBase):
     pass
+
+
+class RuleDirectionUpdate(BaseModel):
+    """M4: conscious, reviewable direction assignment (a Phase P human decision).
+
+    Sending null clears the direction — the rule then never casts a direction
+    vote (fail-closed)."""
+
+    direction: Optional[RuleDirection] = None
+    notes: Optional[str] = None
+    actor: str = "USER"
 
 
 class RuleApprovalUpdate(BaseModel):

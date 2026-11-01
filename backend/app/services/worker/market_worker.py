@@ -696,15 +696,22 @@ def get_market_worker() -> MarketMonitoringWorker:
     return _global_worker
 
 
-def prune_operational_records(db, worker_cycle_days: int = 0, audit_log_days: int = 0) -> Dict[str, int]:
+def prune_operational_records(
+    db,
+    worker_cycle_days: int = 0,
+    audit_log_days: int = 0,
+    trade_signal_days: int = 0,
+    demo_order_days: int = 0,
+) -> Dict[str, int]:
     """Configurable retention for operational tables (item 40).
 
-    Deletes worker_cycle_records / audit_logs rows older than the respective
-    window (in days). A window of 0 (the default) DISABLES pruning for that
-    table — nothing is ever deleted without the operator explicitly setting a
-    retention window in settings. Returns the per-table delete counts.
+    Deletes worker_cycle_records / audit_logs / trade_signals / demo_orders
+    rows older than the respective window (in days). A window of 0 (the
+    default) DISABLES pruning for that table — nothing is ever deleted without
+    the operator explicitly setting a retention window in settings. Returns
+    the per-table delete counts.
     """
-    deleted = {"worker_cycle_records": 0, "audit_logs": 0}
+    deleted = {"worker_cycle_records": 0, "audit_logs": 0, "trade_signals": 0, "demo_orders": 0}
     now = utc_now_naive()
     if worker_cycle_days and worker_cycle_days > 0:
         cutoff = now - timedelta(days=worker_cycle_days)
@@ -722,10 +729,30 @@ def prune_operational_records(db, worker_cycle_days: int = 0, audit_log_days: in
             .delete(synchronize_session=False)
         )
         deleted["audit_logs"] = int(removed)
+    if trade_signal_days and trade_signal_days > 0:
+        cutoff = now - timedelta(days=trade_signal_days)
+        removed = (
+            db.query(TradeSignal)
+            .filter(TradeSignal.created_at < cutoff)
+            .delete(synchronize_session=False)
+        )
+        deleted["trade_signals"] = int(removed)
+    if demo_order_days and demo_order_days > 0:
+        from backend.app.models.order import DemoOrder
+
+        cutoff = now - timedelta(days=demo_order_days)
+        removed = (
+            db.query(DemoOrder)
+            .filter(DemoOrder.created_at < cutoff)
+            .delete(synchronize_session=False)
+        )
+        deleted["demo_orders"] = int(removed)
     if any(deleted.values()):
         db.commit()
         logger.info(
-            "Operational retention applied: %d worker_cycle_records and %d audit_logs "
-            "pruned.", deleted["worker_cycle_records"], deleted["audit_logs"],
+            "Operational retention applied: %d worker_cycle_records, %d audit_logs, "
+            "%d trade_signals, %d demo_orders pruned.",
+            deleted["worker_cycle_records"], deleted["audit_logs"],
+            deleted["trade_signals"], deleted["demo_orders"],
         )
     return deleted

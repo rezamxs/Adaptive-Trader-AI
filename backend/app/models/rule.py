@@ -13,6 +13,9 @@ class TradingRule(Base):
     rule_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     category: Mapped[str] = mapped_column(String(32), index=True, nullable=False)  # entry, exit, filter, risk
+    # M4: explicit direction — the ONLY source of rule direction. Never inferred
+    # from the rule name. NULL (undecided) rules never cast a direction vote.
+    direction: Mapped[Optional[str]] = mapped_column(String(4), nullable=True)  # 'BUY' | 'SELL' | NULL
     description: Mapped[str] = mapped_column(Text, nullable=False)
     
     # Structured rule components

@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.db.session import get_db
 from backend.app.core.auth import require_api_token
-from backend.app.schemas.rule_schema import TradingRuleResponse
+from backend.app.core.logging import log_security_event
+from backend.app.models.rule import TradingRule
+from backend.app.schemas.rule_schema import RuleDirectionUpdate, TradingRuleResponse
 from backend.app.services.knowledge.manager import KnowledgeManager
 
 router = APIRouter()
@@ -46,6 +48,28 @@ def reject_rule(rule_id: str, req: RejectRuleRequest, db: Session = Depends(get_
         return km.reject_rule(rule_id=rule_id, reason=req.reason, actor=req.actor)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{rule_id}/direction", response_model=TradingRuleResponse)
+def set_rule_direction(rule_id: str, req: RuleDirectionUpdate, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+    """M4: assigns (or clears) the explicit direction of a rule.
+
+    This is the ONLY path that decides a rule's direction — the generator and
+    conflict detection never infer it from the rule name. A null direction
+    leaves the rule fail-closed (it triggers but casts no direction vote).
+    """
+    rule = db.query(TradingRule).filter(TradingRule.rule_id == rule_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail=f"Rule with ID {rule_id} not found.")
+    rule.direction = req.direction.value if req.direction is not None else None
+    db.commit()
+    db.refresh(rule)
+    log_security_event(
+        "RULE_DIRECTION_SET",
+        {"rule_id": rule_id, "direction": rule.direction, "notes": req.notes, "actor": req.actor},
+        "INFO",
+    )
+    return rule
 
 
 @router.get("/conflicts")

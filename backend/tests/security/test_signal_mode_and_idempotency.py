@@ -36,6 +36,7 @@ def test_signal_only_mode_dispatches_zero_orders(db_session):
     rule = TradingRule(
         rule_id="rule_rsi_oversold",
         name="Buy on RSI Oversold",
+        direction="BUY",
         category="entry",
         description="Buy when RSI is below 70 (forced for testing)",
         conditions=[{"indicator": "RSI", "operator": "<", "threshold": 70.0}],
@@ -75,6 +76,7 @@ def test_signal_idempotency_prevents_duplicate_signals(db_session, monkeypatch):
     rule = TradingRule(
         rule_id="rule_rsi_oversold",
         name="Buy on RSI Oversold",
+        direction="BUY",
         category="entry",
         description="Buy rule",
         conditions=[{"indicator": "RSI", "operator": "<", "threshold": 70.0}],
