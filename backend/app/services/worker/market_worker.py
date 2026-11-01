@@ -2,10 +2,12 @@
 Strictly Read-Only and Fail-Closed: Operates strictly in SIGNAL_ONLY mode and NEVER executes orders.
 """
 import asyncio
+import json
 import uuid
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 from sqlalchemy.orm import Session
 
@@ -696,6 +698,78 @@ def get_market_worker() -> MarketMonitoringWorker:
     return _global_worker
 
 
+# Retention table specs: per-table created/status attributes for the
+# monthly archive + pruning pass (owner decision 2026-11-01: 30-day windows).
+_OPERATIONAL_TABLES = (
+    ("worker_cycle_records", WorkerCycleRecord, "created_at", "status_code"),
+    ("audit_logs", AuditLog, "created_at", "severity"),
+    ("trade_signals", TradeSignal, "created_at", "status"),
+    ("demo_orders", None, "created_at", "status"),  # DemoOrder resolved lazily (import order)
+)
+
+
+def _archive_monthly_summary(
+    db: Session,
+    table_name: str,
+    model,
+    created_attr: str,
+    status_attr: str,
+    cutoff,
+) -> Dict[str, int]:
+    """Write one monthly aggregate JSON per calendar month about to be pruned.
+
+    Owner decision 2026-11-01 (step 3.7): before retention deletes rows older
+    than the window, a per-month summary (total + per-status counts) is
+    archived to <ARTIFACTS_REPORTS_DIR>/archive/<table>/<YYYY-MM>.json. If a
+    summary file already exists the counts are MERGED, so repeated pruning
+    passes accumulate instead of losing history. Raises on IO failure so the
+    caller can skip pruning instead of deleting unarchived rows.
+    """
+    if model is None:
+        from backend.app.models.order import DemoOrder
+
+        model = DemoOrder
+    rows = (
+        db.query(getattr(model, created_attr), getattr(model, status_attr))
+        .filter(getattr(model, created_attr) < cutoff)
+        .all()
+    )
+    if not rows:
+        return {}
+    months: Dict[str, Dict[str, Any]] = {}
+    for ts, status_value in rows:
+        month = ts.strftime("%Y-%m") if ts is not None else "unknown"
+        bucket = months.setdefault(month, {"count": 0, "by_status": {}})
+        bucket["count"] += 1
+        status_key = str(status_value) if status_value is not None else "NONE"
+        bucket["by_status"][status_key] = bucket["by_status"].get(status_key, 0) + 1
+
+    archive_root = Path(settings.ARTIFACTS_REPORTS_DIR) / "archive" / table_name
+    archive_root.mkdir(parents=True, exist_ok=True)
+    for month, bucket in months.items():
+        target = archive_root / f"{month}.json"
+        if target.exists():
+            try:
+                existing = json.loads(target.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                existing = {}
+            bucket["count"] += int(existing.get("archived_count") or 0)
+            merged_status = dict(existing.get("by_status") or {})
+            for status_key, n in bucket["by_status"].items():
+                merged_status[status_key] = merged_status.get(status_key, 0) + int(n)
+            bucket["by_status"] = merged_status
+        payload = {
+            "table": table_name,
+            "month": month,
+            "archived_count": bucket["count"],
+            "by_status": bucket["by_status"],
+            "generated_at": utc_now_naive().isoformat(),
+        }
+        target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    logger.info("Monthly archive written for %s: %s", table_name, ", ".join(sorted(months)))
+    return {month: bucket["count"] for month, bucket in months.items()}
+
+
 def prune_operational_records(
     db,
     worker_cycle_days: int = 0,
@@ -703,50 +777,46 @@ def prune_operational_records(
     trade_signal_days: int = 0,
     demo_order_days: int = 0,
 ) -> Dict[str, int]:
-    """Configurable retention for operational tables (item 40).
+    """Configurable retention for operational tables (item 40 + owner decision).
 
     Deletes worker_cycle_records / audit_logs / trade_signals / demo_orders
-    rows older than the respective window (in days). A window of 0 (the
-    default) DISABLES pruning for that table — nothing is ever deleted without
-    the operator explicitly setting a retention window in settings. Returns
-    the per-table delete counts.
+    rows older than the respective window (in days). A window of 0 DISABLES
+    pruning for that table. BEFORE deleting, a monthly aggregate summary is
+    archived (owner decision 2026-11-01); if the archive write fails, pruning
+    for that table is SKIPPED this pass — rows are never deleted without a
+    surviving summary. Returns the per-table delete counts.
     """
-    deleted = {"worker_cycle_records": 0, "audit_logs": 0, "trade_signals": 0, "demo_orders": 0}
+    windows = {
+        "worker_cycle_records": int(worker_cycle_days or 0),
+        "audit_logs": int(audit_log_days or 0),
+        "trade_signals": int(trade_signal_days or 0),
+        "demo_orders": int(demo_order_days or 0),
+    }
+    deleted = {name: 0 for name in windows}
     now = utc_now_naive()
-    if worker_cycle_days and worker_cycle_days > 0:
-        cutoff = now - timedelta(days=worker_cycle_days)
-        removed = (
-            db.query(WorkerCycleRecord)
-            .filter(WorkerCycleRecord.created_at < cutoff)
-            .delete(synchronize_session=False)
-        )
-        deleted["worker_cycle_records"] = int(removed)
-    if audit_log_days and audit_log_days > 0:
-        cutoff = now - timedelta(days=audit_log_days)
-        removed = (
-            db.query(AuditLog)
-            .filter(AuditLog.created_at < cutoff)
-            .delete(synchronize_session=False)
-        )
-        deleted["audit_logs"] = int(removed)
-    if trade_signal_days and trade_signal_days > 0:
-        cutoff = now - timedelta(days=trade_signal_days)
-        removed = (
-            db.query(TradeSignal)
-            .filter(TradeSignal.created_at < cutoff)
-            .delete(synchronize_session=False)
-        )
-        deleted["trade_signals"] = int(removed)
-    if demo_order_days and demo_order_days > 0:
-        from backend.app.models.order import DemoOrder
+    for table_name, model, created_attr, status_attr in _OPERATIONAL_TABLES:
+        if model is None:
+            from backend.app.models.order import DemoOrder
 
-        cutoff = now - timedelta(days=demo_order_days)
+            model = DemoOrder
+        window = windows[table_name]
+        if window <= 0:
+            continue
+        cutoff = now - timedelta(days=window)
+        try:
+            _archive_monthly_summary(db, table_name, model, created_attr, status_attr, cutoff)
+        except Exception as e:
+            logger.error(
+                "Monthly archive failed for %s; pruning skipped this pass (fail-safe): %s",
+                table_name, e,
+            )
+            continue
         removed = (
-            db.query(DemoOrder)
-            .filter(DemoOrder.created_at < cutoff)
+            db.query(model)
+            .filter(getattr(model, created_attr) < cutoff)
             .delete(synchronize_session=False)
         )
-        deleted["demo_orders"] = int(removed)
+        deleted[table_name] = int(removed)
     if any(deleted.values()):
         db.commit()
         logger.info(
