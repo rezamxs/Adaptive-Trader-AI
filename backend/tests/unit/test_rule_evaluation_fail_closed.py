@@ -6,10 +6,11 @@ import pandas as pd
 from backend.app.services.signal.generator import SignalGenerator
 
 
-def _rule(name, conditions, *, symbol_scope=None, timeframe_scope=None, rule_id="r1"):
+def _rule(name, conditions, *, symbol_scope=None, timeframe_scope=None, rule_id="r1", direction="BUY"):
     return SimpleNamespace(
         rule_id=rule_id,
         name=name,
+        direction=direction,
         category="entry",
         conditions=conditions,
         symbol_scope=symbol_scope or [],

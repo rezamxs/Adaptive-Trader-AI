@@ -74,6 +74,7 @@ def approved_rule(db_session):
     rule = TradingRule(
         rule_id="rule_rsi_oversold_align",
         name="Buy on RSI Oversold",
+        direction="BUY",
         category="entry",
         description="Buy when RSI is below 70 (alignment test)",
         conditions=[{"indicator": "RSI", "operator": "<", "threshold": 70.0}],
@@ -140,6 +141,7 @@ def test_worker_passes_precomputed_features_to_manager(db_session, approved_rule
     rule = TradingRule(
         rule_id="rule_rsi_oversold_worker",
         name="Buy on RSI Oversold",
+        direction="BUY",
         category="entry",
         description="Buy when RSI is below 70 (worker alignment test)",
         conditions=[{"indicator": "RSI", "operator": "<", "threshold": 99.0}],
@@ -198,7 +200,7 @@ def test_retention_disabled_by_default_deletes_nothing(db_session):
 
     deleted = prune_operational_records(db_session, worker_cycle_days=0, audit_log_days=0)
 
-    assert deleted == {"worker_cycle_records": 0, "audit_logs": 0}
+    assert deleted == {"worker_cycle_records": 0, "audit_logs": 0, "trade_signals": 0, "demo_orders": 0}
     assert db_session.query(WorkerCycleRecord).count() == 5
     assert db_session.query(AuditLog).count() == 5
 
@@ -227,7 +229,7 @@ def test_retention_prunes_only_records_older_than_window(db_session):
 
     deleted = prune_operational_records(db_session, worker_cycle_days=30, audit_log_days=30)
 
-    assert deleted == {"worker_cycle_records": 3, "audit_logs": 3}
+    assert deleted == {"worker_cycle_records": 3, "audit_logs": 3, "trade_signals": 0, "demo_orders": 0}
     assert db_session.query(WorkerCycleRecord).count() == 2
     assert db_session.query(AuditLog).count() == 2
     remaining = [r.cycle_id for r in db_session.query(WorkerCycleRecord).all()]
@@ -251,9 +253,9 @@ def test_lifespan_applies_configured_retention(monkeypatch):
 
     calls = []
 
-    def fake_prune(db, worker_cycle_days=0, audit_log_days=0):
-        calls.append((worker_cycle_days, audit_log_days))
-        return {"worker_cycle_records": 0, "audit_logs": 0}
+    def fake_prune(db, worker_cycle_days=0, audit_log_days=0, trade_signal_days=0, demo_order_days=0):
+        calls.append((worker_cycle_days, audit_log_days, trade_signal_days, demo_order_days))
+        return {"worker_cycle_records": 0, "audit_logs": 0, "trade_signals": 0, "demo_orders": 0}
 
     @contextlib.contextmanager
     def fake_session():
@@ -271,7 +273,7 @@ def test_lifespan_applies_configured_retention(monkeypatch):
     monkeypatch.setattr(db_session_module, "SessionLocal", fake_session)
     monkeypatch.setattr(market_worker, "prune_operational_records", fake_prune)
     asyncio.run(_run_lifespan())
-    assert calls == [(30, 90)], "startup must apply the configured retention windows"
+    assert calls == [(30, 90, 0, 0)], "startup must apply the configured retention windows"
 
     # Default (0/0) -> no prune call at all: audit history is never pruned
     # without an explicit operator window.

@@ -24,12 +24,19 @@ async def lifespan(app: FastAPI):
     try:
         from backend.app.db.session import SessionLocal
         from backend.app.services.worker.market_worker import prune_operational_records
-        if settings.WORKER_CYCLE_RETENTION_DAYS or settings.AUDIT_LOG_RETENTION_DAYS:
+        if (
+            settings.WORKER_CYCLE_RETENTION_DAYS
+            or settings.AUDIT_LOG_RETENTION_DAYS
+            or settings.TRADE_SIGNAL_RETENTION_DAYS
+            or settings.DEMO_ORDER_RETENTION_DAYS
+        ):
             with SessionLocal() as db:
                 pruned = prune_operational_records(
                     db,
                     worker_cycle_days=settings.WORKER_CYCLE_RETENTION_DAYS,
                     audit_log_days=settings.AUDIT_LOG_RETENTION_DAYS,
+                    trade_signal_days=settings.TRADE_SIGNAL_RETENTION_DAYS,
+                    demo_order_days=settings.DEMO_ORDER_RETENTION_DAYS,
                 )
             logger.info("Retention sweep at startup: %s", pruned)
     except Exception as e:

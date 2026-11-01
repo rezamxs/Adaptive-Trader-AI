@@ -41,6 +41,7 @@ def approved_rule():
         rule = TradingRule(
             rule_id="rule_rsi_oversold_race",
             name="Buy on RSI Oversold",
+        direction="BUY",
             category="entry",
             description="Buy when RSI is below 70 (race test)",
             conditions=[{"indicator": "RSI", "operator": "<", "threshold": 70.0}],

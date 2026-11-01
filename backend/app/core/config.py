@@ -110,6 +110,13 @@ class Settings(BaseSettings):
     # window, so audit history is never pruned by default.
     WORKER_CYCLE_RETENTION_DAYS: int = 0
     AUDIT_LOG_RETENTION_DAYS: int = 0
+    TRADE_SIGNAL_RETENTION_DAYS: int = 0
+    DEMO_ORDER_RETENTION_DAYS: int = 0
+
+    # Minor item 7: SQLite busy_timeout (ms). Writers wait up to this long for
+    # the database lock instead of failing instantly with "database is locked"
+    # when the API and the worker collide on the single-writer file.
+    DB_BUSY_TIMEOUT_MS: int = 5000
 
     # Database Settings
     # Absolute defaults: relative paths here would silently follow pytest's CWD.

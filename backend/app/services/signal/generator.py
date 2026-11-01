@@ -23,6 +23,9 @@ class SignalGenerator:
 
         Only RSI and EMA-distance conditions are currently supported. Every
         condition must be recognized and satisfied before a rule can vote.
+        Direction votes come exclusively from the explicit rule.direction
+        field (M4): a rule with no explicit direction triggers but casts no
+        vote — the rule name is never inspected.
         """
         triggered: List[str] = []
         buy_votes = 0
@@ -124,10 +127,13 @@ class SignalGenerator:
             if str(getattr(rule, "category", "")).lower() != "entry":
                 continue
 
-            rule_name = str(getattr(rule, "name", "")).lower()
-            if "buy" in rule_name or "خرید" in rule_name:
+            # M4: direction comes ONLY from the explicit rule.direction field.
+            # A missing/unknown direction casts no vote (fail-closed); the rule
+            # name is never inspected for direction keywords.
+            rule_direction = str(getattr(rule, "direction", "") or "").strip().upper()
+            if rule_direction == "BUY":
                 buy_votes += 1
-            elif "sell" in rule_name or "فروش" in rule_name:
+            elif rule_direction == "SELL":
                 sell_votes += 1
 
         if buy_votes > sell_votes:

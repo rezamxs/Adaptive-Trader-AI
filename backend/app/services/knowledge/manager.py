@@ -509,13 +509,12 @@ class KnowledgeManager:
                 common_tf = set(r1.timeframe_scope).intersection(set(r2.timeframe_scope))
                 
                 if common_symbols and common_tf:
-                    # Detect opposite directions in entry rules
-                    is_buy_1 = "buy" in r1.name.lower() or "خرید" in r1.name
-                    is_sell_1 = "sell" in r1.name.lower() or "فروش" in r1.name
-                    is_buy_2 = "buy" in r2.name.lower() or "خرید" in r2.name
-                    is_sell_2 = "sell" in r2.name.lower() or "فروش" in r2.name
+                    # M4: opposite directions come from the explicit direction
+                    # field only; the rule name is never inspected.
+                    direction_1 = str(getattr(r1, "direction", "") or "").strip().upper()
+                    direction_2 = str(getattr(r2, "direction", "") or "").strip().upper()
 
-                    if (is_buy_1 and is_sell_2) or (is_sell_1 and is_buy_2):
+                    if {direction_1, direction_2} == {"BUY", "SELL"}:
                         conflicts.append({
                             "rule_1_id": r1.rule_id,
                             "rule_1_name": r1.name,
