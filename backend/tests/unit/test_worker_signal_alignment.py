@@ -266,8 +266,13 @@ def test_lifespan_applies_configured_retention(monkeypatch):
             pass
 
     # Configured windows -> prune called once with exactly those windows.
+    # Owner decision 2026-11-01: the settings defaults are 30 days per table,
+    # so each window is pinned explicitly here; a per-table 0 disables only
+    # that table while the others still run.
     monkeypatch.setattr(settings, "WORKER_CYCLE_RETENTION_DAYS", 30)
     monkeypatch.setattr(settings, "AUDIT_LOG_RETENTION_DAYS", 90)
+    monkeypatch.setattr(settings, "TRADE_SIGNAL_RETENTION_DAYS", 0)
+    monkeypatch.setattr(settings, "DEMO_ORDER_RETENTION_DAYS", 0)
     monkeypatch.setattr(settings, "WORKER_ENABLED", False)
     monkeypatch.setattr(main_module, "init_db", lambda: None)
     monkeypatch.setattr(db_session_module, "SessionLocal", fake_session)
@@ -275,13 +280,24 @@ def test_lifespan_applies_configured_retention(monkeypatch):
     asyncio.run(_run_lifespan())
     assert calls == [(30, 90, 0, 0)], "startup must apply the configured retention windows"
 
-    # Default (0/0) -> no prune call at all: audit history is never pruned
-    # without an explicit operator window.
+    # Owner-decided defaults (30 days per table) -> prune runs for all four.
+    calls.clear()
+    monkeypatch.setattr(settings, "WORKER_CYCLE_RETENTION_DAYS", 30)
+    monkeypatch.setattr(settings, "AUDIT_LOG_RETENTION_DAYS", 30)
+    monkeypatch.setattr(settings, "TRADE_SIGNAL_RETENTION_DAYS", 30)
+    monkeypatch.setattr(settings, "DEMO_ORDER_RETENTION_DAYS", 30)
+    asyncio.run(_run_lifespan())
+    assert calls == [(30, 30, 30, 30)], "owner-decided 30-day defaults must all reach startup"
+
+    # All windows at 0 -> no prune call at all: nothing is ever deleted
+    # without at least one enabled table window.
     calls.clear()
     monkeypatch.setattr(settings, "WORKER_CYCLE_RETENTION_DAYS", 0)
     monkeypatch.setattr(settings, "AUDIT_LOG_RETENTION_DAYS", 0)
+    monkeypatch.setattr(settings, "TRADE_SIGNAL_RETENTION_DAYS", 0)
+    monkeypatch.setattr(settings, "DEMO_ORDER_RETENTION_DAYS", 0)
     asyncio.run(_run_lifespan())
-    assert calls == [], "default retention windows must disable pruning entirely"
+    assert calls == [], "all-zero retention windows must disable pruning entirely"
 
 
 # ---------------------------------------------------------------------------
