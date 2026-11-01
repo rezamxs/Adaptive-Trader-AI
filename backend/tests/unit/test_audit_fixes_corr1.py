@@ -482,10 +482,15 @@ def test_dashboard_never_persists_token_in_web_storage():
 # M22 / item 3: distinguishable failure statuses + baseline security headers
 # ---------------------------------------------------------------------------
 
-def test_security_headers_on_every_response():
+def test_security_headers_on_every_response(isolated_app_db):
     """Item 3: baseline hardening headers must ride on every response (API
     and dashboard alike); CSP blocks external script/iframe origins while
-    allowing the inline dashboard bundle."""
+    allowing the inline dashboard bundle.
+
+    isolated_app_db: the /system/status leg queries the database — without
+    the isolated in-memory DB this test silently depended on a populated
+    backend/adaptive_trader.db existing locally and returned 500 on CI /
+    fresh clones."""
     client = _client()
     for url in ("/dashboard", f"{V1}/system/status"):
         resp = client.get(url, headers=api_headers())
