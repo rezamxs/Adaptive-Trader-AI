@@ -78,6 +78,26 @@ class RuleExtractor:
         return extracted_rules
 
     @classmethod
+    def _suggest_direction(cls, lower_text: str) -> Optional[str]:
+        """Step 3.3: SUGGESTS a direction from the document TEXT (never the
+        rule name, never executable). A block mentioning only buy-side hints
+        suggests BUY, only sell-side hints suggests SELL; both/neither sides
+        leave the suggestion empty for the human reviewer.
+
+        This is informational only: the generator votes on the human-decided
+        `direction` field, never on this suggestion (M4 preserved).
+        """
+        buy_hints = ("خرید", "long", "buy", "call")
+        sell_hints = ("فروش", "short", "put", "sell")
+        buy_hits = sum(1 for hint in buy_hints if hint in lower_text)
+        sell_hits = sum(1 for hint in sell_hints if hint in lower_text)
+        if buy_hits and not sell_hits:
+            return "BUY"
+        if sell_hits and not buy_hits:
+            return "SELL"
+        return None
+
+    @classmethod
     def _parse_block(cls, block_text: str, document_id: str, pages: List[int]) -> Optional[TradingRuleCreate]:
         """Analyzes a block of text to synthesize a structured TradingRuleCreate object."""
         if len(block_text.strip()) < 15:
@@ -171,6 +191,7 @@ class RuleExtractor:
         return TradingRuleCreate(
             name=name,
             category=category,
+            suggested_direction=cls._suggest_direction(lower_text),
             description=block_text.strip(),
             conditions=conditions,
             parameters=parameters,

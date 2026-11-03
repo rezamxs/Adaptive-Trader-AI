@@ -16,6 +16,9 @@ class TradingRule(Base):
     # M4: explicit direction — the ONLY source of rule direction. Never inferred
     # from the rule name. NULL (undecided) rules never cast a direction vote.
     direction: Mapped[Optional[str]] = mapped_column(String(4), nullable=True)  # 'BUY' | 'SELL' | NULL
+    # Step 3.3: extractor suggestion from the document TEXT (never the name).
+    # Informational only — the generator reads `direction`, never this field.
+    suggested_direction: Mapped[Optional[str]] = mapped_column(String(4), nullable=True)  # 'BUY' | 'SELL' | NULL
     description: Mapped[str] = mapped_column(Text, nullable=False)
     
     # Structured rule components

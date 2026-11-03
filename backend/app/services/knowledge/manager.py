@@ -404,6 +404,7 @@ class KnowledgeManager:
                             rule_id=rule_id,
                             name=rc.name,
                             category=rc.category.value,
+                            suggested_direction=rc.suggested_direction,
                             description=rc.description,
                             conditions=rc.conditions,
                             parameters=rc.parameters,
@@ -534,6 +535,85 @@ class KnowledgeManager:
                         })
 
         return conflicts
+
+    def batch_review_rules(self, items: List[Dict[str, Any]], actor: str = "USER") -> List[Dict[str, Any]]:
+        """Step 3.3: human BATCH review of pending rules — the system proposes
+        (suggested_direction), the human disposes.
+
+        Per item: action='approve' sets approval_status=approved; `direction`
+        may be 'BUY'/'SELL' (explicit human assignment), 'SUGGESTED' (adopt
+        suggested_direction — error if the rule has none), or None/absent
+        (rule approved with NO direction: it can trigger but never votes,
+        fail-closed). action='reject' requires `reason`. One bad item never
+        aborts the batch — every item gets an explicit result.
+        """
+        results: List[Dict[str, Any]] = []
+        for item in items:
+            rule_id = str(item.get("rule_id") or "")
+            action = str(item.get("action") or "").strip().lower()
+            outcome: Dict[str, Any] = {"rule_id": rule_id, "ok": False}
+            try:
+                if action not in {"approve", "reject"}:
+                    raise ValueError("action must be 'approve' or 'reject'")
+                rule = self.db.query(TradingRule).filter(TradingRule.rule_id == rule_id).first()
+                if not rule:
+                    raise ValueError(f"Rule with ID {rule_id} not found.")
+
+                if action == "approve":
+                    direction_input = item.get("direction")
+                    if direction_input is None:
+                        rule.direction = None
+                    else:
+                        direction_input = str(direction_input).strip().upper()
+                        if direction_input == "SUGGESTED":
+                            suggested = str(rule.suggested_direction or "").strip().upper()
+                            if suggested not in {"BUY", "SELL"}:
+                                raise ValueError(
+                                    f"Rule {rule_id} has no usable suggested_direction to adopt."
+                                )
+                            rule.direction = suggested
+                        elif direction_input in {"BUY", "SELL"}:
+                            rule.direction = direction_input
+                        else:
+                            raise ValueError(
+                                "direction must be 'BUY', 'SELL', 'SUGGESTED', or null"
+                            )
+                    rule.approval_status = ApprovalStatus.APPROVED.value
+                    rule.rejection_reason = None
+                    outcome["direction"] = rule.direction
+                    outcome["approved"] = True
+                else:  # reject
+                    reason = str(item.get("reason") or "").strip()
+                    if not reason:
+                        raise ValueError("reject requires a reason")
+                    rule.approval_status = ApprovalStatus.REJECTED.value
+                    rule.rejection_reason = reason
+                    outcome["rejected"] = True
+
+                self.db.commit()
+                self.db.refresh(rule)
+                outcome["ok"] = True
+                outcome["approval_status"] = rule.approval_status
+            except Exception as e:
+                self.db.rollback()
+                outcome["error"] = str(e)
+            results.append(outcome)
+
+        approved_n = sum(1 for r in results if r.get("approved"))
+        rejected_n = sum(1 for r in results if r.get("rejected"))
+        failed_n = sum(1 for r in results if not r.get("ok"))
+        log_security_event(
+            "RULE_BATCH_REVIEW",
+            {
+                "actor": actor,
+                "items": len(items),
+                "approved": approved_n,
+                "rejected": rejected_n,
+                "failed": failed_n,
+            },
+            "INFO",
+        )
+        return results
 
     def retrieve_knowledge(
         self,
