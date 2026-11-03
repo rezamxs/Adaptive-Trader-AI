@@ -961,3 +961,28 @@ All MT5 paths tested with stubs; no real MT5 dispatch, no orders, `EXECUTION_MOD
 **Constraints:** `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, zero orders, zero rule approvals, real DB untouched (migrations tested only on tmp DBs; M4 leaves legacy rules direction=NULL so nothing silently changes behavior).
 
 **Next action:** owner (1) fixes the README phrase commit/push if not yet — done this session; (2) decides merge reveo→main (roadmap 1.2) — NOT done without explicit authorization; (3) decides the three product decisions (3.0/5.0, retention, METRIC_SIGNING_KEY provisioning); (4) assigns directions to existing rules via the new endpoint before approving them (Phase P); (5) then Phase 2 (2.1 MT5 connection manager first).
+
+---
+
+## 31. automation/news-pause: owner decisions applied + 7-step automation (news rule BLOCKED on source) — 2026-11-03
+
+**VERIFIED this session (branch `automation/news-pause` from `reveo@bf30a9f`; suite 456 passed / 0 failed; commit chain 6 commits: decisions → archive → inbox → suggestion+batch → scheduler+pre-check → roadmap).** Context7/Hindsight MCP unavailable all session; the MT5 calendar verdict was verified against the installed package (`dir(MetaTrader5)` → zero calendar functions on 5.0.6231) and the official mql5.com Python docs (WebFetch).
+
+**Step 1 — owner decisions APPLIED:** `MAX_DAILY_LOSS_PERCENT` 3.0→**5.0** (resolves the §24/§25 BLOCKED 3.0-vs-5.0 discrepancy; the risk-engine test was updated to the new cap as a deliberate, documented contract change) and retention defaults 0→**30 days** for all four operational tables (per-table 0 still disables). METRIC_SIGNING_KEY: owner-only rule documented in `.env.example` — the owner generates, stores and backs up the key privately; never in chat/git/logs; no agent ever fills it. Decisions pinned as executable contracts in `backend/tests/unit/test_owner_decisions_2026_11_01.py`.
+
+**Step 2 — news pause rule: BLOCKED, one alternative proposed (owner decision pending).** The MetaTrader5 Python integration exposes NO economic calendar (verified twice). Per the mandate ("if it has no access, stop and propose exactly one reputable alternative; do not mix sources"), the news rule was NOT implemented and exactly ONE alternative was proposed: the ForexFactory weekly JSON feed (`https://nfs.faireconomy.media/ff_calendar_thisweek.json`, no API key, High/Medium/Low impact labels). Until the owner picks a source, the live signal loop continues WITHOUT news protection — recorded as an explicit risk in ROADMAP.md. The `news-pause-rule-spec.md` file referenced by the prompt was NOT present in the delivered folder; the prompt's embedded rules were used verbatim.
+
+**Step 3 — automation (6 of 7 steps implemented; step 6's news integration blocked):**
+- 3.1: `services/knowledge/inbox.py` — `data/document_inbox/` scanned at startup, every supported file ingested through the transactional pipeline (idempotent via content_sha256); processed/failed folders; per-file progress logs; 6 tests.
+- 3.2: chunk progress logged every 25 pages; `get_page_type_summary` reports IMAGE_ONLY/VECTOR_ONLY/BLANK pages per document (reported, never silently dropped, no rule built from them, no OCR per mandate).
+- 3.3: `suggested_direction` column (migration `20261102_sdir`, inspector-guarded) filled from document TEXT only (never the name); `POST /rules/batch-review` (token-gated, audited, ≤200 items) — approve with explicit BUY/SELL, SUGGESTED adoption, or null (directionless fail-closed), or reject with reason; per-item errors never abort the batch; M4 preserved (a suggestion alone can never vote — pinned by test).
+- 3.4: `services/ml/training_scheduler.py` — daily daemon at 21:00 UTC training ONE candidate on XAUUSD M1 via the NEW shared `services/ml/training.py` flow (also adopted by /ml/train, so both paths cannot drift); NEVER promotes.
+- 3.5: `GET /ml/models/{id}/promotion-check` — read-only per-gate summary; `promote_candidate` now evaluates via the same `_promotion_gate_failures` (messages byte-identical; governance suites green).
+- 3.7: `_archive_monthly_summary` writes per-month JSON (total + per-status) to `artifacts/reports/archive/<table>/<YYYY-MM>.json` BEFORE pruning, merged across passes, fail-safe (archive failure SKIPS pruning that table — rows are never deleted without a surviving summary).
+- Step 6 (live loop + news rule): the 3-second gold loop is unchanged; its news integration waits for the owner's source decision.
+
+**Step 4 — roadmap overhaul:** NEW canonical `docs/ROADMAP.md` (vision paragraph; CEO + technical versions in one document; stage/gate table with automatic-vs-human per stage; owner-decisions table with dates; plain-language risks incl. "green tests ≠ profit"; a what-changed section that removes stale items). `docs/architecture.html` roadmap section synced to it.
+
+**Confirmed but NOT done (owner items):** news source choice (proposal: ForexFactory JSON); merge to main; direction assignment + batch approval of the existing pending rules (Phase P); METRIC_SIGNING_KEY provisioning on the owner's machine; then roadmap-9.5 phase 2 (M12 connection manager first).
+
+**Constraints:** `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, zero orders, zero rule approvals, zero model activations; real DB untouched (all migration tests on tmp DBs); no secrets committed (signing key stays placeholder-only).
