@@ -209,17 +209,18 @@
 <section>
   <h2>۴) کجای نقشهٔ راه هستیم</h2>
   <div class="phases">
-    <div class="phase done"><span class="p-score">۷٫۴</span> <span class="p-title">reveo فعلی</span><span class="p-state">✓ کامل شد</span></div>
-    <div class="phase now"><span class="p-score">۸٫۰</span> <span class="p-title">فاز ۱ — M4 + merge + تصمیم‌ها</span><span class="p-state">در جریان — M4 امروز بسته شد</span></div>
+    <div class="phase done"><span class="p-score">۷٫۴</span> <span class="p-title">هسته + M4 + تصمیم‌ها</span><span class="p-state">✓ کامل شد</span></div>
+    <div class="phase done"><span class="p-score">۸٫۰</span> <span class="p-title">فاز ۱ — M4 بسته شد، تصمیم‌های مالک اعمال شد</span><span class="p-state">✓ کامل شد</span></div>
+    <div class="phase now"><span class="p-score">۸٫۵</span> <span class="p-title">اتوماسیون + قانون خبری</span><span class="p-state">در جریان — قانون خبری منتظر منبع خبر</span></div>
     <div class="phase"><span class="p-score">۹٫۰</span> <span class="p-title">فاز ۲ — MT5 manager / ML متقارن / WF→run</span><span class="p-state">در انتظار</span></div>
-    <div class="phase"><span class="p-score">۹٫۵</span> <span class="p-title">فاز ۳ — اثبات forward + انتشار امضاشده</span><span class="p-state">در انتظار</span></div>
   </div>
-  <table>
-    <tr><th>اقدام بعدی</th><th>توضیح</th></tr>
-    <tr><td>merge reveo → main</td><td>بعد از آن main = reveo و PR #1 را superseded اعلام کن. نیازمند مجوز تو.</td></tr>
-    <tr><td>سه تصمیم محصول</td><td>زیان روزانه ۳٪ یا ۵٪ · سیاست نگهداری داده · تأمین METRIC_SIGNING_KEY</td></tr>
-    <tr><td>فاز ۲ (نمرهٔ ۹)</td><td>مدیر اتصال MT5 (M12) · لِیبل SELL + متریک per-side · کالیبراسیون · WF→BacktestRun · CSP بدون unsafe-inline · coverage/mypy</td></tr>
-  </table>
+  <p style="font-size:13.5px;margin:6px 0">
+    سند رسمی و کامل نقشهٔ راه (نسخهٔ مدیرعامل + فنی، جدول تصمیم‌های مالک، ریسک‌ها):
+    <code>docs/ROADMAP.md</code>. تصمیم‌های قطعی ۲۰۲۶-۱۱-۰۱: سقف ضرر روزانه <b>۵٪</b>،
+    نگهداری <b>۳۰ روز</b> با آرشیو ماهانه، کلید امضا <b>خصوصیِ مالک</b>. قانون خبری
+    از پایتون به تقویم MT5 دسترسی ندارد (تأییدشده)؛ منتظر تصمیم شما روی
+    منبع پیشنهادی (ForexFactory JSON) است. merge به main هم منتظر مجوز شماست.
+  </p>
 </section>
 
 <section>
