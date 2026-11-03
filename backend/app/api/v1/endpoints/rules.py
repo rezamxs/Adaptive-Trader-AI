@@ -8,7 +8,11 @@ from backend.app.db.session import get_db
 from backend.app.core.auth import require_api_token
 from backend.app.core.logging import log_security_event
 from backend.app.models.rule import TradingRule
-from backend.app.schemas.rule_schema import RuleDirectionUpdate, TradingRuleResponse
+from backend.app.schemas.rule_schema import (
+    BatchReviewRequest,
+    RuleDirectionUpdate,
+    TradingRuleResponse,
+)
 from backend.app.services.knowledge.manager import KnowledgeManager
 
 router = APIRouter()
@@ -70,6 +74,23 @@ def set_rule_direction(rule_id: str, req: RuleDirectionUpdate, db: Session = Dep
         "INFO",
     )
     return rule
+
+
+@router.post("/batch-review")
+def batch_review_rules(req: BatchReviewRequest, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+    """Step 3.3: human BATCH review — the system proposes, the human disposes.
+
+    Each item independently approves (optionally assigning the executable
+    direction: 'BUY'/'SELL' explicitly, 'SUGGESTED' to adopt the extractor's
+    suggestion, or null for a directionless fail-closed rule) or rejects with
+    a reason. One bad item never aborts the batch; every item returns an
+    explicit result.
+    """
+    km = KnowledgeManager(db)
+    results = km.batch_review_rules(
+        [item.model_dump() for item in req.items], actor="USER"
+    )
+    return {"results": results}
 
 
 @router.get("/conflicts")
