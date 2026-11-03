@@ -96,6 +96,12 @@ class Settings(BaseSettings):
     # call sites; tests may disable via this flag.
     ENFORCE_SESSION_FILTER: bool = True
 
+    # Step 3.4 (owner request 2026-11-01): scheduled automatic candidate
+    # training. The scheduler trains ONE candidate per UTC day at the given
+    # hour and NEVER promotes — activation stays a human endpoint action.
+    TRAINING_SCHEDULE_ENABLED: bool = True
+    TRAINING_SCHEDULE_HOUR_UTC: int = 21
+
     # Market Monitoring Worker Settings
     WORKER_ENABLED: bool = True
     WORKER_SYMBOL: str = "XAUUSD"

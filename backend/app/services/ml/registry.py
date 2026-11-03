@@ -22,6 +22,20 @@ from backend.app.services.ml.walk_forward import (
     verify_ml_walk_forward_payload,
 )
 
+# Ordered promotion gate names (step 3.5 pre-check summaries).
+_GATE_ORDER = [
+    "status",
+    "digest_attestation",
+    "artifact_path",
+    "metric_gates",
+    "walk_forward_evidence",
+    "wf_backtest_provenance",
+    "ml_walk_forward_evidence",
+    "active_model_comparison",
+    "artifact_loadable",
+    "artifact_digest_match",
+]
+
 
 class ModelRegistry:
     """Oversees model promotions, audits, artifact loading, and lifecycle state."""
@@ -606,57 +620,103 @@ class ModelRegistry:
             )
         return None
 
-    def promote_candidate(self, candidate_id: str, actor: str = "USER", notes: Optional[str] = None) -> MLModelRecord:
-        """Controlled promotion of a candidate model to ACTIVE status.
-        Archives previously active model.
-        """
+    def promotion_check(self, candidate_id: str) -> Dict[str, Any]:
+        """Step 3.5 (owner request): evaluate EVERY promotion gate read-only and
+        return a per-gate summary. The system runs all checks and reports; the
+        human still performs the activation itself via POST /promote."""
         candidate = self.db.query(MLModelRecord).filter_by(model_id=candidate_id).first()
         if not candidate:
             raise ValueError(f"Candidate model {candidate_id} not found.")
+        gates = self._promotion_gate_failures(candidate)
+        first_failed = next((g for g in gates if g["passed"] is False), None)
+        return {
+            "model_id": candidate_id,
+            "status": candidate.status,
+            "promotable": first_failed is None,
+            "first_failure": first_failed["detail"] if first_failed else None,
+            "gates": gates,
+        }
 
+    def _promotion_gate_failures(self, candidate: MLModelRecord) -> List[Dict[str, Any]]:
+        """Evaluates every promotion gate IN ORDER and returns per-gate results.
+
+        Evaluation STOPS at the first failure; later gates are reported as
+        skipped, mirroring the original raise-at-first-failure semantics so
+        promote_candidate's message contract stays byte-identical. Each failed
+        gate carries the EXACT message promote_candidate used to raise.
+        """
+        candidate_id = candidate.model_id
+        gates: List[Dict[str, Any]] = []
+
+        def _gate(name: str, failed: bool, detail: Optional[str]) -> bool:
+            """Records one gate result; returns True when evaluation must stop."""
+            if failed:
+                gates.append({"gate": name, "passed": False, "detail": detail})
+                remaining = _GATE_ORDER[_GATE_ORDER.index(name) + 1:]
+                for later in remaining:
+                    gates.append({
+                        "gate": later, "passed": None,
+                        "detail": "skipped: an earlier gate failed",
+                    })
+                return True
+            gates.append({"gate": name, "passed": True, "detail": None})
+            return False
+
+        # --- status gate ---
         if candidate.status == "rejected":
-            raise ModelGovernanceError(f"Cannot promote model {candidate_id} because it was marked REJECTED.")
-        if candidate.status != "candidate":
-            raise ModelGovernanceError(
+            if _gate("status", True, f"Cannot promote model {candidate_id} because it was marked REJECTED."):
+                return gates
+        elif candidate.status != "candidate":
+            if _gate("status", True, (
                 f"Cannot promote model {candidate_id} from status {candidate.status!r}; "
                 "only candidates can be promoted."
-            )
+            )):
+                return gates
 
-        # H1: promotion reads attested metrics only. The digest committed at
-        # registration must still verify against the store, and the artifact's
-        # embedded metrics must match the store — otherwise the gates below
-        # could be satisfied by tampered numbers.
+        _gate("status", False, None)
+
+        # --- H1 digest attestation ---
         if not candidate.metrics_digest:
-            raise ModelGovernanceError(
+            if _gate("digest_attestation", True, (
                 f"Cannot promote model {candidate_id}: stored metrics are not attested "
                 "(missing digest); re-register the candidate."
-            )
-        if not verify_metric_digest(
+            )):
+                return gates
+        elif not verify_metric_digest(
             candidate.model_id,
             candidate.validation_metrics,
             candidate.test_metrics,
             candidate.walk_forward_metrics,
             candidate.metrics_digest,
         ):
-            raise ModelGovernanceError(
+            if _gate("digest_attestation", True, (
                 f"Cannot promote model {candidate_id}: stored metrics failed integrity "
                 "attestation (tamper detected)."
-            )
+            )):
+                return gates
 
-        # A model must have a readable artifact before the active model is touched.
+        _gate("digest_attestation", False, None)
+
+        # --- artifact path containment + file presence ---
         artifact_path = Path(candidate.artifact_path).resolve()
         artifact_root = Path(settings.ARTIFACTS_MODELS_DIR).resolve()
         try:
             artifact_path.relative_to(artifact_root)
-        except ValueError as exc:
-            raise ModelGovernanceError(
-                f"Cannot promote model {candidate_id}: artifact path is outside the configured artifact directory."
-            ) from exc
+        except ValueError:
+            if _gate("artifact_path", True, (
+                f"Cannot promote model {candidate_id}: artifact path is outside the "
+                "configured artifact directory."
+            )):
+                return gates
         if not artifact_path.is_file() or artifact_path.suffix.lower() != ".joblib":
-            raise ModelGovernanceError(
+            if _gate("artifact_path", True, (
                 f"Cannot promote model {candidate_id}: artifact file is missing or invalid."
-            )
+            )):
+                return gates
 
+        _gate("artifact_path", False, None)
+
+        # --- metric validity + thresholds ---
         val_metrics = candidate.validation_metrics
         test_metrics = candidate.test_metrics
         val_auc = self._metric_value(val_metrics, "roc_auc")
@@ -668,69 +728,74 @@ class ModelRegistry:
             or self._sample_count(val_metrics) < self.MIN_PROMOTION_EVALUATION_SAMPLES
             or self._sample_count(test_metrics) < self.MIN_PROMOTION_EVALUATION_SAMPLES
         ):
-            raise ModelGovernanceError(
+            if _gate("metric_gates", True, (
                 f"Cannot promote model {candidate_id}: validation and test partitions must each have "
                 f"valid ROC-AUC/Brier metrics and at least {self.MIN_PROMOTION_EVALUATION_SAMPLES} samples."
-            )
+            )):
+                return gates
         if (
             val_auc <= self.MIN_PROMOTION_ROC_AUC
             or test_auc <= self.MIN_PROMOTION_ROC_AUC
             or val_brier > self.MAX_PROMOTION_BRIER_SCORE
             or test_brier > self.MAX_PROMOTION_BRIER_SCORE
         ):
-            raise ModelGovernanceError(
+            if _gate("metric_gates", True, (
                 f"Cannot promote model {candidate_id}: validation and independent test metrics do not pass "
                 f"(ROC-AUC must be > {self.MIN_PROMOTION_ROC_AUC:.2f}; "
                 f"Brier score must be <= {self.MAX_PROMOTION_BRIER_SCORE:.2f})."
-            )
+            )):
+                return gates
 
-        # Classification metrics alone do not prove that this model is profitable
-        # when used as a trading strategy. Do not activate it without a separate,
-        # cost-aware walk-forward backtest on unseen periods.
+        _gate("metric_gates", False, None)
+
+        # --- strategy-level walk-forward evidence ---
         walk_forward_failure = self._walk_forward_failure(candidate.walk_forward_metrics)
         if walk_forward_failure:
-            raise ModelGovernanceError(
+            if _gate("walk_forward_evidence", True, (
                 f"Cannot promote model {candidate_id}: {walk_forward_failure}"
-            )
+            )):
+                return gates
 
-        # M8: walk-forward evidence must still be traceable to its persisted
-        # producing run at promotion time, and its numbers must match that run.
-        # A payload that bypassed attach (registered directly) without
-        # backtest_run_id, or whose producing run was deleted afterwards, is a
-        # provenance failure — the numbers alone prove nothing.
+        _gate("walk_forward_evidence", False, None)
+
+        # --- backtest provenance (M8) ---
         wf_metrics = candidate.walk_forward_metrics or {}
         backtest_run_id = wf_metrics.get("backtest_run_id")
         if not isinstance(backtest_run_id, str) or not backtest_run_id.strip():
-            raise ModelGovernanceError(
+            if _gate("wf_backtest_provenance", True, (
                 f"Cannot promote model {candidate_id}: walk-forward evidence lacks "
                 "'backtest_run_id' provenance (re-attach it via attach_walk_forward_metrics)."
-            )
+            )):
+                return gates
         backtest_run = self.db.query(BacktestRun).filter(BacktestRun.run_id == backtest_run_id).first()
         if backtest_run is None:
-            raise ModelGovernanceError(
+            if _gate("wf_backtest_provenance", True, (
                 f"Cannot promote model {candidate_id}: referenced backtest run "
                 f"'{backtest_run_id}' no longer exists in backtest_runs."
-            )
+            )):
+                return gates
         provenance_failure = self._verify_backtest_provenance(wf_metrics, backtest_run)
         if provenance_failure:
-            raise ModelGovernanceError(
+            if _gate("wf_backtest_provenance", True, (
                 f"Cannot promote model {candidate_id}: {provenance_failure}"
-            )
+            )):
+                return gates
 
-        # M8: per-fold-retrained ML walk-forward evidence, when attached, must
-        # still verify independently at promotion time — a payload tampered
-        # after attach (fold geometry edited, aggregate forged, digest
-        # stripped) must block the promotion instead of riding along.
+        _gate("wf_backtest_provenance", False, None)
+
+        # --- per-fold ML walk-forward evidence ---
         ml_wf_failure = self._ml_walk_forward_failure(
             candidate.model_id, candidate.ml_walk_forward_metrics
         )
         if ml_wf_failure:
-            raise ModelGovernanceError(
+            if _gate("ml_walk_forward_evidence", True, (
                 f"Cannot promote model {candidate_id}: ml_walk_forward evidence failed: {ml_wf_failure}"
-            )
+            )):
+                return gates
 
-        # Test-set values are reserved for absolute gates. Compare candidates to
-        # the active model on validation only to avoid repeatedly tuning against test.
+        _gate("ml_walk_forward_evidence", False, None)
+
+        # --- comparison against the active model (validation only) ---
         active_current = self.get_active_model_record()
         if active_current and active_current.model_id != candidate_id:
             active_val_auc = self._metric_value(active_current.validation_metrics, "roc_auc")
@@ -738,55 +803,83 @@ class ModelRegistry:
                 active_val_auc is None
                 or self._sample_count(active_current.validation_metrics) < self.MIN_PROMOTION_EVALUATION_SAMPLES
             ):
-                raise ModelGovernanceError(
-                    "Cannot promote candidate: the active model must be re-evaluated on a valid temporal validation partition."
-                )
+                if _gate("active_model_comparison", True, (
+                    "Cannot promote candidate: the active model must be re-evaluated "
+                    "on a valid temporal validation partition."
+                )):
+                    return gates
             if val_auc <= active_val_auc:
-                raise ModelGovernanceError(
+                if _gate("active_model_comparison", True, (
                     f"Cannot promote model {candidate_id}: validation ROC-AUC {val_auc:.4f} "
                     f"does not exceed active model validation ROC-AUC {active_val_auc:.4f}."
-                )
+                )):
+                    return gates
 
-        # Verify that the persisted artifact is loadable and has the required inference contract.
+        _gate("active_model_comparison", False, None)
+
+        # --- artifact loadable + inference contract ---
         try:
             artifact = joblib.load(artifact_path)
         except Exception as exc:
-            raise ModelGovernanceError(
+            if _gate("artifact_loadable", True, (
                 f"Cannot promote model {candidate_id}: artifact cannot be loaded ({type(exc).__name__})."
-            ) from exc
+            )):
+                return gates
         if (
             not isinstance(artifact, dict)
             or not callable(getattr(artifact.get("model"), "predict_proba", None))
             or not isinstance(artifact.get("feature_names"), (list, tuple))
             or not artifact.get("feature_names")
         ):
-            raise ModelGovernanceError(
+            if _gate("artifact_loadable", True, (
                 f"Cannot promote model {candidate_id}: artifact is missing inference components."
-            )
+            )):
+                return gates
 
-        # H1: cross-check the artifact's embedded metric payload against the
-        # attested store values so neither side can be edited independently.
+        _gate("artifact_loadable", False, None)
+
+        # --- H1: artifact digest + metrics cross-check ---
         artifact_metrics_digest = artifact.get("metrics_digest")
-        # A digest-less artifact is a provenance FAILURE, not a pass: without
-        # an attested digest the payload cannot be verified against the store.
         if artifact_metrics_digest is None:
-            raise ModelGovernanceError(
+            if _gate("artifact_digest_match", True, (
                 f"Cannot promote model {candidate_id}: the artifact carries no attested "
                 "metrics digest (H1 provenance required)."
-            )
+            )):
+                return gates
         if artifact_metrics_digest != candidate.metrics_digest:
-            raise ModelGovernanceError(
-                f"Cannot promote model {candidate_id}: artifact metrics digest does not match the attested store digest."
-            )
+            if _gate("artifact_digest_match", True, (
+                f"Cannot promote model {candidate_id}: artifact metrics digest does not "
+                "match the attested store digest."
+            )):
+                return gates
         for metric_key in ("validation_metrics", "test_metrics"):
             artifact_metrics = artifact.get(metric_key)
             if artifact_metrics is not None and artifact_metrics != getattr(candidate, metric_key):
-                raise ModelGovernanceError(
+                if _gate("artifact_digest_match", True, (
                     f"Cannot promote model {candidate_id}: artifact {metric_key} do not match "
                     "the attested store metrics (artifact tamper detected)."
-                )
+                )):
+                    return gates
 
-        # Mutate model states only after every promotion gate has passed.
+        gates.append({"gate": "artifact_digest_match", "passed": True, "detail": None})
+        return gates
+
+    def promote_candidate(self, candidate_id: str, actor: str = "USER", notes: Optional[str] = None) -> MLModelRecord:
+        """Controlled promotion of a candidate model to ACTIVE status.
+        Archives previously active model. The gate evaluation lives in
+        _promotion_gate_failures so the pre-check summary (step 3.5) and the
+        promotion itself can never drift apart.
+        """
+        candidate = self.db.query(MLModelRecord).filter_by(model_id=candidate_id).first()
+        if not candidate:
+            raise ValueError(f"Candidate model {candidate_id} not found.")
+
+        gates = self._promotion_gate_failures(candidate)
+        first_failed = next((g for g in gates if g["passed"] is False), None)
+        if first_failed:
+            raise ModelGovernanceError(first_failed["detail"])
+
+        active_current = self.get_active_model_record()
         if active_current and active_current.model_id != candidate_id:
             active_current.status = "archived"
             logger.info(f"Archived previous active model {active_current.model_id}.")

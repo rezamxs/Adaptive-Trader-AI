@@ -147,7 +147,7 @@ def test_risk_engine_blocks_on_daily_drawdown_and_trips_breaker(db_session, mock
     risk_engine = RiskEngine(db_session)
     quote = Quote("EURUSD", datetime.now(timezone.utc), 1.0850, 1.08515, 15, is_stale=False)
 
-    # Daily loss = 3.5% (exceeds limit 3.0%)
+    # Daily loss = 5.5% (exceeds the owner-decided 5.0% limit, 2026-11-01)
     approved, lots, reason = risk_engine.assess_signal(
         symbol="EURUSD",
         direction="BUY",
@@ -158,7 +158,7 @@ def test_risk_engine_blocks_on_daily_drawdown_and_trips_breaker(db_session, mock
         symbol_info=mock_symbol_info,
         quote=quote,
         open_trades_count=0,
-        daily_loss_percent=3.5,
+        daily_loss_percent=5.5,
     )
 
     assert approved is False

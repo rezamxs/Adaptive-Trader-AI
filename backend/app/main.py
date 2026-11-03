@@ -58,6 +58,16 @@ async def lifespan(app: FastAPI):
             logger.info("Document inbox scan at startup: %s", inbox_summary)
     except Exception as e:
         logger.warning(f"Document inbox scan failed at startup: {e}")
+    # Step 3.4: nightly scheduled candidate training (never promotes).
+    training_scheduler = None
+    try:
+        from backend.app.db.session import SessionLocal as _TrainingSession
+        from backend.app.services.ml.training_scheduler import TrainingScheduler
+
+        training_scheduler = TrainingScheduler(db_factory=_TrainingSession)
+        training_scheduler.start()
+    except Exception as e:
+        logger.warning(f"Training scheduler failed to start: {e}")
     worker = None
     if settings.WORKER_ENABLED:
         try:
@@ -70,6 +80,12 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown phase
+    if training_scheduler:
+        try:
+            training_scheduler.stop()
+            logger.info("Training scheduler stopped during application lifespan shutdown.")
+        except Exception as e:
+            logger.warning(f"Error stopping training scheduler during shutdown: {e}")
     if worker and worker.is_running:
         try:
             await worker.stop()
