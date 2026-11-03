@@ -52,64 +52,28 @@ def list_models(db: Session = Depends(get_db), _token: str = Depends(require_api
 @router.post("/train")
 def train_model(req: TrainModelRequest, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
     """Trains a new candidate model on historical data with strict temporal splitting."""
-    provider = MT5MarketDataProvider()
-    if not provider.connect():
-        raise HTTPException(
-            status_code=503,
-            detail="MT5 is unavailable; model training with synthetic fallback data is disabled.",
-        )
+    from backend.app.services.ml.training import (
+        TrainingDataError,
+        TrainingInternalError,
+        train_candidate_from_market,
+    )
 
     try:
-        df_raw = provider.get_historical_dataframe(req.symbol, req.timeframe, count=req.bars_count)
-        symbol_info = provider.get_symbol_info(req.symbol)
-    finally:
-        provider.disconnect()
-
-    if symbol_info is None:
-        raise HTTPException(status_code=503, detail=f"MT5 did not return broker specifications for {req.symbol}.")
-    # symbol_info.spread may be None/invalid on broker failures — convert once,
-    # guarded, instead of leaking a raw TypeError as a 500 from either use site.
-    try:
-        broker_spread = int(symbol_info.spread)
-    except (TypeError, ValueError, OverflowError):
-        raise HTTPException(status_code=503, detail=f"MT5 returned invalid point/spread data for {req.symbol}.")
-    if (
-        not math.isfinite(float(symbol_info.point))
-        or float(symbol_info.point) <= 0
-        or broker_spread < 0
-    ):
-        raise HTTPException(status_code=503, detail=f"MT5 returned invalid point/spread data for {req.symbol}.")
-
-    if len(df_raw) < 100:
-        raise HTTPException(status_code=400, detail="Insufficient bars to build training dataset.")
-
-    # Build dataset with purge/embargo
-    pipeline = DatasetPipeline(db=db)
-    try:
-        ds_res = pipeline.build_dataset(
-            df_raw,
+        train_res = train_candidate_from_market(
+            db,
             symbol=req.symbol,
             timeframe=req.timeframe.value,
+            bars_count=req.bars_count,
             horizon_bars=req.horizon_bars,
-            spread_points=max(0, broker_spread),
-            point_value=float(symbol_info.point),
+            algorithm=req.algorithm,
         )
-    except Exception as e:
-        logger.error(f"Dataset construction failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Dataset construction failed due to an internal error.",
-        )
-
-    # Train model
-    trainer = ModelTrainer(db=db)
-    try:
-        train_res = trainer.train_candidate(
-            dataset_result=ds_res,
-            algorithm=req.algorithm
-        )
-    except Exception as e:
-        logger.error(f"Model training failed: {e}")
+    except TrainingDataError as e:
+        # Environmental/input failures: 503 for MT5 problems, 400 for
+        # insufficient bars (same contract as before the shared-helper refactor).
+        detail = str(e)
+        status = 400 if "Insufficient bars" in detail else 503
+        raise HTTPException(status_code=status, detail=detail)
+    except TrainingInternalError:
         raise HTTPException(
             status_code=500,
             detail="Model training failed due to an internal error.",
@@ -132,6 +96,27 @@ def compare_model(model_id: str, db: Session = Depends(get_db), _token: str = De
         return registry.compare_models(model_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/models/{model_id}/promotion-check")
+def promotion_check(model_id: str, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+    """Step 3.5: read-only evaluation of every promotion gate for a candidate.
+
+    The system runs all checks and reports a per-gate summary (promotable
+    true/false + the exact first failure); the human still performs the
+    activation itself via POST /promote. Unknown model id is 404; a genuine
+    internal bug is a sanitized 500."""
+    registry = ModelRegistry(db)
+    try:
+        return registry.promotion_check(model_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception:
+        logger.exception(f"Promotion pre-check failed internally for {model_id}")
+        raise HTTPException(
+            status_code=500,
+            detail="Promotion pre-check failed due to an internal error.",
+        )
 
 
 @router.post("/models/{model_id}/promote")
