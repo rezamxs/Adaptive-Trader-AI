@@ -339,8 +339,13 @@ def test_upload_rejects_empty_file(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def _dashboard_src() -> str:
+    """Minor 3/18: the dashboard is index.html + the external /static/app.js
+    bundle (inline script and onclick attributes were removed for the strict
+    CSP) — source scans must see BOTH files."""
     from pathlib import Path
-    return (Path(__file__).resolve().parents[3] / "frontend" / "index.html").read_text(encoding="utf-8")
+    frontend = Path(__file__).resolve().parents[3] / "frontend"
+    return (frontend / "index.html").read_text(encoding="utf-8") + "\n" + (
+        frontend / "app.js").read_text(encoding="utf-8")
 
 
 def test_h2_dashboard_defines_and_uses_html_escaping():
@@ -483,16 +488,16 @@ def test_dashboard_never_persists_token_in_web_storage():
 # ---------------------------------------------------------------------------
 
 def test_security_headers_on_every_response(isolated_app_db):
-    """Item 3: baseline hardening headers must ride on every response (API
-    and dashboard alike); CSP blocks external script/iframe origins while
-    allowing the inline dashboard bundle.
+    """Item 3 + Minor 3 phase 2: hardening headers ride on every response and
+    the CSP is path-scoped — STRICT (script-src 'self', no 'unsafe-inline')
+    for the dashboard and the whole API; the single documented exception is
+    FastAPI's own Swagger UI, whose bundled inline bootstrap needs
+    'unsafe-inline' + its jsdelivr assets.
 
-    isolated_app_db: the /system/status leg queries the database — without
-    the isolated in-memory DB this test silently depended on a populated
-    backend/adaptive_trader.db existing locally and returned 500 on CI /
-    fresh clones."""
+    isolated_app_db: the /system/status leg queries the database."""
     client = _client()
-    for url in ("/dashboard", f"{V1}/system/status"):
+    strict_csp_prefixes = ("/dashboard", f"{V1}/system/status")
+    for url in strict_csp_prefixes:
         resp = client.get(url, headers=api_headers())
         assert resp.status_code == 200, f"GET {url} -> {resp.status_code}"
         assert resp.headers.get("X-Content-Type-Options") == "nosniff"
@@ -500,12 +505,41 @@ def test_security_headers_on_every_response(isolated_app_db):
         assert resp.headers.get("Referrer-Policy") == "no-referrer"
         csp = resp.headers.get("Content-Security-Policy", "")
         assert "default-src 'self'" in csp and "frame-ancestors 'none'" in csp
-        # The only allowed third-party origins are the ones the app actually
-        # loads (independent review): local Swagger UI CDN + dashboard font.
-        assert "https://cdn.jsdelivr.net" in csp, "Swagger /docs assets must stay loadable"
+        assert "script-src 'self';" in csp, f"strict script policy required on {url}"
+        assert "unsafe-inline" not in csp.split("style-src", 1)[0], (
+            f"script-src must not allow unsafe-inline on {url}")
         assert "https://fonts.googleapis.com" in csp, "dashboard webfont style must stay loadable"
         assert "https://fonts.gstatic.com" in csp, "dashboard webfont files must stay loadable"
         assert "unsafe-eval" not in csp, "script evaluation must stay blocked"
+
+    # The ONLY documented exception: FastAPI's own Swagger UI bootstrap.
+    docs = client.get("/docs")
+    assert docs.status_code == 200
+    docs_csp = docs.headers.get("Content-Security-Policy", "")
+    assert "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;" in docs_csp
+
+
+def test_dashboard_has_no_inline_script_and_no_inline_handlers():
+    """Minor 3/18 structural pins: the dashboard HTML ships ZERO inline
+    <script> blocks and ZERO onclick= attributes — all behavior lives in the
+    external same-origin /static/app.js, wired through ONE delegated
+    data-action listener (strict-CSP compatible)."""
+    from pathlib import Path
+    frontend = Path(__file__).resolve().parents[3] / "frontend"
+    html = (frontend / "index.html").read_text(encoding="utf-8")
+    app_js = (frontend / "app.js").read_text(encoding="utf-8")
+
+    import re as _re
+    assert "<script>" not in html, "inline script block must not return"
+    assert 'src="/static/app.js"' in html, "app.js must stay wired"
+    assert not _re.search(r"onclick\s*=", html), "inline onclick must not return"
+    assert not _re.search(r"onclick\s*=\s*['\"]", app_js), "generated onclick must not return"
+    assert "data-action" in html and "data-action" in app_js
+    assert 'document.addEventListener("click"' in app_js, "delegated listener required"
+    for action in ("set-token", "toggle-emergency", "switch-tab", "upload-document",
+                   "train-model", "run-backtest", "generate-signal",
+                   "approve-rule", "reject-rule", "promote-model"):
+        assert f'"{action}"' in app_js, f"data-action {action} must stay delegated"
 
 
 def test_execution_failure_status_mapping():

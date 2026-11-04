@@ -242,7 +242,7 @@
     frontend: {
       title: "Dashboard (frontend/index.html)",
       body: "تک‌فایل HTML/CSS/JS؛ توکن API فقط در حافظهٔ صفحه (نه localStorage)؛ همهٔ POST ها هدر X-API-TOKEN می‌فرستند؛ GET های حساس هم احراز می‌شوند؛ خطای 401 به ردیف خطا تبدیل می‌شود نه کرش.",
-      kv: [["فایل", "frontend/index.html (~1270 خط)"], ["توکن", "page-memory + prompt در هر بارگذاری"], ["زمان", "نمایش همهٔ ساعت‌ها با fmtUtcTime (M19)"]]
+      kv: [["فایل", "frontend/index.html (~666 خط) + frontend/app.js (~624 خط، بدون inline script و onclick — CSP سخت‌گیرانه script-src 'self')"], ["توکن", "page-memory + prompt در هر بارگذاری"], ["زمان", "نمایش همهٔ ساعت‌ها با fmtUtcTime (M19)"]]
     },
     api: {
       title: "FastAPI (backend/app/api/v1)",

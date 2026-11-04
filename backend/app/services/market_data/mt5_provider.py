@@ -83,8 +83,21 @@ class MT5MarketDataProvider(IMarketDataProvider):
         return hours * 3600.0
 
     def connect(self) -> bool:
-        """Initializes MT5 terminal connection safely with thread synchronization."""
+        """Initializes MT5 terminal connection safely with thread synchronization.
+
+        Idempotent for the shared provider (M12): when the terminal handle is
+        already live, returns True without re-initializing; a stale handle is
+        transparently re-initialized so a dead terminal heals on the next
+        acquire instead of poisoning every later call.
+        """
         with _mt5_lock:
+            if MT5_AVAILABLE and self._connected:
+                try:
+                    term = mt5.terminal_info()
+                    if term and term.connected:
+                        return True
+                except Exception:
+                    logger.warning("MT5 connection probe failed; re-initializing the terminal.")
             if not MT5_AVAILABLE:
                 logger.warning("MetaTrader5 python library is not available.")
                 self._connected = False

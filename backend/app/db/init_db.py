@@ -1,6 +1,8 @@
 """Database table creation and initial safety state seeding."""
+from pathlib import Path
 from typing import Optional
 
+import sqlalchemy
 from sqlalchemy.orm import Session
 from backend.app.db.base import Base
 from backend.app.db.session import engine, SessionLocal
@@ -8,15 +10,96 @@ from backend.app.models.emergency_stop import EmergencyStopState
 from backend.app.models.audit_log import AuditLog
 from backend.app.core.logging import logger
 
+# Bookkeeping table Alembic itself uses (same shape as alembic's stamp):
+# created here with pure SQLAlchemy expressions when a FRESH database is
+# booted, so the migration-drift gate below can protect it from then on.
+_AlembicVersion = sqlalchemy.Table(
+    "alembic_version",
+    sqlalchemy.MetaData(),
+    sqlalchemy.Column("version_num", sqlalchemy.String(32), primary_key=True),
+)
+
+
+def _alembic_chain_head() -> Optional[str]:
+    """The head revision of the migration chain, read from alembic.ini.
+
+    Returns None (and only logs) when the chain metadata is unreadable —
+    the gate then degrades to the historical create_all-only behavior instead
+    of bricking a boot because of a packaging-path issue.
+    """
+    try:
+        from alembic.config import Config as AlembicConfig
+        from alembic.script import ScriptDirectory
+
+        # backend/app/db/init_db.py → repo root is three parents up.
+        repo_root = Path(__file__).resolve().parents[3]
+        cfg = AlembicConfig(str(repo_root / "alembic.ini"))
+        return ScriptDirectory.from_config(cfg).get_current_head()
+    except Exception as exc:  # pragma: no cover - defensive packaging path
+        logger.warning("Alembic chain head unavailable; schema-drift gate skipped: %s", exc)
+        return None
+
 
 def init_db(db: Optional[Session] = None) -> None:
     """Creates missing database tables and verifies initial safety state.
+
+    M20 (phase 2): boot NEVER mutates an existing schema beyond create_all's
+    idempotent no-op, and a database managed by Alembic must BE at the chain
+    head before boot — otherwise a brand-new table added to the models could
+    silently appear outside the migration chain. Specifically:
+
+    - versioned DB behind head  -> RuntimeError (operator runs the migration);
+    - unversioned EMPTY DB      -> create_all + stamp head (fresh-install path);
+    - unversioned POPULATED DB  -> legacy pre-Alembic layout: create_all with
+      a warning + stamp head so drift detection starts from this boot on;
+    - versioned at head         -> create_all no-op (behaviorally pinned).
 
     Schema drift beyond create_all (new columns on pre-existing tables) is
     owned by the Alembic chain (migrations/versions); boot must not ALTER.
     """
     logger.info("Initializing database tables...")
+
+    head = _alembic_chain_head()
+    version: Optional[str] = None
+    with engine.connect() as conn:
+        existing = sqlalchemy.inspect(conn)
+        if "alembic_version" in existing.get_table_names():
+            version = conn.execute(
+                sqlalchemy.select(_AlembicVersion.c.version_num)
+            ).scalar()
+
+    if head is not None and version is not None and version != head:
+        raise RuntimeError(
+            f"Database schema is at migration {version!r} but the code expects "
+            f"{head!r}. Run `alembic upgrade head` before starting the app; "
+            "booting behind the migration chain could silently create new "
+            "model tables outside the migration chain."
+        )
+
+    if head is not None and version is not None:
+        # The M20 hole this gate closes: on a MIGRATED database, create_all
+        # would silently materialize any brand-new model table outside the
+        # Alembic chain. Refuse and name the missing tables instead.
+        with engine.connect() as conn:
+            present = set(sqlalchemy.inspect(conn).get_table_names())
+        missing = sorted(set(Base.metadata.tables) - present)
+        if missing:
+            raise RuntimeError(
+                f"Model tables {missing} do not exist in the migrated database; "
+                "boot refuses to create tables outside the Alembic chain — "
+                "add a migration for them first."
+            )
+
     Base.metadata.create_all(bind=engine)
+
+    if head is not None and version is None:
+        with engine.begin() as conn:
+            _AlembicVersion.create(bind=conn, checkfirst=True)
+            conn.execute(_AlembicVersion.insert().values(version_num=head))
+        logger.info(
+            "Fresh database created from models and stamped at migration head %r.",
+            head,
+        )
 
     close_session = False
     if db is None:
@@ -33,7 +116,7 @@ def init_db(db: Optional[Session] = None) -> None:
                 reason="System initialized with safety circuit breaker inactive by default."
             )
             db.add(initial_state)
-            
+
             audit = AuditLog(
                 event_type="SYSTEM_BOOTSTRAP",
                 severity="INFO",

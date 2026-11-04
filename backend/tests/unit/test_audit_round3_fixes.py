@@ -425,6 +425,8 @@ def _mk_candidate(db_session, tmp_path, model_id="m_r3", active=True, with_diges
     if with_digest:
         payload["metrics_digest"] = digest
     joblib.dump(payload, path)
+    import hashlib
+    artifact_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
     rec = MLModelRecord(
         model_id=model_id, dataset_version_tag="dv-r3", algorithm="logistic_regression",
         hyperparameters={}, features_used=["rsi_14"], target_name="t",
@@ -432,6 +434,7 @@ def _mk_candidate(db_session, tmp_path, model_id="m_r3", active=True, with_diges
         calibration_metrics={}, walk_forward_metrics={},
         status="active" if active else "candidate",
         artifact_path=str(path), metrics_digest=digest,
+        artifact_sha256=artifact_sha256,
     )
     db_session.add(rec)
     db_session.commit()

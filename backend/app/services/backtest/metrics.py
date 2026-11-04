@@ -1,7 +1,33 @@
 """Backtest Performance Metrics and Statistical Evaluation."""
+import math
 from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
+
+# Minor 2: the stored/returned equity curve is a bounded visualization of the
+# full timeline. Drawdown/profit metrics are computed on the FULL curve BEFORE
+# downsampling; without the cap a 100k-bar M1 backtest would persist and
+# return a 100k-point JSON blob on every run and every run-list read.
+_MAX_EQUITY_CURVE_POINTS = 5000
+
+
+def downsample_equity_curve(
+    curve: List[Dict[str, Any]], max_points: Optional[int] = None
+) -> List[Dict[str, Any]]:
+    """Even-stride downsample that preserves the FIRST and LAST points.
+
+    max_points defaults to the module cap read at CALL time (a definition-time
+    default would freeze the value and make the cap untestable/unconfigurable).
+    """
+    if max_points is None:
+        max_points = _MAX_EQUITY_CURVE_POINTS
+    if len(curve) <= max_points:
+        return curve
+    stride = max(1, math.ceil((len(curve) - 1) / (max_points - 1)))
+    sampled = curve[::stride]
+    if sampled[-1] is not curve[-1]:
+        sampled.append(curve[-1])
+    return sampled
 
 
 class BacktestMetrics:
@@ -113,6 +139,8 @@ class BacktestMetrics:
                 if dd_pct > max_dd_pct:
                     max_dd_pct = dd_pct
 
+        original_curve_points = len(equity_curve)
+        equity_curve = downsample_equity_curve(equity_curve)
         return {
             "initial_balance": round(initial_balance, 2),
             "final_balance": round(final_balance, 2),
@@ -133,4 +161,6 @@ class BacktestMetrics:
             "win_loss_ratio": round(win_loss_ratio, 2),
             "avg_holding_bars": round(avg_holding_bars, 1),
             "equity_curve": equity_curve,
+            "equity_curve_points_original": original_curve_points,
+            "equity_curve_downsampled": len(equity_curve) < original_curve_points,
         }

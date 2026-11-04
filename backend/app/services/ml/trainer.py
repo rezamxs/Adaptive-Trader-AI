@@ -1,4 +1,5 @@
 """Model Training and Artifact Serialization."""
+import hashlib
 import uuid
 import joblib
 from pathlib import Path
@@ -118,6 +119,11 @@ class ModelTrainer:
         }
         joblib.dump(artifact_payload, artifact_path)
 
+        # Minor-17: attest the artifact FILE BYTES at the only moment the file
+        # is written — every later joblib.load verifies against this digest
+        # BEFORE unpickling (pre-load, because joblib.load executes code).
+        artifact_sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+
         # 6. Record Candidate in Database (Strictly as "candidate")
         if self.db:
             record = MLModelRecord(
@@ -135,6 +141,7 @@ class ModelTrainer:
                 status="candidate",  # NEVER automatically active
                 artifact_path=str(artifact_path),
                 metrics_digest=metrics_digest,
+                artifact_sha256=artifact_sha256,
             )
             self.db.add(record)
             self.db.commit()

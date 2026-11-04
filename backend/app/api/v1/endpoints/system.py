@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import settings
 from backend.app.core.auth import require_api_token
 from backend.app.db.session import get_db
-from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
+from backend.app.services.market_data.provider_manager import acquire_shared_provider
 from backend.app.services.risk.circuit_breaker import EmergencyStopManager
 from backend.app.services.worker.market_worker import get_market_worker
 from backend.app.models.audit_log import AuditLog
@@ -41,8 +41,14 @@ def get_system_status(db: Session = Depends(get_db), _token: str = Depends(requi
     worker = get_market_worker()
     worker_diag = worker.get_diagnostics()
 
-    # Query MT5 connection status
-    active_provider = worker.data_provider if (worker and worker.data_provider.is_connected()) else MT5MarketDataProvider()
+    # Query MT5 connection status. M12: reuse the worker's shared terminal
+    # when it is live; otherwise acquire (and connect) the shared provider —
+    # a throwaway unconnected instance can never report account context.
+    if worker and worker.data_provider.is_connected():
+        active_provider = worker.data_provider
+    else:
+        active_provider = acquire_shared_provider()
+        active_provider.connect()
     is_mt5_connected = active_provider.is_connected()
     account_info = active_provider.get_account_info() if is_mt5_connected else None
 

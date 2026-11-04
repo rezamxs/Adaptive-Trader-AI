@@ -126,6 +126,11 @@ class Settings(BaseSettings):
     # when the API and the worker collide on the single-writer file.
     DB_BUSY_TIMEOUT_MS: int = 5000
 
+    # Minor item 16: file-log rotation (logs/app.log + .1..N). An always-on
+    # worker must not grow the log file without bound.
+    LOG_ROTATE_MAX_BYTES: int = 5 * 1024 * 1024
+    LOG_ROTATE_BACKUP_COUNT: int = 3
+
     # Database Settings
     # Absolute defaults: relative paths here would silently follow pytest's CWD.
     # BASE_DIR is the repo root; runtime DB and dataset artifacts live at the root.

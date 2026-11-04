@@ -19,7 +19,11 @@ from backend.app.models.worker_cycle import WorkerCycleRecord
 from backend.app.models.signal import TradeSignal
 from backend.app.models.audit_log import AuditLog
 from backend.app.services.market_data.base import IMarketDataProvider, TimeFrame, Candle, Quote
-from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
+from backend.app.services.market_data.provider_manager import (
+    acquire_shared_provider,
+    release_shared_provider,
+    shared_provider_instance,
+)
 from backend.app.services.knowledge.manager import KnowledgeManager
 from backend.app.services.ml.registry import ModelRegistry
 from backend.app.services.execution.demo_executor import DemoTradingExecutor
@@ -40,7 +44,10 @@ class MarketMonitoringWorker:
         timeframe: Optional[TimeFrame] = None,
         poll_interval: Optional[float] = None,
     ):
-        self.data_provider = data_provider or MT5MarketDataProvider()
+        # M12: default to the process-wide shared terminal. Endpoint requests
+        # release WITHOUT shutdown, so request traffic can no longer cut the
+        # worker's long-lived connection mid-cycle.
+        self.data_provider = data_provider or acquire_shared_provider()
         self.db_factory = db_factory
         self.symbol = symbol or settings.WORKER_SYMBOL
         raw_tf = timeframe or settings.WORKER_TIMEFRAME
@@ -328,8 +335,15 @@ class MarketMonitoringWorker:
                     pass
                 self._task = None
 
-            # Disconnect data provider in thread
-            await asyncio.to_thread(self.data_provider.disconnect)
+            # Disconnect the data provider in a thread. When the worker holds
+            # the process-wide shared provider (M12), only the worker's stop —
+            # i.e. application shutdown — may tear the terminal down.
+            if self.data_provider is shared_provider_instance():
+                from backend.app.services.market_data.provider_manager import shutdown_shared_provider
+
+                await asyncio.to_thread(shutdown_shared_provider)
+            else:
+                await asyncio.to_thread(self.data_provider.disconnect)
             self.last_status_code = "STOPPED"
             self.last_reason = "Worker stopped cleanly on application shutdown."
             logger.info("MarketMonitoringWorker stopped cleanly.")

@@ -1,7 +1,9 @@
 """Model Governance, Versioning, and Controlled Promotion Workflow."""
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import hashlib
 import math
+import uuid
 import joblib
 from sqlalchemy.orm import Session
 
@@ -10,10 +12,12 @@ from backend.app.core.config import settings
 from backend.app.core.errors import ModelGovernanceError
 from backend.app.core.metrics_integrity import (
     metric_digest,
+    ml_walk_forward_digest,
     verify_metric_digest,
     verify_ml_walk_forward_digest,
 )
 from backend.app.models.ml_model import MLModelRecord
+from backend.app.models.ml_walk_forward_run import MLWalkForwardRun
 from backend.app.models.backtest import BacktestRun
 from backend.app.models.audit_log import AuditLog
 from backend.app.services.ml.walk_forward import (
@@ -48,6 +52,32 @@ class ModelRegistry:
     MIN_WALK_FORWARD_TRADES = 30
     # M8: promotion-grade per-fold-retrained ML walk-forward evidence.
     MIN_ML_WALK_FORWARD_FOLDS = 3
+    # M8 phase 2.4: digest context for PERSISTED evaluation runs (the row is
+    # created before any model binding exists, so it cannot be keyed by a
+    # model_id like the model-scoped payload digest).
+    MLWF_RUN_DIGEST_CONTEXT = "ML_WALK_FORWARD_RUN"
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        """SHA-256 over the artifact file bytes (pre-load integrity anchor)."""
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+    def _artifact_bytes_match(self, record: MLModelRecord, path: Path) -> bool:
+        """True when the artifact file bytes match the attested byte digest.
+
+        joblib.load EXECUTES pickle code, so byte integrity must be proven
+        BEFORE the load, not after (the embedded metrics_digest check is a
+        second, post-load layer). A record without an attested digest (legacy
+        row or a file written outside trainer.save) fails closed.
+        """
+        attested = getattr(record, "artifact_sha256", None)
+        if not attested or not isinstance(attested, str):
+            return False
+        try:
+            return self._sha256_file(path) == attested
+        except OSError as exc:
+            logger.error(f"Artifact byte digest could not be computed for {path}: {exc}")
+            return False
 
     def __init__(self, db: Session):
         self.db = db
@@ -139,6 +169,18 @@ class ModelRegistry:
             logger.error(f"Active model artifact file is missing or has an unexpected extension: {path}")
             return None
 
+        # Minor-17: prove the artifact BYTES match the attested digest BEFORE
+        # unpickling — joblib.load executes pickle code, so verifying only
+        # after the load would run tampered code first. Legacy rows without a
+        # byte digest fail closed, consistent with the digest-less metrics
+        # contract.
+        if not self._artifact_bytes_match(active_rec, path):
+            logger.error(
+                f"Active model artifact byte integrity failed for {active_rec.model_id} "
+                "(missing attested artifact_sha256 or bytes mismatch); refusing to load."
+            )
+            return None
+
         try:
             payload = joblib.load(path)
         except Exception as exc:
@@ -166,12 +208,15 @@ class ModelRegistry:
             return None
         return payload
 
-    def list_models(self, status: Optional[str] = None) -> List[MLModelRecord]:
-        """Lists models optionally filtered by status."""
+    def list_models(self, status: Optional[str] = None, limit: Optional[int] = None) -> List[MLModelRecord]:
+        """Lists models optionally filtered by status (limit bounded by the API layer, Minor 2)."""
         query = self.db.query(MLModelRecord)
         if status:
             query = query.filter(MLModelRecord.status == status)
-        return query.order_by(MLModelRecord.id.desc()).all()
+        query = query.order_by(MLModelRecord.id.desc())
+        if limit is not None:
+            query = query.limit(limit)
+        return query.all()
 
     def compare_models(self, candidate_id: str) -> Dict[str, Any]:
         """Compares candidate metrics against currently active model or baseline."""
@@ -482,6 +527,15 @@ class ModelRegistry:
                 "artifact path is outside the configured artifact directory."
             ) from exc
         if artifact_path.is_file():
+            # Minor-17: byte integrity BEFORE the unpickle; the re-dump
+            # changes the bytes, so the attested digest is refreshed in the
+            # SAME commit.
+            if not self._artifact_bytes_match(record, artifact_path):
+                raise ModelGovernanceError(
+                    f"Cannot attach walk-forward metrics for model {model_id}: "
+                    "artifact byte integrity check failed (missing attested "
+                    "artifact_sha256 or tampered bytes)."
+                )
             payload = joblib.load(artifact_path)
             if isinstance(payload, dict):
                 payload["walk_forward_metrics"] = walk_forward_metrics
@@ -489,22 +543,85 @@ class ModelRegistry:
                 payload["test_metrics"] = record.test_metrics
                 payload["metrics_digest"] = record.metrics_digest
                 joblib.dump(payload, artifact_path)
+                record.artifact_sha256 = self._sha256_file(artifact_path)
 
         self.db.commit()
         self.db.refresh(record)
         logger.info(f"Attached walk-forward metrics and re-attested digest for {model_id}.")
         return record
 
-    def attach_ml_walk_forward_metrics(self, model_id: str, payload: dict) -> MLModelRecord:
+    def persist_ml_walk_forward_evaluation(self, payload: dict) -> str:
+        """Persists a freshly produced ML walk-forward evaluation (M8 phase 2.4).
+
+        This is the generation-time anchor: the evaluator output is verified
+        structurally, its digest is committed to ``ml_walk_forward_runs`` and
+        a stable run_id is returned. Evidence that was never persisted here
+        can never be attached to a model, so the attached chain always points
+        at an independent persisted artifact instead of being self-attesting.
+        """
+        if not isinstance(payload, dict) or not payload:
+            raise ValueError("ml_walk_forward payload must be a non-empty dict.")
+        if payload.get("evidence_type") != MLWF_EVIDENCE_TYPE:
+            raise ModelGovernanceError(
+                "ml_walk_forward payload must carry evidence_type "
+                f"'{MLWF_EVIDENCE_TYPE}'."
+            )
+        fold_count = payload.get("fold_count")
+        if not isinstance(fold_count, int) or isinstance(fold_count, bool) or (
+            fold_count < self.MIN_ML_WALK_FORWARD_FOLDS
+        ):
+            raise ModelGovernanceError(
+                f"ML walk-forward evidence must contain at least "
+                f"{self.MIN_ML_WALK_FORWARD_FOLDS} retrained folds."
+            )
+        structural_failure = verify_ml_walk_forward_payload(payload)
+        if structural_failure:
+            raise ModelGovernanceError(
+                f"ml_walk_forward payload verification failed: {structural_failure}"
+            )
+
+        # Store the digest-STRIPPED payload; a stale digest key must never
+        # participate in the persisted digest's own message.
+        clean_payload = {k: v for k, v in payload.items() if k not in ("digest", "run_id")}
+        run_digest = ml_walk_forward_digest(self.MLWF_RUN_DIGEST_CONTEXT, clean_payload)
+        run_id = f"mlwfr_{uuid.uuid4().hex[:16]}"
+        fingerprint = clean_payload.get("dataset_fingerprint")
+        row = MLWalkForwardRun(
+            run_id=run_id,
+            payload=clean_payload,
+            digest=run_digest,
+            dataset_fingerprint=str(fingerprint)[:128] if fingerprint else None,
+            fold_count=fold_count,
+        )
+        self.db.add(row)
+        self.db.commit()
+        log_security_event(
+            "ML_WALK_FORWARD_EVALUATION_PERSISTED",
+            {"run_id": run_id, "fold_count": fold_count},
+            "INFO",
+        )
+        return run_id
+
+    def attach_ml_walk_forward_metrics(
+        self, model_id: str, payload: dict, *, run_id: str
+    ) -> MLModelRecord:
         """Record per-fold-retrained ML walk-forward evidence on a candidate (M8).
 
-        The payload must be the output of run_ml_walk_forward (or at least pass
-        the same independent re-verification), and it is committed together
-        with a dedicated tamper-evident digest. A payload that fails
-        structural verification (fold overlap, purge/embargo violation, forged
-        aggregate, missing provenance) or whose digest does not match is
-        rejected before any state changes.
+        The payload must match a PERSISTED evaluation produced by
+        ``persist_ml_walk_forward_evaluation`` (phase 2.4 binding): the run row
+        must exist, its digest must verify, and the attached payload must be
+        byte-identical to the persisted evaluation. Evidence is therefore
+        anchored to an independent persisted artifact instead of being signed
+        afresh at attach time. A payload that fails structural verification
+        (fold overlap, purge/embargo violation, forged aggregate, missing
+        provenance) or whose persisted row was already bound to a DIFFERENT
+        model is rejected before any state changes.
         """
+        if not isinstance(run_id, str) or not run_id.strip():
+            raise ModelGovernanceError(
+                "ml_walk_forward attach requires the run_id of a persisted "
+                "evaluation (persist_ml_walk_forward_evaluation)."
+            )
         record = self.db.query(MLModelRecord).filter_by(model_id=model_id).first()
         if not record:
             raise ValueError(f"Model {model_id} not found.")
@@ -519,6 +636,11 @@ class ModelRegistry:
             raise ModelGovernanceError(
                 "ml_walk_forward payload must carry evidence_type "
                 f"'{MLWF_EVIDENCE_TYPE}'."
+            )
+        if "digest" in payload and not isinstance(payload["digest"], str):
+            raise ModelGovernanceError(
+                "ml_walk_forward payload digest must be a hex string "
+                f"(got {type(payload['digest']).__name__})"
             )
         fold_count = payload.get("fold_count")
         if not isinstance(fold_count, int) or isinstance(fold_count, bool) or (
@@ -535,30 +657,44 @@ class ModelRegistry:
                 f"ml_walk_forward payload verification failed: {structural_failure}"
             )
 
-        # Replay guard: a payload that ALREADY carries a digest signed for a
-        # DIFFERENT model must be refused, never silently re-signed for this
-        # one. Fresh evaluator output carries no digest and is signed here;
-        # re-attaching a model's OWN payload stays idempotent (the digest is
-        # recomputed over the digest-stripped payload below).
-        incoming_digest = payload.get("digest")
-        if incoming_digest is not None:
-            if not isinstance(incoming_digest, str):
-                raise ModelGovernanceError(
-                    "ml_walk_forward payload digest must be a hex string "
-                    f"(got {type(incoming_digest).__name__})"
-                )
-            from backend.app.core.metrics_integrity import verify_ml_walk_forward_digest
+        # --- persisted-run binding (phase 2.4) ---
+        run_row = self.db.query(MLWalkForwardRun).filter_by(run_id=run_id).first()
+        if run_row is None:
+            raise ModelGovernanceError(
+                f"ml_walk_forward run '{run_id}' does not exist in "
+                "ml_walk_forward_runs; attach only evidence produced by "
+                "persist_ml_walk_forward_evaluation."
+            )
+        if not verify_ml_walk_forward_digest(
+            self.MLWF_RUN_DIGEST_CONTEXT, run_row.payload, run_row.digest
+        ):
+            raise ModelGovernanceError(
+                f"Persisted ml_walk_forward run '{run_id}' failed its digest "
+                "verification (row tamper detected); refusing to attach."
+            )
+        # The attached payload must BE the persisted evaluation (digest and
+        # any stale run_id stripped) — attaching different numbers than what
+        # was persisted is refused outright.
+        incoming_clean = {k: v for k, v in payload.items() if k not in ("digest", "run_id")}
+        if incoming_clean != run_row.payload:
+            raise ModelGovernanceError(
+                f"ml_walk_forward payload does not match persisted run '{run_id}' "
+                "(tampered or stale evidence); refusing to attach."
+            )
+        if run_row.model_id is not None and run_row.model_id != model_id:
+            raise ModelGovernanceError(
+                f"Persisted ml_walk_forward run '{run_id}' is already bound to "
+                f"model {run_row.model_id}; evidence cannot be re-bound."
+            )
 
-            payload_without_digest = {k: v for k, v in payload.items() if k != "digest"}
-            if not verify_ml_walk_forward_digest(
-                record.model_id, payload_without_digest, incoming_digest
-            ):
-                raise ModelGovernanceError(
-                    f"ml_walk_forward payload carries a digest that does not belong to "
-                    f"model {model_id} (tampered or replayed evidence); refusing to re-sign"
-                )
-
-        from backend.app.core.metrics_integrity import ml_walk_forward_digest
+        payload.pop("digest", None)
+        payload.pop("run_id", None)
+        payload["run_id"] = run_id
+        # Dedicated digest over the ML WF payload itself (including the run
+        # binding) — computed over the digest-STRIPPED payload so a stale
+        # digest key never participates in its own replacement's message.
+        payload["digest"] = ml_walk_forward_digest(record.model_id, payload)
+        run_row.model_id = model_id
 
         record.ml_walk_forward_metrics = payload
         record.metrics_digest = metric_digest(
@@ -567,12 +703,6 @@ class ModelRegistry:
             record.test_metrics,
             record.walk_forward_metrics,
         )
-        # Dedicated digest over the ML WF payload itself — computed over the
-        # digest-STRIPPED payload (a stale digest key must never participate
-        # in its own replacement's message); stored alongside so promotion
-        # (and any later reviewer) can re-verify independently.
-        payload.pop("digest", None)
-        payload["digest"] = ml_walk_forward_digest(record.model_id, payload)
 
         # Same containment contract as the other attach path.
         artifact_path = Path(record.artifact_path).resolve()
@@ -585,16 +715,26 @@ class ModelRegistry:
                 "artifact path is outside the configured artifact directory."
             ) from exc
         if artifact_path.is_file():
+            # Minor-17: byte integrity BEFORE the unpickle (joblib.load runs
+            # pickle code); the re-dump changes the bytes, so the attested
+            # digest is refreshed in the SAME commit.
+            if not self._artifact_bytes_match(record, artifact_path):
+                raise ModelGovernanceError(
+                    f"Cannot attach ML walk-forward metrics for model {model_id}: "
+                    "artifact byte integrity check failed (missing attested "
+                    "artifact_sha256 or tampered bytes)."
+                )
             artifact_payload = joblib.load(artifact_path)
             if isinstance(artifact_payload, dict):
                 artifact_payload["ml_walk_forward_metrics"] = payload
                 joblib.dump(artifact_payload, artifact_path)
+                record.artifact_sha256 = self._sha256_file(artifact_path)
 
         self.db.commit()
         self.db.refresh(record)
         log_security_event(
             "ML_WALK_FORWARD_EVIDENCE_ATTACHED",
-            {"model_id": model_id, "fold_count": fold_count},
+            {"model_id": model_id, "run_id": run_id, "fold_count": fold_count},
             "INFO",
         )
         return record
@@ -793,6 +933,26 @@ class ModelRegistry:
             )):
                 return gates
 
+        # M8 phase 2.4: WHEN per-fold ML walk-forward evidence is attached, it
+        # must be BOUND to a persisted evaluation run (ml_walk_forward_runs).
+        # Self-attested payload-only evidence is no longer promotable. Absent
+        # evidence stays optional (the strategy-WF gate above covers that
+        # requirement).
+        ml_wf_payload = candidate.ml_walk_forward_metrics or {}
+        if isinstance(ml_wf_payload, dict) and ml_wf_payload:
+            ml_wf_run_id = ml_wf_payload.get("run_id")
+            ml_wf_run = (
+                self.db.query(MLWalkForwardRun).filter_by(run_id=ml_wf_run_id).first()
+                if isinstance(ml_wf_run_id, str) and ml_wf_run_id else None
+            )
+            if ml_wf_run is None or ml_wf_run.model_id != candidate.model_id:
+                if _gate("ml_walk_forward_evidence", True, (
+                    f"Cannot promote model {candidate_id}: ml_walk_forward evidence is not "
+                    "bound to a persisted evaluation run (attach via "
+                    "persist_ml_walk_forward_evaluation + attach_ml_walk_forward_metrics)."
+                )):
+                    return gates
+
         _gate("ml_walk_forward_evidence", False, None)
 
         # --- comparison against the active model (validation only) ---
@@ -818,6 +978,14 @@ class ModelRegistry:
         _gate("active_model_comparison", False, None)
 
         # --- artifact loadable + inference contract ---
+        # Minor-17: byte integrity BEFORE unpickling — joblib.load executes
+        # pickle code, so a tampered file must be refused pre-load.
+        if not self._artifact_bytes_match(candidate, artifact_path):
+            if _gate("artifact_loadable", True, (
+                f"Cannot promote model {candidate_id}: artifact byte integrity check "
+                "failed (missing attested artifact_sha256 or tampered bytes)."
+            )):
+                return gates
         try:
             artifact = joblib.load(artifact_path)
         except Exception as exc:

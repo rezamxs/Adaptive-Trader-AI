@@ -5,6 +5,7 @@ registration time (HMAC-SHA256 when METRIC_SIGNING_KEY is set, else SHA-256).
 Tampering with the DB row, the joblib artifact, or dropping the digest must
 all be rejected before any gate mutates model state.
 """
+import hashlib
 import json
 import joblib
 import pytest
@@ -88,6 +89,8 @@ def _candidate(
         )
     else:
         _write_artifact(artifact_path)
+    # Minor-17 contract: rows carry the byte digest verified pre-load.
+    artifact_sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
     return MLModelRecord(
         model_id=model_id,
         dataset_version_tag="test-dataset-v1",
@@ -103,6 +106,7 @@ def _candidate(
         status="candidate",
         artifact_path=str(artifact_path),
         metrics_digest=digest,
+        artifact_sha256=artifact_sha256,
     )
 
 
@@ -151,16 +155,45 @@ def test_promotion_rejects_tampered_db_metrics(db_session, tmp_path):
 
 
 def test_promotion_rejects_artifact_metrics_mismatch(db_session, tmp_path):
+    """Deliberate two-layer contract (Minor-17): rewriting the artifact bytes
+    is caught FIRST by the pre-load byte-integrity gate; an attacker who ALSO
+    re-attests the DB-side byte digest (DB write access) then trips the
+    embedded-metrics cross-check ("artifact tamper")."""
     artifact = tmp_path / "mismatch.joblib"
     candidate = _candidate("mismatch-model", artifact)
     db_session.add(candidate)
     db_session.commit()
     _seed_backtest_run(db_session)  # wf provenance (M8) must pass to reach the artifact gate
 
-    # Rewrite the artifact with inflated metrics while keeping the digest.
+    # Rewrite the artifact with inflated metrics while keeping the digest —
+    # the bytes no longer match the attested artifact_sha256.
     payload = joblib.load(artifact)
     payload["validation_metrics"] = dict(payload["validation_metrics"], roc_auc=0.99)
     joblib.dump(payload, artifact)
+
+    with pytest.raises(ModelGovernanceError, match="byte integrity"):
+        ModelRegistry(db_session).promote_candidate(candidate.model_id)
+    db_session.refresh(candidate)
+    assert candidate.status == "candidate"
+
+
+def test_promotion_rejects_artifact_tamper_with_refreshed_byte_digest(db_session, tmp_path):
+    """The deeper tamper: file bytes rewritten AND the DB-side byte digest
+    refreshed to match (attacker with DB write access). The post-load embedded
+    metrics cross-check must still refuse promotion."""
+    import hashlib as _hashlib
+
+    artifact = tmp_path / "deep-mismatch.joblib"
+    candidate = _candidate("deep-mismatch-model", artifact)
+    db_session.add(candidate)
+    db_session.commit()
+    _seed_backtest_run(db_session)
+
+    payload = joblib.load(artifact)
+    payload["validation_metrics"] = dict(payload["validation_metrics"], roc_auc=0.99)
+    joblib.dump(payload, artifact)
+    candidate.artifact_sha256 = _hashlib.sha256(artifact.read_bytes()).hexdigest()
+    db_session.commit()
 
     with pytest.raises(ModelGovernanceError, match="artifact tamper"):
         ModelRegistry(db_session).promote_candidate(candidate.model_id)
