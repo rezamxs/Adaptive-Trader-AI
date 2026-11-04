@@ -3,7 +3,7 @@ import asyncio
 import os
 import tempfile
 from typing import List, Optional
-from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import logger
@@ -19,10 +19,44 @@ _MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
 
 @router.get("/", response_model=List[DocumentResponse])
-def list_documents(db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+def list_documents(
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _token: str = Depends(require_api_token),
+):
     """Lists uploaded trading knowledge documents (M15: rows carry raw_text —
     the user's full source material — so this read is token-gated)."""
-    return db.query(Document).order_by(Document.id.desc()).all()
+    return db.query(Document).order_by(Document.id.desc()).limit(limit).all()
+
+
+async def _write_upload_to_temp(file: UploadFile) -> tuple[str, int]:
+    """Streams an upload into a bounded temp file (M11, phase 2).
+
+    Reads stay on the event loop (UploadFile.read is async) while every 1MB
+    chunk write is offloaded to a worker thread — the disk write is blocking
+    IO and must never run on the loop.
+    """
+    file_path = None
+    size = 0
+    try:
+        with tempfile.NamedTemporaryFile(dir=tempfile.gettempdir(), suffix="_upload", delete=False) as tmp:
+            file_path = tmp.name
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > _MAX_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="File exceeds maximum allowed size of 250MB.")
+                await asyncio.to_thread(tmp.write, chunk)
+    except Exception:
+        if file_path and os.path.exists(file_path):
+            try:
+                os.unlink(file_path)
+            except OSError:
+                pass
+        raise
+    return file_path, size
 
 
 @router.post("/upload")
@@ -43,19 +77,8 @@ async def upload_document(
     if file.size is not None and file.size > _MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File exceeds maximum allowed size of 250MB.")
 
-    file_path = None
-    size = 0
+    file_path, size = await _write_upload_to_temp(file)
     try:
-        with tempfile.NamedTemporaryFile(dir=tempfile.gettempdir(), suffix="_upload", delete=False) as tmp:
-            file_path = tmp.name
-            while True:
-                chunk = await file.read(1024 * 1024)
-                if not chunk:
-                    break
-                size += len(chunk)
-                if size > _MAX_UPLOAD_BYTES:
-                    raise HTTPException(status_code=413, detail="File exceeds maximum allowed size of 250MB.")
-                tmp.write(chunk)
         if size == 0:
             raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 

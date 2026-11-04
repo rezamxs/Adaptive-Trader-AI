@@ -251,7 +251,10 @@ def test_temp_upload_files_always_cleaned(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def _dashboard_src() -> str:
-    return (Path(__file__).resolve().parents[3] / "frontend" / "index.html").read_text(encoding="utf-8")
+    """Minor 3/18: index.html + the external /static/app.js bundle."""
+    frontend = Path(__file__).resolve().parents[3] / "frontend"
+    return (frontend / "index.html").read_text(encoding="utf-8") + "\n" + (
+        frontend / "app.js").read_text(encoding="utf-8")
 
 
 def test_dashboard_token_never_touches_web_storage():

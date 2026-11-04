@@ -111,27 +111,49 @@ app.add_middleware(
 )
 
 
+# Minor 3, phase 2: script-src carries NO 'unsafe-inline' anymore. The
+# dashboard JS lives in the external same-origin file /static/app.js and every
+# inline onclick= handler was replaced with data-action delegation, so the
+# dashboard AND the whole API run under a strict 'self'-only script policy.
+# The ONLY exception is FastAPI's own Swagger UI (/docs, /redoc), whose
+# bundled bootstrap is an inline script served by the framework itself —
+# pinned by test_audit_fixes_corr1 as a single, documented exception.
+_SWAGGER_INLINE_PATHS = ("/docs", "/redoc", "/openapi.json")
+
+
+def _content_security_policy(path: str) -> str:
+    if path in _SWAGGER_INLINE_PATHS:
+        return (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com "
+            "https://cdn.jsdelivr.net; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; frame-ancestors 'none'"
+        )
+    return (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; frame-ancestors 'none'"
+    )
+
+
 @app.middleware("http")
 async def security_headers(request, call_next):
-    """Baseline hardening headers on every response. CSP allows the inline
-    dashboard bundle plus the exact third-party origins the app actually
-    loads (independent review findings 1-2): the local Swagger UI assets from
-    cdn.jsdelivr.net (FastAPI default) and the Vazirmatn webfont from
-    fonts.googleapis.com / fonts.gstatic.com. Everything else stays 'self'.
-    """
+    """Baseline hardening headers on every response, with the CSP scoped to
+    the path class (strict everywhere; the Swagger exception only on the
+    Swagger paths)."""
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     response.headers.setdefault(
         "Content-Security-Policy",
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com "
-        "https://cdn.jsdelivr.net; "
-        "font-src 'self' https://fonts.gstatic.com; "
-        "img-src 'self' data:; "
-        "connect-src 'self'; frame-ancestors 'none'",
+        _content_security_policy(request.url.path),
     )
     return response
 

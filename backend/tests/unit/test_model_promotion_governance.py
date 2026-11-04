@@ -1,4 +1,5 @@
 """Model-promotion governance regression tests."""
+import hashlib
 import pytest
 import joblib
 from sklearn.dummy import DummyClassifier
@@ -65,6 +66,8 @@ def _model(
         artifact_path, model_id=model_id, validation_metrics=validation_metrics,
         test_metrics=test_metrics, metrics_digest=digest,
     )
+    # Minor-17 contract: rows carry the byte digest verified pre-load.
+    artifact_sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
     return MLModelRecord(
         model_id=model_id,
         dataset_version_tag="test-dataset-v1",
@@ -80,6 +83,7 @@ def _model(
         status=status,
         artifact_path=str(artifact_path),
         metrics_digest=digest,
+        artifact_sha256=artifact_sha256,
     )
 
 

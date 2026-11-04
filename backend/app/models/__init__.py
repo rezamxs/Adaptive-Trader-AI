@@ -4,6 +4,7 @@ from backend.app.models.knowledge_chunk import KnowledgeChunk
 from backend.app.models.rule import TradingRule
 from backend.app.models.dataset import DatasetVersion
 from backend.app.models.ml_model import MLModelRecord
+from backend.app.models.ml_walk_forward_run import MLWalkForwardRun
 from backend.app.models.backtest import BacktestRun
 from backend.app.models.signal import TradeSignal
 from backend.app.models.order import DemoOrder
@@ -17,6 +18,7 @@ __all__ = [
     "TradingRule",
     "DatasetVersion",
     "MLModelRecord",
+    "MLWalkForwardRun",
     "BacktestRun",
     "TradeSignal",
     "DemoOrder",

@@ -1,6 +1,6 @@
 """Trading Rules and Human Approval Endpoints."""
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -28,10 +28,15 @@ class ApproveRuleRequest(BaseModel):
 
 
 @router.get("/", response_model=List[TradingRuleResponse])
-def list_rules(approval_status: Optional[str] = None, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+def list_rules(
+    approval_status: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _token: str = Depends(require_api_token),
+):
     """Lists trading rules, optionally filtered by status ('pending', 'approved', 'rejected'). M15: strategy definitions are gated."""
     km = KnowledgeManager(db)
-    return km.get_rules(approval_status=approval_status)
+    return km.get_rules(approval_status=approval_status, limit=limit)
 
 
 @router.post("/{rule_id}/approve", response_model=TradingRuleResponse)

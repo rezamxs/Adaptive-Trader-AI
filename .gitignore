@@ -77,3 +77,6 @@ backend/data/
 # Step 3.1: watched document inbox (contents are user data, not source)
 data/document_inbox/*
 !data/document_inbox/.gitkeep
+
+# DB-stray archive (owner disposition 2026-11-04)
+backups/

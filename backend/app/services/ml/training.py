@@ -11,7 +11,10 @@ from typing import Any, Dict
 from backend.app.core.logging import logger
 from backend.app.services.dataset.pipeline import DatasetPipeline
 from backend.app.services.dataset.features import FeatureEngineer  # noqa: F401 (dataset contract)
-from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
+from backend.app.services.market_data.provider_manager import (
+    acquire_shared_provider,
+    release_shared_provider,
+)
 from backend.app.services.ml.trainer import ModelTrainer
 
 
@@ -38,8 +41,9 @@ def train_candidate_from_market(
     nightly scheduler. Raises TrainingDataError for environmental failures
     and TrainingInternalError for unexpected internal ones — never promotes.
     """
-    provider = MT5MarketDataProvider()
+    provider = acquire_shared_provider()
     if not provider.connect():
+        release_shared_provider(provider)
         raise TrainingDataError(
             "MT5 is unavailable; model training with synthetic fallback data is disabled."
         )
@@ -47,7 +51,7 @@ def train_candidate_from_market(
         df_raw = provider.get_historical_dataframe(symbol, timeframe, count=bars_count)
         symbol_info = provider.get_symbol_info(symbol)
     finally:
-        provider.disconnect()
+        release_shared_provider(provider)
 
     if symbol_info is None:
         raise TrainingDataError(f"MT5 did not return broker specifications for {symbol}.")

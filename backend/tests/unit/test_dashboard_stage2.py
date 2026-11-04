@@ -18,10 +18,9 @@ FRONTEND = Path(__file__).resolve().parents[3] / "frontend" / "index.html"
 
 
 def _dashboard_script() -> str:
-    src = FRONTEND.read_text(encoding="utf-8")
-    match = re.search(r"<script>\n(.*)</script>", src, re.S)
-    assert match, "dashboard <script> block not found"
-    return match.group(1)
+    """Minor 3/18: the dashboard JS moved to the external /static/app.js file
+    (strict CSP) — the node harness executes that real file directly."""
+    return (FRONTEND.parent / "app.js").read_text(encoding="utf-8")
 
 
 # DOM / fetch stubs prepended before the real dashboard script.
@@ -37,7 +36,8 @@ function __el(id) {
   }
   return __elements[id];
 }
-const document = { getElementById: __el, querySelectorAll: () => [] };
+const document = { getElementById: __el, querySelectorAll: () => [],
+  addEventListener: () => {} };  // Minor 18: delegation is not exercised here
 const window = { onload: null };
 class FormData { append(k, v) { (this._e = this._e || []).push([k, v]); } }
 function __respond(status, body) {

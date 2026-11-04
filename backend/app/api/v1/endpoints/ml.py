@@ -1,7 +1,7 @@
 """Machine Learning and Model Training Endpoints."""
 from typing import Literal, Optional
 import math
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -33,10 +33,14 @@ class PromoteModelRequest(BaseModel):
 
 
 @router.get("/models")
-def list_models(db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+def list_models(
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _token: str = Depends(require_api_token),
+):
     """Lists trained models and candidate artifacts (M15: model governance data — gated)."""
     registry = ModelRegistry(db)
-    models = registry.list_models()
+    models = registry.list_models(limit=limit)
     return [{
         "model_id": m.model_id,
         "algorithm": m.algorithm,

@@ -2,16 +2,25 @@
 from fastapi import APIRouter, HTTPException, Query
 from backend.app.services.market_data.base import TimeFrame
 from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
+from backend.app.services.market_data.provider_manager import (
+    acquire_shared_provider,
+    release_shared_provider,
+)
 
 router = APIRouter()
 
 
 def get_market_provider() -> MT5MarketDataProvider:
-    """Returns a connected MT5 provider or raises 503; never serves mock data silently."""
-    provider = MT5MarketDataProvider()
+    """Returns the shared connected MT5 provider or raises 503; never serves mock data silently.
+
+    M12: the provider is the process-wide shared instance — releasing it NEVER
+    shuts the terminal down (the worker and concurrent requests hold the same
+    connection). Only application shutdown may disconnect.
+    """
+    provider = acquire_shared_provider()
     if provider.connect():
         return provider
-    provider.disconnect()
+    release_shared_provider(provider)
     raise HTTPException(
         status_code=503,
         detail="MT5 is unavailable; market data endpoints refuse to serve mock data.",
@@ -26,7 +35,7 @@ def get_symbols():
         symbols = provider.get_symbols()
         return {"symbols": symbols}
     finally:
-        provider.disconnect()
+        release_shared_provider(provider)
 
 
 @router.get("/quote/{symbol}")
@@ -46,7 +55,7 @@ def get_quote(symbol: str):
             "time": quote.time.isoformat(),
         }
     finally:
-        provider.disconnect()
+        release_shared_provider(provider)
 
 
 @router.get("/candles/{symbol}")
@@ -69,4 +78,4 @@ def get_candles(
             "spread": c.spread,
         } for c in candles]
     finally:
-        provider.disconnect()
+        release_shared_provider(provider)

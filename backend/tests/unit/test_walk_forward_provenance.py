@@ -11,6 +11,7 @@ The synthetic OHLC frame and rule are test fixtures: they prove the evidence
 CHAIN (evaluate → persist → attach → verify), not profitability of a real
 account (no real market data, no orders).
 """
+import hashlib
 import joblib
 import numpy as np
 import pandas as pd
@@ -94,12 +95,15 @@ def _candidate(model_id, artifact_path, wf, auc=0.56, brier=0.19):
         "model_id": model_id, "validation_metrics": val, "test_metrics": val,
         "metrics_digest": digest,
     }, artifact_path)
+    # Minor-17 contract: rows carry the byte digest verified pre-load.
+    artifact_sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
     return MLModelRecord(
         model_id=model_id, dataset_version_tag="wf-dv", algorithm="logistic_regression",
         hyperparameters={}, features_used=["rsi_14"], target_name="target_tp_before_sl",
         train_metrics={}, validation_metrics=val, test_metrics=val,
         calibration_metrics={}, walk_forward_metrics=wf, status="candidate",
         artifact_path=str(artifact_path), metrics_digest=digest,
+        artifact_sha256=artifact_sha256,
     )
 
 

@@ -1,6 +1,6 @@
 """Backtesting API Endpoints."""
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 import pandas as pd
@@ -10,7 +10,10 @@ import numpy as np
 from backend.app.db.session import get_db
 from backend.app.core.auth import require_api_token
 from backend.app.models.backtest import BacktestRun
-from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
+from backend.app.services.market_data.provider_manager import (
+    acquire_shared_provider,
+    release_shared_provider,
+)
 from backend.app.services.market_data.base import TimeFrame
 from backend.app.services.dataset.features import FeatureEngineer
 from backend.app.services.backtest.engine import RealisticBacktestEngine
@@ -38,9 +41,13 @@ class RunBacktestRequest(BaseModel):
 
 
 @router.get("/runs")
-def list_backtest_runs(db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+def list_backtest_runs(
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _token: str = Depends(require_api_token),
+):
     """Lists past backtest runs (M15: strategy performance evidence — gated)."""
-    runs = db.query(BacktestRun).order_by(BacktestRun.id.desc()).all()
+    runs = db.query(BacktestRun).order_by(BacktestRun.id.desc()).limit(limit).all()
     return [{
         "run_id": r.run_id,
         "strategy_name": r.strategy_name,
@@ -58,8 +65,9 @@ def list_backtest_runs(db: Session = Depends(get_db), _token: str = Depends(requ
 @router.post("/run")
 def execute_backtest(req: RunBacktestRequest, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
     """Executes realistic backtest with cost modeling and stress analysis."""
-    provider = MT5MarketDataProvider()
+    provider = acquire_shared_provider()
     if not provider.connect():
+        release_shared_provider(provider)
         raise HTTPException(
             status_code=503,
             detail="MT5 is unavailable; backtesting with synthetic fallback data is disabled.",
@@ -69,7 +77,7 @@ def execute_backtest(req: RunBacktestRequest, db: Session = Depends(get_db), _to
         df_raw = provider.get_historical_dataframe(req.symbol, req.timeframe, count=req.bars_count)
         symbol_info = provider.get_symbol_info(req.symbol)
     finally:
-        provider.disconnect()
+        release_shared_provider(provider)
 
     if symbol_info is None:
         raise HTTPException(status_code=503, detail=f"MT5 did not return broker specifications for {req.symbol}.")

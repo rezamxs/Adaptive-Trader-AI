@@ -285,6 +285,7 @@ def _model(model_id, artifact_path, *, status="candidate", auc=0.56, brier=0.19,
     wf = walk_forward_metrics if walk_forward_metrics is not None else {}
     digest = metric_digest(model_id, validation_metrics, test_metrics, wf)
     estimator = DummyClassifier(strategy="prior").fit([[0.0], [1.0]], [0, 1])
+    import hashlib
     import joblib
 
     joblib.dump({
@@ -292,13 +293,22 @@ def _model(model_id, artifact_path, *, status="candidate", auc=0.56, brier=0.19,
         "model_id": model_id, "validation_metrics": validation_metrics,
         "test_metrics": test_metrics, "metrics_digest": digest,
     }, artifact_path)
+    # Minor-17 contract: every artifact row carries the byte digest the load
+    # path verifies BEFORE unpickling.
+    artifact_sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
     return MLModelRecord(
         model_id=model_id, dataset_version_tag="mlwf-dv", algorithm="logistic_regression",
         hyperparameters={}, features_used=["rsi_14"], target_name="target_tp_before_sl",
         train_metrics={}, validation_metrics=validation_metrics, test_metrics=test_metrics,
         calibration_metrics={}, walk_forward_metrics=wf, status=status,
         artifact_path=str(artifact_path), metrics_digest=digest,
+        artifact_sha256=artifact_sha256,
     )
+
+
+def _persist_payload(db_session, payload):
+    """Persist a valid evaluator payload and return its run_id (phase 2.4)."""
+    return ModelRegistry(db_session).persist_ml_walk_forward_evaluation(payload)
 
 
 def test_attach_ml_walk_forward_verifies_and_stores(db_session, tmp_path, synthetic_frame):
@@ -309,12 +319,19 @@ def test_attach_ml_walk_forward_verifies_and_stores(db_session, tmp_path, synthe
     db_session.commit()
 
     registry = ModelRegistry(db_session)
-    record = registry.attach_ml_walk_forward_metrics("mlwf-candidate", payload)
+    run_id = _persist_payload(db_session, payload)
+    record = registry.attach_ml_walk_forward_metrics("mlwf-candidate", payload, run_id=run_id)
 
     stored = record.ml_walk_forward_metrics
     assert stored["evidence_type"] == MLWF_EVIDENCE_TYPE
+    assert stored["run_id"] == run_id, "attach must carry the persisted-run binding"
     assert "digest" in stored, "attach must commit a tamper-evident digest"
     assert ModelRegistry._ml_walk_forward_failure(record.model_id, stored) is None
+
+    from backend.app.models.ml_walk_forward_run import MLWalkForwardRun
+
+    row = db_session.query(MLWalkForwardRun).filter_by(run_id=run_id).first()
+    assert row is not None and row.model_id == "mlwf-candidate", "run row must record the binding"
 
     # A tampered aggregate must be caught by the promotion-time re-verification.
     tampered = copy.deepcopy(stored)
@@ -331,6 +348,7 @@ def test_attach_ml_walk_forward_verifies_and_stores(db_session, tmp_path, synthe
 
 def test_attach_rejects_invalid_ml_walk_forward_payload(db_session, tmp_path, synthetic_frame):
     payload = _valid_payload(synthetic_frame)
+    run_id = _persist_payload(db_session, _valid_payload(synthetic_frame))
     payload["folds"][1]["test_start_pos"] = payload["folds"][0]["test_end_pos"] - 5
     payload["folds"][1]["train_end_pos"] = payload["folds"][1]["test_start_pos"] - 36
     artifact = tmp_path / "mlwf_bad.joblib"
@@ -339,7 +357,8 @@ def test_attach_rejects_invalid_ml_walk_forward_payload(db_session, tmp_path, sy
     db_session.commit()
 
     with pytest.raises(ModelGovernanceError, match="overlap"):
-        ModelRegistry(db_session).attach_ml_walk_forward_metrics("mlwf-bad", payload)
+        ModelRegistry(db_session).attach_ml_walk_forward_metrics(
+            "mlwf-bad", payload, run_id=run_id)
 
     db_session.refresh(candidate)
     assert candidate.ml_walk_forward_metrics == {} or not candidate.ml_walk_forward_metrics
@@ -367,7 +386,8 @@ def test_promotion_blocks_tampered_ml_walk_forward_evidence(db_session, tmp_path
         _mlwf_frame(), symbol="XAUUSD", timeframe="M15",
         algorithm="logistic_regression", fold_count=3, min_train_bars=300,
     )
-    registry.attach_ml_walk_forward_metrics("mlwf-tampered", payload)
+    run_id = registry.persist_ml_walk_forward_evaluation(payload)
+    registry.attach_ml_walk_forward_metrics("mlwf-tampered", payload, run_id=run_id)
     db_session.expire_all()
 
     # Tamper directly in the store after attach: forge the aggregate mean.
@@ -398,10 +418,10 @@ def _mlwf_frame() -> pd.DataFrame:
                          "close": close, "volume": 100.0, "spread": 20}, index=idx)
 
 
-def test_replayed_provenance_is_rejected_for_a_different_model(db_session, tmp_path, synthetic_frame):
-    """Replay attack: evidence digested for model A must not validate when
-    re-attached to model B — the digest is keyed by model_id, so a payload
-    copied verbatim (including A's digest) fails closed on B."""
+def test_persisted_run_cannot_be_rebound_to_a_different_model(db_session, tmp_path, synthetic_frame):
+    """Binding immutability: a persisted evaluation bound to model A must not
+    validate for model B — the row records its owner, so a payload copied
+    verbatim (including A's digest) fails closed on B."""
     payload = _valid_payload(synthetic_frame)
     candidate_a = _model("mlwf-model-a", tmp_path / "a.joblib")
     candidate_b = _model("mlwf-model-b", tmp_path / "b.joblib")
@@ -409,11 +429,12 @@ def test_replayed_provenance_is_rejected_for_a_different_model(db_session, tmp_p
     db_session.commit()
 
     registry = ModelRegistry(db_session)
-    attached = registry.attach_ml_walk_forward_metrics("mlwf-model-a", payload)
-    stored = dict(attached.ml_walk_forward_metrics)  # includes A's digest
+    run_id = registry.persist_ml_walk_forward_evaluation(copy.deepcopy(payload))
+    attached = registry.attach_ml_walk_forward_metrics("mlwf-model-a", payload, run_id=run_id)
+    stored = dict(attached.ml_walk_forward_metrics)  # includes A's digest + run binding
 
-    with pytest.raises(ModelGovernanceError):
-        registry.attach_ml_walk_forward_metrics("mlwf-model-b", stored)
+    with pytest.raises(ModelGovernanceError, match="already bound"):
+        registry.attach_ml_walk_forward_metrics("mlwf-model-b", payload, run_id=run_id)
 
     # The promotion-time verifier must reject the replay as well.
     failure = ModelRegistry._ml_walk_forward_failure("mlwf-model-b", stored)
@@ -431,11 +452,12 @@ def test_reattach_of_own_payload_stays_idempotent_and_promotable(db_session, tmp
     db_session.commit()
 
     registry = ModelRegistry(db_session)
-    first = registry.attach_ml_walk_forward_metrics("mlwf-own", payload)
+    run_id = registry.persist_ml_walk_forward_evaluation(payload)
+    first = registry.attach_ml_walk_forward_metrics("mlwf-own", payload, run_id=run_id)
     stored_first = dict(first.ml_walk_forward_metrics)
 
     # Re-attach the model's OWN payload verbatim (idempotent path).
-    second = registry.attach_ml_walk_forward_metrics("mlwf-own", dict(stored_first))
+    second = registry.attach_ml_walk_forward_metrics("mlwf-own", dict(stored_first), run_id=run_id)
     failure = ModelRegistry._ml_walk_forward_failure("mlwf-own", second.ml_walk_forward_metrics)
     assert failure is None, (
         f"idempotent re-attach must stay promotable, verifier said: {failure}")
@@ -445,7 +467,7 @@ def test_reattach_of_own_payload_stays_idempotent_and_promotable(db_session, tmp
     bad = dict(second.ml_walk_forward_metrics)
     bad["digest"] = 123
     with pytest.raises(ModelGovernanceError, match="hex string"):
-        registry.attach_ml_walk_forward_metrics("mlwf-own", bad)
+        registry.attach_ml_walk_forward_metrics("mlwf-own", bad, run_id=run_id)
 
 
 def test_verifier_rejects_non_numeric_aggregate(synthetic_frame):

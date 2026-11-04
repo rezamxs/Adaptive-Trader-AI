@@ -10,7 +10,10 @@ from backend.app.db.session import get_db
 from backend.app.models.signal import TradeSignal
 from backend.app.models.order import DemoOrder
 from backend.app.services.market_data.base import TimeFrame
-from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
+from backend.app.services.market_data.provider_manager import (
+    acquire_shared_provider,
+    release_shared_provider,
+)
 from backend.app.services.signal.manager import SignalManager
 from backend.app.services.execution.demo_executor import (
     DemoTradingExecutor,
@@ -80,8 +83,9 @@ def list_signals(limit: int = Query(50, ge=1, le=500), db: Session = Depends(get
 @router.post("/generate")
 def generate_signal(req: GenerateSignalRequest, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
     """Evaluates latest bar and generates a signal in current execution mode."""
-    provider = MT5MarketDataProvider()
+    provider = acquire_shared_provider()
     if not provider.connect():
+        release_shared_provider(provider)
         raise HTTPException(
             status_code=503,
             detail="MT5 is unavailable; signal generation from synthetic market data is disabled.",
@@ -106,7 +110,7 @@ def generate_signal(req: GenerateSignalRequest, db: Session = Depends(get_db), _
             "execution_mode": sig.execution_mode,
         }
     finally:
-        provider.disconnect()
+        release_shared_provider(provider)
 
 
 @router.get("/orders")
@@ -135,8 +139,9 @@ def execute_demo_order(signal_id: str, db: Session = Depends(get_db), _token: st
     if not sig:
         raise HTTPException(status_code=404, detail=f"Signal {signal_id} not found.")
 
-    provider = MT5MarketDataProvider()
+    provider = acquire_shared_provider()
     if not provider.connect():
+        release_shared_provider(provider)
         raise HTTPException(
             status_code=503,
             detail="MT5 is unavailable; demo execution requires a verified terminal and account.",
@@ -157,4 +162,4 @@ def execute_demo_order(signal_id: str, db: Session = Depends(get_db), _token: st
             "message": msg,
         }
     finally:
-        provider.disconnect()
+        release_shared_provider(provider)

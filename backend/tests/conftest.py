@@ -18,6 +18,19 @@ from backend.app.db.session import get_db as real_get_db
 from backend.app.main import app
 
 
+@pytest.fixture(autouse=True)
+def _reset_shared_provider_manager():
+    """M12 isolation: the shared MT5 provider singleton must never leak a
+    stubbed instance (or its call state) between tests."""
+    from backend.app.services.market_data.provider_manager import (
+        reset_provider_manager_for_tests,
+    )
+
+    reset_provider_manager_for_tests()
+    yield
+    reset_provider_manager_for_tests()
+
+
 @pytest.fixture()
 def isolated_app_db(monkeypatch):
     """Point the app's database access at an isolated in-memory SQLite DB.

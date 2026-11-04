@@ -37,6 +37,13 @@ class MLModelRecord(Base):
     # H1: attestation digest over (model_id, validation/test/walk-forward metrics),
     # committed at registration and re-verified at promotion time.
     metrics_digest: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+    # Minor-17 hardening: SHA-256 over the artifact FILE BYTES, recorded at
+    # every joblib.dump and verified BEFORE any joblib.load (the runtime load
+    # path, the attach path, and the promotion artifact gates). joblib.load
+    # executes pickle code, so byte integrity must be proven BEFORE the load,
+    # not after. Legacy rows without a digest fail closed on load.
+    artifact_sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     
     trained_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, onupdate=utc_now_naive, nullable=False)

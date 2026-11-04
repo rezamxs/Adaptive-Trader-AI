@@ -73,6 +73,7 @@
     │       ├── security/
     │       └── data_ml/
     ├── frontend/index.html
+    ├── frontend/app.js
     ├── migrations/                 # زنجیره مهاجرت‌های Alembic
     ├── docs/                       # معماری، پروتکل ارزیابی، ممیزی و محدودیت‌ها
     ├── reports/                    # گزارش‌های پژوهشی و ممیزی

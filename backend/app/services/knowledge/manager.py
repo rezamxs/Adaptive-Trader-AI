@@ -463,12 +463,18 @@ class KnowledgeManager:
 
         return doc_record, created_rules
 
-    def get_rules(self, approval_status: Optional[str] = None) -> List[TradingRule]:
-        """Retrieves rules, optionally filtered by approval status."""
+    def get_rules(self, approval_status: Optional[str] = None, limit: Optional[int] = None) -> List[TradingRule]:
+        """Retrieves rules, optionally filtered by approval status.
+
+        limit is bounded by the API layer (Minor 2): an unbounded query param
+        could dump the whole table (memory DoS / bulk exfiltration)."""
         query = self.db.query(TradingRule)
         if approval_status:
             query = query.filter(TradingRule.approval_status == approval_status)
-        return query.order_by(TradingRule.id.desc()).all()
+        query = query.order_by(TradingRule.id.desc())
+        if limit is not None:
+            query = query.limit(limit)
+        return query.all()
 
     def approve_rule(self, rule_id: str, actor: str = "USER") -> TradingRule:
         """Explicitly approves a rule for inclusion in active strategy logic."""

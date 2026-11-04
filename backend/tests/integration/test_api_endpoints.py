@@ -107,7 +107,7 @@ def test_backtest_run_endpoint(monkeypatch):
         "backend.app.api.v1.endpoints.backtest.KnowledgeManager.get_active_strategy_rules",
         lambda self: [sample_rule],
     )
-    monkeypatch.setattr("backend.app.api.v1.endpoints.backtest.MT5MarketDataProvider", StubMT5Provider)
+    monkeypatch.setattr("backend.app.services.market_data.provider_manager.MT5MarketDataProvider", StubMT5Provider)
 
     res = client.post("/api/v1/backtest/run", headers=AUTH, json={
         "symbol": "EURUSD",
@@ -135,7 +135,7 @@ def test_backtest_run_endpoint_returns_503_when_mt5_unavailable(monkeypatch):
         def disconnect(self):
             pass
 
-    monkeypatch.setattr("backend.app.api.v1.endpoints.backtest.MT5MarketDataProvider", DisconnectedMT5Provider)
+    monkeypatch.setattr("backend.app.services.market_data.provider_manager.MT5MarketDataProvider", DisconnectedMT5Provider)
 
     res = client.post("/api/v1/backtest/run", headers=AUTH, json={
         "symbol": "EURUSD",
