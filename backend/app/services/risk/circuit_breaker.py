@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.logging import logger, log_security_event
 from backend.app.models.emergency_stop import EmergencyStopState
 from backend.app.models.audit_log import AuditLog
+from backend.app.db.base import utc_now_naive
 
 
 class EmergencyStopManager:
@@ -48,7 +49,7 @@ class EmergencyStopManager:
             is_active=True,
             activated_by=actor,
             reason=reason,
-            activated_at=datetime.utcnow(),
+            activated_at=utc_now_naive(),
         )
         self.db.add(state)
         
@@ -73,8 +74,8 @@ class EmergencyStopManager:
             is_active=False,
             activated_by=actor,
             reason=f"Deactivated: {notes}",
-            activated_at=datetime.utcnow(),
-            deactivated_at=datetime.utcnow(),
+            activated_at=utc_now_naive(),
+            deactivated_at=utc_now_naive(),
             deactivated_by=actor,
         )
         self.db.add(state)

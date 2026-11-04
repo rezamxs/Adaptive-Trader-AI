@@ -78,6 +78,26 @@ class RuleExtractor:
         return extracted_rules
 
     @classmethod
+    def _suggest_direction(cls, lower_text: str) -> Optional[str]:
+        """Step 3.3: SUGGESTS a direction from the document TEXT (never the
+        rule name, never executable). A block mentioning only buy-side hints
+        suggests BUY, only sell-side hints suggests SELL; both/neither sides
+        leave the suggestion empty for the human reviewer.
+
+        This is informational only: the generator votes on the human-decided
+        `direction` field, never on this suggestion (M4 preserved).
+        """
+        buy_hints = ("خرید", "long", "buy", "call")
+        sell_hints = ("فروش", "short", "put", "sell")
+        buy_hits = sum(1 for hint in buy_hints if hint in lower_text)
+        sell_hits = sum(1 for hint in sell_hints if hint in lower_text)
+        if buy_hits and not sell_hits:
+            return "BUY"
+        if sell_hits and not buy_hits:
+            return "SELL"
+        return None
+
+    @classmethod
     def _parse_block(cls, block_text: str, document_id: str, pages: List[int]) -> Optional[TradingRuleCreate]:
         """Analyzes a block of text to synthesize a structured TradingRuleCreate object."""
         if len(block_text.strip()) < 15:
@@ -115,12 +135,29 @@ class RuleExtractor:
             else:
                 conditions.append({"indicator": "RSI", "operator": "CROSSES", "threshold": 50})
 
-        # Moving Average detection
-        ma_match = re.search(r'(?:ma|ema|sma|میانگین)\s*(\d+)', lower_text)
+        # Moving Average detection. Preserve type and period so the evaluator
+        # never silently substitutes EMA(21) for a different moving average.
+        ma_match = re.search(r'(ema|sma|ma|میانگین)\s*(\d+)', lower_text)
         if ma_match:
-            period = int(ma_match.group(1))
+            average_type = ma_match.group(1)
+            period = int(ma_match.group(2))
             parameters["ma_period"] = period
-            conditions.append({"indicator": "EMA", "operator": ">", "threshold": f"Price > EMA({period})"})
+            if average_type == "sma":
+                indicator = "SMA"
+                expression_type = "SMA"
+            elif average_type in {"ma", "میانگین"}:
+                # Generic "moving average" does not identify SMA vs EMA.
+                # Preserve the ambiguity so runtime evaluation fails closed.
+                indicator = "MA"
+                expression_type = "MA"
+            else:
+                indicator = "EMA"
+                expression_type = "EMA"
+            conditions.append({
+                "indicator": indicator,
+                "operator": ">",
+                "threshold": f"Price > {expression_type}({period})",
+            })
 
         # Symbols detection
         detected_symbols = []
@@ -128,10 +165,12 @@ class RuleExtractor:
             if sym.lower() in lower_text:
                 detected_symbols.append(sym)
 
-        # Timeframes detection
+        # Timeframes detection — word-boundary match on the lowercased text: a
+        # plain substring test makes "M15" also detect "M1" (and "H1" inside
+        # other tokens), which would give a rule a wrong timeframe_scope.
         detected_timeframes = []
         for tf in ["M1", "M5", "M15", "M30", "H1", "H4", "D1"]:
-            if tf.lower() in lower_text or f"{tf}".lower() in lower_text:
+            if re.search(rf"\b{re.escape(tf.lower())}\b", lower_text):
                 detected_timeframes.append(tf)
 
         # Invalidation conditions
@@ -152,6 +191,7 @@ class RuleExtractor:
         return TradingRuleCreate(
             name=name,
             category=category,
+            suggested_direction=cls._suggest_direction(lower_text),
             description=block_text.strip(),
             conditions=conditions,
             parameters=parameters,

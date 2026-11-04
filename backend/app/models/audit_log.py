@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any, Dict
 from sqlalchemy import String, Integer, DateTime, JSON
 from sqlalchemy.orm import Mapped, mapped_column
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 
 
 class AuditLog(Base):
@@ -14,4 +14,5 @@ class AuditLog(Base):
     severity: Mapped[str] = mapped_column(String(16), default="INFO", nullable=False)  # INFO, WARNING, ERROR, CRITICAL
     actor: Mapped[str] = mapped_column(String(64), default="SYSTEM", nullable=False)
     details: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    # indexed: retention pruning and time-range queries (migration 20261031_auidx)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False, index=True)

@@ -13,6 +13,10 @@ database_url = settings.DATABASE_URL
 connect_args = {}
 if database_url.startswith("sqlite"):
     connect_args["check_same_thread"] = False
+    # Minor item 7: bound, config-driven busy timeout. sqlite3's `timeout`
+    # connect argument IS the busy-handler wait (seconds); it avoids building
+    # any SQL string. Clamped to >= 0 from the settings integer.
+    connect_args["timeout"] = max(0, int(settings.DB_BUSY_TIMEOUT_MS)) / 1000.0
 
 engine = create_engine(
     database_url,

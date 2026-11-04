@@ -1,7 +1,7 @@
 """Model for tracking Market Monitoring Worker execution cycles and preventing duplicate closed bar processing."""
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Index
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 
 
 class WorkerCycleRecord(Base):
@@ -21,8 +21,8 @@ class WorkerCycleRecord(Base):
     details = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
     lifecycle_phase = Column(String(30), default="COMPLETED", nullable=False)  # DISCOVERED, PROCESSING, COMPLETED, FAILED
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
+    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive, nullable=False)
 
     __table_args__ = (
         Index("idx_worker_sym_tf_bar", "symbol", "timeframe", "bar_time"),

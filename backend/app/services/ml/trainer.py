@@ -1,4 +1,5 @@
 """Model Training and Artifact Serialization."""
+import hashlib
 import uuid
 import joblib
 from pathlib import Path
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
 from backend.app.core.logging import logger
+from backend.app.core.metrics_integrity import metric_digest
 from backend.app.models.ml_model import MLModelRecord
 from backend.app.services.ml.models import (
     IStrategyModel,
@@ -51,6 +53,21 @@ class ModelTrainer:
         scaler = dataset_result.get("scaler")
         dataset_version_tag = dataset_result["version_tag"]
 
+        # Do not train a binary classifier on a one-class training partition.
+        train_classes = np.unique(np.asarray(y_train))
+        if len(train_classes) != 2 or set(train_classes.tolist()) != {0, 1}:
+            raise ValueError(
+                "Training partition must contain both target classes 0 and 1; "
+                f"found {train_classes.tolist()}."
+            )
+
+        # Prevent numerical failures from infinities that survived upstream transforms.
+        for partition_name, partition in (
+            ("train", X_train), ("validation", X_val), ("test", X_test)
+        ):
+            if not np.isfinite(np.asarray(partition, dtype=float)).all():
+                raise ValueError(f"{partition_name.capitalize()} features contain non-finite values.")
+
         # 1. Fit Model
         model.fit(X_train, y_train)
 
@@ -59,20 +76,34 @@ class ModelTrainer:
         train_prob = model.predict_proba(X_train)
         train_metrics = ModelEvaluator.evaluate(y_train, train_pred, train_prob)
 
-        # 3. Evaluate on Independent Out-of-Time Test partition
+        # 3. Evaluate on held-out temporal validation partition. This partition is
+        # distinct from train and test and is required for model-governance review.
+        val_pred = model.predict(X_val) if len(X_val) > 0 else np.array([])
+        val_prob = model.predict_proba(X_val) if len(X_val) > 0 else np.array([])
+        validation_metrics = (
+            ModelEvaluator.evaluate(y_val, val_pred, val_prob) if len(X_val) > 0 else {}
+        )
+        validation_metrics["sample_count"] = int(len(y_val))
+
+        # 4. Evaluate on Independent Out-of-Time Test partition
         test_pred = model.predict(X_test) if len(X_test) > 0 else np.array([])
         test_prob = model.predict_proba(X_test) if len(X_test) > 0 else np.array([])
         test_metrics = ModelEvaluator.evaluate(y_test, test_pred, test_prob) if len(X_test) > 0 else {}
 
-        # 4. Compute Calibration Metrics on Test Set
+        test_metrics["sample_count"] = int(len(y_test))
+
+        # 5. Compute Calibration Metrics on Test Set
         prob_pos_test = test_prob[:, 1] if test_prob.ndim == 2 else test_prob
         calibration_curve = ModelEvaluator.calculate_calibration_curve(y_test, prob_pos_test) if len(y_test) > 0 else []
 
-        # 5. Serialize Artifact
+        # 6. Serialize Artifact
         model_id = f"model_{algorithm[:6]}_{uuid.uuid4().hex[:8]}"
         artifact_dir = settings.ARTIFACTS_MODELS_DIR
         artifact_dir.mkdir(parents=True, exist_ok=True)
         artifact_path = artifact_dir / f"{model_id}.joblib"
+
+        # H1: attest the metric payload before it is persisted anywhere.
+        metrics_digest = metric_digest(model_id, validation_metrics, test_metrics, walk_forward_metrics={})
 
         artifact_payload = {
             "model_id": model_id,
@@ -82,9 +113,16 @@ class ModelTrainer:
             "feature_names": feature_names,
             "hyperparameters": hyperparameters,
             "dataset_version_tag": dataset_version_tag,
+            "validation_metrics": validation_metrics,
             "test_metrics": test_metrics,
+            "metrics_digest": metrics_digest,
         }
         joblib.dump(artifact_payload, artifact_path)
+
+        # Minor-17: attest the artifact FILE BYTES at the only moment the file
+        # is written — every later joblib.load verifies against this digest
+        # BEFORE unpickling (pre-load, because joblib.load executes code).
+        artifact_sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
 
         # 6. Record Candidate in Database (Strictly as "candidate")
         if self.db:
@@ -96,11 +134,14 @@ class ModelTrainer:
                 features_used=feature_names,
                 target_name=target_name,
                 train_metrics=train_metrics,
+                validation_metrics=validation_metrics,
                 test_metrics=test_metrics,
                 calibration_metrics={"bins": calibration_curve},
                 walk_forward_metrics={},
                 status="candidate",  # NEVER automatically active
                 artifact_path=str(artifact_path),
+                metrics_digest=metrics_digest,
+                artifact_sha256=artifact_sha256,
             )
             self.db.add(record)
             self.db.commit()
@@ -111,6 +152,7 @@ class ModelTrainer:
             "status": "candidate",
             "artifact_path": str(artifact_path),
             "train_metrics": train_metrics,
+            "validation_metrics": validation_metrics,
             "test_metrics": test_metrics,
             "calibration_curve": calibration_curve,
             "features_used": feature_names,

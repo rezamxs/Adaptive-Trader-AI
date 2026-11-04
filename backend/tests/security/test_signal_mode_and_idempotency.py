@@ -36,6 +36,7 @@ def test_signal_only_mode_dispatches_zero_orders(db_session):
     rule = TradingRule(
         rule_id="rule_rsi_oversold",
         name="Buy on RSI Oversold",
+        direction="BUY",
         category="entry",
         description="Buy when RSI is below 70 (forced for testing)",
         conditions=[{"indicator": "RSI", "operator": "<", "threshold": 70.0}],
@@ -65,16 +66,17 @@ def test_signal_only_mode_dispatches_zero_orders(db_session):
     assert orders_count == 0, "Orders were dispatched in SIGNAL_ONLY mode! Security violation!"
 
 
-def test_signal_idempotency_prevents_duplicate_signals(db_session):
-    """Verify that multiple evaluation cycles on the same bar produce the exact same signal
-    without creating duplicate records.
-    """
+def test_signal_idempotency_prevents_duplicate_signals(db_session, monkeypatch):
+    """Only one direction may be recorded for a specific symbol/timeframe/candle."""
     provider = MockMarketDataProvider(is_demo_account=True)
+    fixed_bars = provider.get_historical_dataframe("EURUSD", TimeFrame.M15, count=100)
+    monkeypatch.setattr(provider, "get_historical_dataframe", lambda *args, **kwargs: fixed_bars)
     manager = SignalManager(db_session, provider)
 
     rule = TradingRule(
         rule_id="rule_rsi_oversold",
         name="Buy on RSI Oversold",
+        direction="BUY",
         category="entry",
         description="Buy rule",
         conditions=[{"indicator": "RSI", "operator": "<", "threshold": 70.0}],
@@ -94,13 +96,18 @@ def test_signal_idempotency_prevents_duplicate_signals(db_session):
     sig1 = manager.process_latest_bar("EURUSD", TimeFrame.M15)
     assert sig1 is not None
 
-    # Immediate second run (same bar)
+    # Flip the rule's direction, then evaluate the same completed bar again.
+    # Idempotency must prevent a BUY and SELL signal for the same candle.
+    rule.name = "Sell on RSI Oversold"
+    db_session.commit()
+
     sig2 = manager.process_latest_bar("EURUSD", TimeFrame.M15)
     assert sig2 is not None
 
-    # Both must have identical ID and idempotency key
+    # The earlier signal wins for this bar, regardless of a later direction change.
     assert sig1.signal_id == sig2.signal_id
     assert sig1.idempotency_key == sig2.idempotency_key
+    assert sig1.direction == sig2.direction == "BUY"
 
     # Total signal rows in database must be strictly 1
     total_signals = db_session.query(TradeSignal).count()

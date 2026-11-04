@@ -1,8 +1,8 @@
 """Document Model for storing trading knowledge source files."""
 from datetime import datetime
-from sqlalchemy import String, Integer, DateTime, Text
+from sqlalchemy import String, Integer, DateTime, Text, Index
 from sqlalchemy.orm import Mapped, mapped_column
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 
 
 class Document(Base):
@@ -18,4 +18,13 @@ class Document(Base):
     pages_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     raw_text: Mapped[str] = mapped_column(Text, nullable=True)
     error_message: Mapped[str] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Integrity: the unique index below (enforced by migration 20261031_dshq)
+    # is what makes concurrent-ingestion dedup real — KnowledgeManager's
+    # IntegrityError recovery path can only fire when the DB itself refuses a
+    # second row with the same content hash. NULL hashes (legacy rows) stay
+    # allowed: unique indexes treat NULLs as distinct.
+    __table_args__ = (
+        Index("ux_documents_content_sha256", "content_sha256", unique=True),
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)

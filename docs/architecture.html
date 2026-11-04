@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adaptive Trader AI — معماری سیستم</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --surface: #ffffff; --text: #1a2233; --muted: #5b667a;
+    --border: #dfe3ea; --accent: #0e7490; --accent-soft: #e0f2fe;
+    --green: #15803d; --green-soft: #dcfce7; --red: #b91c1c; --red-soft: #fee2e2;
+    --amber: #b45309; --amber-soft: #fef3c7; --purple: #6d28d9; --purple-soft: #ede9fe;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1420; --surface: #1a2233; --text: #e7ecf5; --muted: #94a3b8;
+      --border: #2c3748; --accent: #22d3ee; --accent-soft: #164e63;
+      --green: #4ade80; --green-soft: #14532d; --red: #f87171; --red-soft: #7f1d1d;
+      --amber: #fbbf24; --amber-soft: #713f12; --purple: #a78bfa; --purple-soft: #3b0764;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Tahoma, sans-serif;
+    background: var(--bg); color: var(--text); margin: 0; padding: 24px 16px 60px;
+    line-height: 1.8; font-size: 15px;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; }
+  header { margin-bottom: 28px; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge {
+    font-size: 11.5px; padding: 3px 10px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+  }
+  .badge.ok { background: var(--green-soft); color: var(--green); border-color: transparent; }
+  .badge.warn { background: var(--amber-soft); color: var(--amber); border-color: transparent; }
+  .badge.info { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+  h2 { font-size: 19px; margin: 36px 0 14px; border-inline-start: 4px solid var(--accent); padding-inline-start: 12px; }
+  h3 { font-size: 15.5px; margin: 18px 0 8px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 20px; margin-bottom: 14px;
+  }
+  code {
+    font-family: Consolas, "Courier New", monospace; font-size: 12.5px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px;
+    direction: ltr; unicode-bidi: embed; display: inline-block;
+  }
+  /* ---- architecture map ---- */
+  .map { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  @media (max-width: 800px) { .map { grid-template-columns: 1fr; } }
+  .zone { border-radius: 12px; border: 1px dashed var(--border); padding: 12px; }
+  .zone > .zone-title { font-size: 12px; color: var(--muted); margin-bottom: 10px; font-weight: 500; }
+  .node {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
+    padding: 9px 12px; margin-bottom: 8px; cursor: pointer; transition: border-color .15s;
+  }
+  .node:hover, .node.active { border-color: var(--accent); }
+  .node:last-child { margin-bottom: 0; }
+  .node b { font-size: 13.5px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .node span.d { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .tag {
+    font-size: 10px; padding: 1px 7px; border-radius: 999px; white-space: nowrap;
+    background: var(--accent-soft); color: var(--accent); direction: ltr;
+  }
+  .tag.risk { background: var(--red-soft); color: var(--red); }
+  .tag.safe { background: var(--green-soft); color: var(--green); }
+  .tag.ml { background: var(--purple-soft); color: var(--purple); }
+  /* ---- detail panel ---- */
+  #detail { border-inline-start: 4px solid var(--accent); }
+  #detail h3 { margin-top: 0; }
+  .kv { display: grid; grid-template-columns: 120px 1fr; gap: 4px 12px; font-size: 13px; margin-top: 10px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; }
+  /* ---- flow ---- */
+  .flow { display: flex; flex-direction: column; }
+  .step { display: flex; gap: 14px; position: relative; padding-bottom: 18px; }
+  .step::before {
+    content: ""; position: absolute; inset-inline-start: 17px; top: 36px; bottom: 0;
+    width: 2px; background: var(--border);
+  }
+  .step:last-child::before { display: none; }
+  .num {
+    width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent-soft); color: var(--accent); font-weight: 500; font-size: 14px;
+  }
+  .step .body { flex: 1; padding-top: 4px; }
+  .step .body b { font-size: 14px; }
+  .step .body p { margin: 3px 0 0; font-size: 13px; color: var(--muted); }
+  /* ---- safety rails ---- */
+  .rails { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  @media (max-width: 700px) { .rails { grid-template-columns: 1fr; } }
+  .rail { border-radius: 10px; padding: 12px 14px; font-size: 13px; }
+  .rail.g { background: var(--green-soft); color: var(--green); }
+  .rail.r { background: var(--red-soft); color: var(--red); }
+  .rail b { display: block; margin-bottom: 2px; }
+  /* ---- roadmap ---- */
+  .phases { display: flex; gap: 6px; align-items: stretch; margin-bottom: 12px; }
+  @media (max-width: 800px) { .phases { flex-direction: column; } }
+  .phase {
+    flex: 1; border: 1px solid var(--border); background: var(--surface);
+    border-radius: 10px; padding: 10px 12px; font-size: 12.5px;
+  }
+  .phase .p-score { font-size: 17px; font-weight: 500; }
+  .phase .p-title { color: var(--muted); font-size: 11.5px; }
+  .phase .p-state { font-size: 10.5px; margin-top: 4px; display: block; }
+  .phase.done { background: var(--green-soft); border-color: transparent; color: var(--green); }
+  .phase.now { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .phase.now .p-state { color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  tr:last-child td { border-bottom: none; }
+  .foot { color: var(--muted); font-size: 12px; margin-top: 30px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Adaptive Trader AI — معماری سیستم</h1>
+  <div class="sub">نسخهٔ مستند ۲۰۲۶-۱۱-۰۱ · شاخهٔ <code>reveo</code> @ <code>8499733</code> · سشن‌های ممیزی §۲۴–§۳۰</div>
+  <div class="badges">
+    <span class="badge ok">EXECUTION_MODE = SIGNAL_ONLY</span>
+    <span class="badge ok">DEMO_TRADING_ENABLED = False</span>
+    <span class="badge info">۴۲۰ تست سبز</span>
+    <span class="badge warn">قوانین UNAPPROVED — دروازهٔ تأیید انسانی</span>
+    <span class="badge">MT5 فقط‌خواندنی</span>
+  </div>
+</header>
+
+<section>
+  <h2>۱) نقشهٔ معماری — روی هر جزء کلیک کن</h2>
+  <div class="map">
+    <div class="zone">
+      <div class="zone-title">لایهٔ رابط</div>
+      <div class="node" data-k="frontend"><b>Dashboard <span class="tag">frontend/index.html</span></b>
+        <span class="d">داشبورد تک‌فایلی vanilla JS — توکن فقط در حافظهٔ صفحه</span></div>
+      <div class="node" data-k="api"><b>FastAPI <span class="tag">backend/app/api</span></b>
+        <span class="d">۷ روتر endpoint — توکن X-API-TOKEN روی همهٔ تغییرات</span></div>
+    </div>
+    <div class="zone">
+      <div class="zone-title">خدمات (services)</div>
+      <div class="node" data-k="knowledge"><b>دانش و قوانین <span class="tag">knowledge/</span></b>
+        <span class="d">Ingest سند → chunk → استخراج قانون با ردیابی مبهم‌ها</span></div>
+      <div class="node" data-k="market"><b>MT5 Provider <span class="tag risk">فقط‌خواندنی</span></b>
+        <span class="d">اتصال MT5 با قفل سراسری و آفست زمانی سرور-گیت‌شده</span></div>
+      <div class="node" data-k="ml"><b>ML و بک‌تست <span class="tag ml">ML</span></b>
+        <span class="d">آموزش، registry با ۹ دروازهٔ promote، بک‌تست هزینه‌دار</span></div>
+      <div class="node" data-k="signal"><b>سیگنال و ریسک <span class="tag safe">fail-closed</span></b>
+        <span class="d">SignalGenerator + RiskEngine — رد در نبود داده</span></div>
+      <div class="node" data-k="worker"><b>Worker <span class="tag">worker/</span></b>
+        <span class="d">حلقهٔ هر ۳ ثانیه XAUUSD M1 — ثبت cycle و retention</span></div>
+    </div>
+    <div class="zone">
+      <div class="zone-title">لایهٔ داده</div>
+      <div class="node" data-k="db"><b>SQLite + SQLAlchemy <span class="tag">db/</span></b>
+        <span class="d">WAL + FK + busy_timeout — ۱۱ مدل ORM</span></div>
+      <div class="node" data-k="alembic"><b>Alembic <span class="tag">migrations/</span></b>
+        <span class="d">زنجیرهٔ ۱۰ مهاجرت — drift فقط با Alembic</span></div>
+      <div class="node" data-k="exec"><b>DemoExecutor <span class="tag risk">قفل‌شده</span></b>
+        <span class="d">تنها caller واقعی order_send — پشت ۱۲ دروازهٔ ایمنی</span></div>
+    </div>
+  </div>
+
+  <div class="card" id="detail" style="margin-top:14px">
+    <h3 id="d-title">— جزئیات —</h3>
+    <p id="d-body" style="margin:6px 0 0;font-size:13.5px">روی هر جزء کلیک کن.</p>
+    <dl class="kv" id="d-kv"></dl>
+  </div>
+</section>
+
+<section>
+  <h2>۲) جریان کار سیستم — از سند تا سیگنال</h2>
+  <div class="flow">
+    <div class="step"><div class="num">۱</div><div class="body"><b>ورودی دانش</b>
+      <p>سند (PDF/DOCX/XLSX/ZIP/TXT) آپلود می‌شود؛ پارسرها با سقف ۶۴MB برای هر عضو فشرده (M10) متن را استخراج می‌کنند؛ هر سند با <code>content_sha256</code> یکتا dedup می‌شود (M9).</p></div></div>
+    <div class="step"><div class="num">۲</div><div class="body"><b>استخراج قانون</b>
+      <p>RuleExtractor از متن قوانین کاندید می‌سازد: شرایط RSI/MA ساختاریافته، مبهم‌ها صریح ثبت می‌شوند؛ همه با وضعیت <code>PENDING</code> ذخیره می‌شوند — هیچ قانونی خودکار فعال نمی‌شود.</p></div></div>
+    <div class="step"><div class="num">۳</div><div class="body"><b>تأیید انسانی + جهت صریح (M4)</b>
+      <p>تو از طریق API جهت صریح (BUY/SELL) هر قانون را تعیین می‌کنی (<code>POST /rules/{id}/direction</code>) و سپس approve می‌کنی. جهت هرگز از اسم قانون حدس زده نمی‌شود؛ قانون بدون جهت هرگز ووت نمی‌دهد (fail-closed).</p></div></div>
+    <div class="step"><div class="num">۴</div><div class="body"><b>داده و مدل</b>
+      <p>MT5 کندل‌های XAUUSD M1 می‌دهد؛ DatasetPipeline ویژگی‌های فقط-گذشته می‌سازد؛ ModelTrainer لِیبل triple-barrier می‌زند و Logistic Regression / Random Forest آموزش می‌دهد؛ شواهد Walk-Forward با purge 24 + embargo 12 به مدل می‌چسبد.</p></div></div>
+    <div class="step"><div class="num">۵</div><div class="body"><b>دروازهٔ promote</b>
+      <p>ModelRegistry با ۹ گیت: تأیید شواهد WF، Brier، هزینه‌ها، امضای HMAC — مدل candidate فقط با عبور همهٔ گیت‌ها active می‌شود؛ مدل فعال وسط run عوض نمی‌شود.</p></div></div>
+    <div class="step"><div class="num">۶</div><div class="body"><b>سیگنال live</b>
+      <p>Worker هر ۳ ثانیه: کندل بسته‌شده → ویژگی‌ها → SignalGenerator (ووت‌های جهت از قوانین تاییدشده + مدل فعال) → consensus → RiskEngine fail-closed → <code>TradeSignal</code> ثبت می‌شود. چون <code>EXECUTION_MODE=SIGNAL_ONLY</code> است، مسیر سفارش از سیگنال جداست.</p></div></div>
+    <div class="step"><div class="num">۷</div><div class="body"><b>حفاظت و ممیزی</b>
+      <p>هر اتفاق مهم در <code>AuditLog</code> ثبت می‌شود؛ retention پیش‌فرض خاموش (هیچ رکوردی بدون پنجرهٔ صریح اپراتور پاک نمی‌شود)؛ busy_timeout مانع خطای «database is locked» در تصادم API/worker است.</p></div></div>
+  </div>
+</section>
+
+<section>
+  <h2>۳) نرده‌های ایمنی (Safety Rails)</h2>
+  <div class="rails">
+    <div class="rail g"><b>EXECUTION_MODE=SIGNAL_ONLY</b>هیچ مسیر کدی به <code>mt5.order_send</code> نمی‌رسد؛ ۱۲ دروازه به‌صورت زنجیره‌ای گیت می‌زنند.</div>
+    <div class="rail g"><b>تأیید انسانی قوانین</b>قوانین با PENDING متولد می‌شوند؛ فقط APPROVED ووت می‌دهند و جهت‌شان صریح است (M4).</div>
+    <div class="rail g"><b>RiskEngine fail-closed</b>نبود حساب/نقل‌قول/کانترکت = رد سیگنال؛ زیان روزانهٔ account-wide ۳٪ (تصمیم ۳ یا ۵٪ با اپراتور باز است).</div>
+    <div class="rail g"><b>جلوگیری از نشت داده</b>ویژگی‌ها فقط-گذشته؛ walk-forward با purge+embargo؛ لِیبل با اسپرد.</div>
+    <div class="rail r"><b>DemoExecutor قفل</b><code>DEMO_TRADING_ENABLED=False</code>؛ تنها caller واقعی order_send؛ خروجی نامشخص → reconciliation deals-based.</div>
+    <div class="rail r"><b>آفست زمانی MT5</b>+۳h فقط وقتی سرور بروکر مطابقت دارد اعمال می‌شود؛ تایم‌استمپ آینده/کهنه رد می‌شود.</div>
+  </div>
+  <p style="font-size:12.5px;color:var(--muted)">هیچ ادعای سودآوری اثبات‌شده‌ای وجود ندارد؛ سبز بودن تست فقط درستی نرم‌افزار را ثابت می‌کند، نه لبهٔ معاملاتی.</p>
+</section>
+
+<section>
+  <h2>۴) کجای نقشهٔ راه هستیم</h2>
+  <div class="phases">
+    <div class="phase done"><span class="p-score">۷٫۴</span> <span class="p-title">هسته + M4 + تصمیم‌ها</span><span class="p-state">✓ کامل شد</span></div>
+    <div class="phase done"><span class="p-score">۸٫۰</span> <span class="p-title">فاز ۱ — M4 بسته شد، تصمیم‌های مالک اعمال شد</span><span class="p-state">✓ کامل شد</span></div>
+    <div class="phase now"><span class="p-score">۸٫۵</span> <span class="p-title">اتوماسیون + قانون خبری</span><span class="p-state">در جریان — قانون خبری منتظر منبع خبر</span></div>
+    <div class="phase"><span class="p-score">۹٫۰</span> <span class="p-title">فاز ۲ — MT5 manager / ML متقارن / WF→run</span><span class="p-state">در انتظار</span></div>
+  </div>
+  <p style="font-size:13.5px;margin:6px 0">
+    سند رسمی و کامل نقشهٔ راه (نسخهٔ مدیرعامل + فنی، جدول تصمیم‌های مالک، ریسک‌ها):
+    <code>docs/ROADMAP.md</code>. تصمیم‌های قطعی ۲۰۲۶-۱۱-۰۱: سقف ضرر روزانه <b>۵٪</b>،
+    نگهداری <b>۳۰ روز</b> با آرشیو ماهانه، کلید امضا <b>خصوصیِ مالک</b>. قانون خبری
+    از پایتون به تقویم MT5 دسترسی ندارد (تأییدشده)؛ منتظر تصمیم شما روی
+    منبع پیشنهادی (ForexFactory JSON) است. merge به main هم منتظر مجوز شماست.
+  </p>
+</section>
+
+<section>
+  <h2>۵) نکته‌های کلیدی هر جزء</h2>
+  <div class="card">
+    <h3>Rules (قوانین)</h3>
+    <p style="font-size:13.5px;margin:4px 0">هر قانون: شرایط ساختاریافته (RSI/EMA/SMA)، <code>direction</code> صریح (BUY/SELL/NULL)، دسته (entry/exit/filter/risk)، scope نماد/تایم‌فریم، منبع (سند+صفحه)، وضعیت تأیید. ژنراتور فقط شرایط شناخته‌شده را قبول می‌کند؛ شرط ناشناخته = قانون غیرفعال (fail-closed).</p>
+  </div>
+  <div class="card">
+    <h3>Where the M items live</h3>
+    <p style="font-size:13.5px;margin:4px 0">M4 → <code>signal/generator.py</code> + <code>models/rule.py</code> + مهاجرت <code>20261101_rdir</code> · M5 → <code>demo_executor.py</code> · M8 → <code>ml/walk_forward.py</code> + <code>registry.py</code> · M9 → <code>20261031_dshq</code> · M10 → <code>knowledge/parsers.py</code> · M12 → <code>market_data</code> (فاز ۲٫۱) · M13 → <code>retriever.py</code> + probe · M14/M15 → گیت توکن API · M21 → <code>migrations/env.py</code> · M22 → <code>endpoints/ml.py</code> · M23 → <code>.github/workflows</code></p>
+  </div>
+</section>
+
+<footer class="foot">Adaptive Trader AI — سند معماری · تولیدشده ۲۰۲۶-۱۱-۰۱ · شاخه reveo</footer>
+</div>
+<script>
+  const DETAILS = {
+    frontend: {
+      title: "Dashboard (frontend/index.html)",
+      body: "تک‌فایل HTML/CSS/JS؛ توکن API فقط در حافظهٔ صفحه (نه localStorage)؛ همهٔ POST ها هدر X-API-TOKEN می‌فرستند؛ GET های حساس هم احراز می‌شوند؛ خطای 401 به ردیف خطا تبدیل می‌شود نه کرش.",
+      kv: [["فایل", "frontend/index.html (~666 خط) + frontend/app.js (~624 خط، بدون inline script و onclick — CSP سخت‌گیرانه script-src 'self')"], ["توکن", "page-memory + prompt در هر بارگذاری"], ["زمان", "نمایش همهٔ ساعت‌ها با fmtUtcTime (M19)"]]
+    },
+    api: {
+      title: "FastAPI (backend/app/api/v1)",
+      body: "هفت روتر: rules, documents, market, signals, ml, backtest, system. همهٔ state-changing ها توکن می‌خواهند؛ ۱۲ GET حساس هم گیت‌شده (M15)؛ market GETها به‌صورت مستند باز (دادهٔ عمومی، بدون context حساب). خطای governance → 409، ناشناخته → 500 پاک‌سازی‌شده.",
+      kv: [["توکن", "X-API-TOKEN (settings.API_TOKEN)"], ["قید limit", "Query(50, ge=1, le=500) روی لیست‌endpointها"], ["نکته", "ModelGovernanceError هرگز 400 نیست — 409 است (M22)"]]
+    },
+    knowledge: {
+      title: "دانش و قوانین (services/knowledge)",
+      body: "KnowledgeManager پایپلاین transactional ingest دارد: parse → chunks → rules → completion-status → audit (۵ مرز شکست با recovery؛ قوانین APPROVED حفظ می‌شوند). content_sha256 یکتا در DB (M9). retriever BM25 با ایندکس lazy و grounded query بدون توهم.",
+      kv: [["پارسرها", "pymupdf / openpyxl / defusedxml / ZipFile — سقف 64MB هر عضو (M10)"], ["dedup", "UNIQUE content_sha256 — دوقلو با IntegrityError رد می‌شود"], ["chunk", "خوانش با citation سند+صفحه"]]
+    },
+    market: {
+      title: "MT5 Provider (services/market_data)",
+      body: "اتصال MT5 فقط‌خواندنی با قفل سراسری _mt5_lock (بستهٔ MT5 thread-safe نیست). آفست +۳h فقط وقتی server حساب با MT5_SERVER یکی است اعمال می‌شود؛ تایم‌استمپ آینده/کهنه fail-closed رد می‌شود. نکتهٔ طراحی (M12): هر request خودش connect/disconnect می‌کند و اتصال مشترک ترمینال را می‌بُرد؛ worker خودش را ترمیم می‌کند — بازطراحی lifecycle در فاز ۲٫۱.",
+      kv: [["قفل", "RLock سراسری برای همهٔ فراخوانی‌های MT5"], ["زمان", "MT5_SERVER_TIME_OFFSET_HOURS=3.0 (سرور-گیت‌شده، تأیید زندهٔ 2026-10-28)"], ["فاز ۲٫۱", "مدیر اتصال یکتا + backoff + تست فشار"]]
+    },
+    ml: {
+      title: "ML و بک‌تست (services/ml, services/backtest)",
+      body: "ModelTrainer: لِیبل triple-barrier برای BUY (ورود ask با اسپرد تاریخی)، LR/RF از sklearn نصب‌شده. ModelRegistry: candidate→active با ۹ گیت؛ digest با HMAC روی METRIC_SIGNING_KEY (بدون کلید → SHA-256). ml_walk_forward: هر fold مدل تازه + purge 24 + embargo 12 + threshold ثابت 0.5. بک‌تست با RealisticBacktestEngine و spread/commission/slippage صریح.",
+      kv: [["promote", "۹ گیت — شواهد WF در attach و promote ری‌وریفای می‌شود"], ["شواهد", "ml_models.ml_walk_forward_metrics (HMAC)"], ["محدودیت صادق", "شواهد ML-WF فعلاً self-attesting است — اتصال به BacktestRun در فاز ۲٫۴"]]
+    },
+    signal: {
+      title: "سیگنال و ریسک (services/signal, services/risk)",
+      body: "SignalGenerator.evaluate_rules: فقط شرایط RSI/EMA/SMA شناخته‌شده؛ هر شرط باید برقرار باشد؛ جهت فقط از rule.direction صریح (M4) — اسم قانون هرگز خوانده نمی‌شود؛ قانون بدون جهت ووت نمی‌دهد. resolve_consensus: BUY نیازمند توافق مدل BUY؛ SELL با مدل BUY-only فقط وقتی مدل HOLD است؛ تضاد مستقیم = HOLD. RiskEngine: نبود هر ورودی = REJECTED؛ حجم از contract spec؛ زیان روزانهٔ account-wide.",
+      kv: [["جهت (M4)", "rule.direction صریح — BUY | SELL | NULL"], ["fail-closed", "شرط ناشناخته/دادهٔ غایب = بدون سیگنال"], ["consensus", "تضاد مدل/قانون = HOLD"]]
+    },
+    worker: {
+      title: "MarketMonitoringWorker (services/worker)",
+      body: "حلقهٔ نظارت هر ۳ ثانیه روی XAUUSD M1؛ هر cycle با reservation ثبت می‌شود (بدون برخورد idempotency)؛ آمادگی تریدینگ مستقیم از TradingRule خوانده می‌شود (بدون probe سنگین). retention در startup: پنجره‌های WORKER_CYCLE / AUDIT_LOG / TRADE_SIGNAL / DEMO_ORDER (همه پیش‌فرض ۰ = خاموش).",
+      kv: [["poll", "3s — فقط کندل بسته‌شدهٔ تازه"], ["retention", "۴ پنجرهٔ config-محور، پیش‌فرض خاموش"], ["record", "worker_cycle_records با lifecycle_phase"]]
+    },
+    db: {
+      title: "SQLite + SQLAlchemy (db/)",
+      body: "SQLite با WAL، foreign_keys=ON و busy_timeout از DB_BUSY_TIMEOUT_MS (پیش‌فرض ۵۰۰۰ms) که با connect_args timeout ست می‌شود — بدون ساخت رشتهٔ SQL. ۱۱ مدل ORM: TradingRule, Document, KnowledgeChunk, TradeSignal, DemoOrder, MLModel, BacktestRun, Dataset, WorkerCycleRecord, AuditLog, EmergencyStopState.",
+      kv: [["WAL", "journal_mode=WAL — خوانش همزمان با نوشتن"], ["busy_timeout", "۵۰۰۰ms پیش‌فرض (minor 7)"], ["create_all", "فقط برای DB تازه؛ drift فقط با Alembic (M20)"]]
+    },
+    alembic: {
+      title: "Alembic (migrations/)",
+      body: "زنجیرهٔ خطی ۱۰ مهاجرت تا 20261101_rdir (جدید: ستون direction روی trading_rules بدون backfill از اسم). alembic.ini با %(here)s — از هر CWD کار می‌کند (فیکس بحرانی §27). env.py بدون ALEMBIC_DATABASE_URL صریح رد می‌شود و URL را در لاگ نمی‌گذارد. downgrade مخرب نیازمند ALEMBIC_ALLOW_DESTRUCTIVE_DOWNGRADE=yes (M21).",
+      kv: [["head", "20261101_rdir"], ["گارد", "مهاجرت‌های additive با inspector گارد می‌شوند"], ["M21", "downgrade پایه بدون فلاگ رد می‌شود"]]
+    },
+    exec: {
+      title: "DemoExecutor (services/execution)",
+      body: "تنها caller واقعی order_send. وضعیت‌های نامشخص (PLACED/10008، PARTIAL/10010، استثنا) → EXECUTION_UNKNOWN + reconciliation مبتنی بر deals (position_id از رکورد سفارش؛ دیل‌های ENTRY_IN حجم/VWAP/کمیسیون می‌سازند — M5). replay-guard و idempotency key محافظت می‌کنند.",
+      kv: [["gates", "۱۲ دروازه زنجیره‌ای تا order_send"], ["reconcile", "history_deals_get(position=…) — معناشناسی mql5"], ["امنیت", "بدون retry روی unknown بدون dispatch دوم"]]
+    }
+  };
+  const nodes = document.querySelectorAll(".node");
+  const t = document.getElementById("d-title");
+  const b = document.getElementById("d-body");
+  const kv = document.getElementById("d-kv");
+  function show(key) {
+    const d = DETAILS[key];
+    if (!d) return;
+    t.textContent = d.title;
+    b.textContent = d.body;
+    kv.innerHTML = "";
+    (d.kv || []).forEach(function (pair) {
+      const dt = document.createElement("dt");
+      dt.textContent = pair[0];
+      const dd = document.createElement("dd");
+      dd.textContent = pair[1];
+      kv.appendChild(dt);
+      kv.appendChild(dd);
+    });
+    nodes.forEach(function (n) { n.classList.toggle("active", n.dataset.k === key); });
+  }
+  nodes.forEach(function (n) { n.addEventListener("click", function () { show(n.dataset.k); }); });
+  show("api");
+</script>
+</body>
+</html>

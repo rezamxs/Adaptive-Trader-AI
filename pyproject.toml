@@ -11,6 +11,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.110.0",
+    "python-multipart>=0.0.9",
     "uvicorn>=0.28.0",
     "pydantic>=2.6.0",
     "pydantic-settings>=2.2.0",
@@ -22,6 +23,7 @@ dependencies = [
     "pymupdf>=1.24.0",
     "openpyxl>=3.1.2",
     "python-dotenv>=1.0.0",
+    "defusedxml>=0.7.0",
 ]
 
 [project.optional-dependencies]
@@ -30,7 +32,17 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "httpx>=0.27.0",
     "ruff>=0.3.0",
+    # Minor 19: measured coverage (`python -m pytest tests --cov=backend/app`).
+    "pytest-cov>=5.0.0",
 ]
+
+# Only the backend is an installable Python package. The other top-level
+# directories contain datasets, logs, static frontend files, or artifacts.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend", "backend.*"]
+exclude = ["backend.tests", "backend.tests.*"]
+namespaces = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"
@@ -40,5 +52,16 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-ra -q --strict-markers"
 filterwarnings = [
-    "ignore::DeprecationWarning",
+    # Item 43: the blanket `ignore::DeprecationWarning` hid ALL deprecations,
+    # including first-party regressions. Only the known third-party noise is
+    # suppressed: fastapi's TestClient still imports httpx-backed
+    # starlette.testclient (upstream migration to httpx2 pending).
+    "ignore::DeprecationWarning:fastapi.testclient",
 ]
+
+# Minor 19: measured coverage (run explicitly, never in the default addopts so
+# the plain suite stays fast):
+#   python -m pytest backend/tests --cov=backend/app --cov-report=term
+[tool.coverage.run]
+source = ["backend/app"]
+omit = ["backend/tests/*"]

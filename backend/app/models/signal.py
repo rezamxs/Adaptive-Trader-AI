@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from sqlalchemy import String, Integer, Float, DateTime, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 
 
 class TradeSignal(Base):
@@ -37,4 +37,4 @@ class TradeSignal(Base):
     status: Mapped[str] = mapped_column(String(32), default="NEW", nullable=False)
     
     bar_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)

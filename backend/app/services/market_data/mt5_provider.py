@@ -2,7 +2,8 @@
 Handles MT5 terminal connection, symbol specs, candles, and staleness checks.
 """
 import threading
-from datetime import datetime, timezone
+import math
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 import pandas as pd
 
@@ -50,16 +51,57 @@ class MT5MarketDataProvider(IMarketDataProvider):
     def __init__(self, terminal_path: Optional[str] = None):
         self.terminal_path = terminal_path or settings.MT5_PATH
         self._connected = False
+        # Broker-clock offset in seconds; determined at connect() and ONLY
+        # non-zero when the connected account's server is the configured one.
+        self._offset_seconds = 0.0
         self.time_converter = MT5TimeConverter(
             max_staleness_seconds=settings.WORKER_STALE_TICK_SECONDS
         )
 
+    def _determine_offset_seconds(self) -> float:
+        """Server-gated broker-clock offset in seconds.
+
+        settings.MT5_SERVER_TIME_OFFSET_HOURS is the MEASURED offset of the
+        configured server (YourBroker-MT5 stamps server-time as epoch). It applies
+        ONLY when the connected account's server equals settings.MT5_SERVER;
+        any other server runs raw-epoch (UTC) semantics with zero offset, and
+        an unreadable account fails closed to zero.
+        """
+        hours = float(settings.MT5_SERVER_TIME_OFFSET_HOURS)
+        if hours == 0.0:
+            return 0.0
+        acc = mt5.account_info()
+        if not acc or acc.server != settings.MT5_SERVER:
+            logger.warning(
+                "MT5 server-time offset (%.2fh) is configured but the connected "
+                "server is not '%s'; offset NOT applied (raw-epoch semantics).",
+                hours, settings.MT5_SERVER)
+            return 0.0
+        logger.info(
+            "MT5 server '%s' matches configuration; applying measured broker-clock "
+            "offset of %.2fh to all quote/bar/deal timestamps.", settings.MT5_SERVER, hours)
+        return hours * 3600.0
+
     def connect(self) -> bool:
-        """Initializes MT5 terminal connection safely with thread synchronization."""
+        """Initializes MT5 terminal connection safely with thread synchronization.
+
+        Idempotent for the shared provider (M12): when the terminal handle is
+        already live, returns True without re-initializing; a stale handle is
+        transparently re-initialized so a dead terminal heals on the next
+        acquire instead of poisoning every later call.
+        """
         with _mt5_lock:
+            if MT5_AVAILABLE and self._connected:
+                try:
+                    term = mt5.terminal_info()
+                    if term and term.connected:
+                        return True
+                except Exception:
+                    logger.warning("MT5 connection probe failed; re-initializing the terminal.")
             if not MT5_AVAILABLE:
                 logger.warning("MetaTrader5 python library is not available.")
                 self._connected = False
+                self._offset_seconds = 0.0
                 return False
 
             try:
@@ -68,28 +110,23 @@ class MT5MarketDataProvider(IMarketDataProvider):
                     err = mt5.last_error()
                     logger.error(f"MT5 initialization failed: {err}")
                     self._connected = False
+                    self._offset_seconds = 0.0
                     return False
 
                 self._connected = True
+                self._offset_seconds = self._determine_offset_seconds()
                 term_info = mt5.terminal_info()
                 logger.info(f"Connected to MT5 terminal at {getattr(term_info, 'path', 'N/A')}")
 
-                # Attempt adaptive verification of server timezone offset if worker symbol tick is available
-                try:
-                    init_tick = mt5.symbol_info_tick(settings.WORKER_SYMBOL)
-                    if init_tick:
-                        ok, _, reason = self.time_converter.detect_and_set_offset_from_live_tick(init_tick.time)
-                        if ok:
-                            logger.info(f"MT5 server timezone verified: {reason}")
-                        else:
-                            logger.warning(f"Could not automatically verify MT5 server timezone: {reason}")
-                except Exception as tz_err:
-                    logger.warning(f"Exception during MT5 timezone detection: {tz_err}")
+                # MT5 Python API timestamps are Unix epoch seconds. For the
+                # configured server they carry broker server-time; the measured
+                # server-gated offset above corrects them to true UTC.
 
                 return True
             except Exception as e:
                 logger.error(f"Exception during MT5 connect: {e}")
                 self._connected = False
+                self._offset_seconds = 0.0
                 return False
 
     def disconnect(self) -> None:
@@ -137,6 +174,113 @@ class MT5MarketDataProvider(IMarketDataProvider):
                 is_demo=(acc.trade_mode == MT5_ACCOUNT_TRADE_MODE_DEMO),
             )
 
+    def get_open_positions_count(self) -> Optional[int]:
+        """Return account-wide open positions count, or None if MT5 cannot verify it."""
+        with _mt5_lock:
+            if not self.is_connected():
+                return None
+            positions = mt5.positions_get()
+            if positions is None:
+                logger.error(f"MT5 positions_get failed: {mt5.last_error()}")
+                return None
+            return len(positions)
+
+    def get_open_positions(self) -> Optional[List[Any]]:
+        """Return the raw open-position objects (read-only) for grid-risk
+        computation, or None if MT5 cannot verify them (fail closed)."""
+        with _mt5_lock:
+            if not self.is_connected():
+                return None
+            positions = mt5.positions_get()
+            if positions is None:
+                logger.error(f"MT5 positions_get failed: {mt5.last_error()}")
+                return None
+            return list(positions)
+
+    def get_daily_loss_percent(self) -> Optional[float]:
+        """Estimate current-day equity drawdown from UTC-day deal cash flows.
+
+        Any cash movement reported by MT5 is included when reconstructing the
+        day's starting balance. If account or deal history cannot be verified,
+        return None so risk checks can fail closed.
+        """
+        with _mt5_lock:
+            if not self.is_connected():
+                return None
+            account = mt5.account_info()
+            if account is None:
+                return None
+
+            now_utc = datetime.now(timezone.utc)
+            day_start_utc = datetime(
+                now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc
+            )
+            # Deal stamps carry the broker clock for the configured server, so
+            # the true UTC day must be expressed in stamp space (+ offset).
+            from_dt = day_start_utc + timedelta(seconds=self._offset_seconds)
+            to_dt = now_utc + timedelta(seconds=self._offset_seconds)
+            deals = mt5.history_deals_get(from_dt, to_dt)
+            if deals is None:
+                logger.error(f"MT5 deal history unavailable for daily drawdown: {mt5.last_error()}")
+                return None
+
+            day_cash_flow = 0.0
+            excluded_deals = 0
+            for deal in deals:
+                # Stamp validation: a deal whose timestamp is unparseable or
+                # falls outside the corrected UTC day makes the starting-
+                # balance reconstruction ambiguous (its cash effect IS in the
+                # current balance). Fail closed instead of guessing.
+                try:
+                    deal_dt = datetime.fromtimestamp(
+                        int(deal.time) - self._offset_seconds, tz=timezone.utc)
+                except (TypeError, ValueError, OverflowError, OSError):
+                    excluded_deals += 1
+                    continue
+                if deal_dt < day_start_utc or deal_dt > now_utc + timedelta(seconds=5.0):
+                    excluded_deals += 1
+                    continue
+                day_cash_flow += (
+                    float(getattr(deal, "profit", 0.0) or 0.0)
+                    + float(getattr(deal, "commission", 0.0) or 0.0)
+                    + float(getattr(deal, "swap", 0.0) or 0.0)
+                    + float(getattr(deal, "fee", 0.0) or 0.0)
+                )
+            if excluded_deals:
+                logger.warning(
+                    "Daily-loss reconstruction refused: %d MT5 deal(s) carry invalid "
+                    "or out-of-window timestamps.", excluded_deals)
+                return None
+
+            start_balance = float(account.balance) - day_cash_flow
+            equity = float(account.equity)
+            if (
+                not math.isfinite(start_balance)
+                or not math.isfinite(equity)
+                or start_balance <= 0.0
+            ):
+                return None
+            return max(0.0, (start_balance - equity) / start_balance * 100.0)
+
+    def calculate_order_margin(
+        self, symbol: str, direction: str, volume: float, price: float
+    ) -> Optional[float]:
+        """Ask MT5 for broker-calculated initial margin in the account deposit currency."""
+        with _mt5_lock:
+            if not self.is_connected():
+                return None
+            if direction not in {"BUY", "SELL"} or volume <= 0 or price <= 0:
+                return None
+            order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
+            margin = mt5.order_calc_margin(order_type, symbol, float(volume), float(price))
+            if margin is None:
+                logger.warning(f"MT5 margin calculation unavailable for {symbol}: {mt5.last_error()}")
+                return None
+            value = float(margin)
+            if not math.isfinite(value) or value < 0.0:
+                return None
+            return value
+
     def get_symbols(self) -> List[str]:
         """Retrieves list of all available symbol names."""
         with _mt5_lock:
@@ -181,7 +325,7 @@ class MT5MarketDataProvider(IMarketDataProvider):
             return mt5.symbol_info_tick(symbol)
 
     def get_current_quote(self, symbol: str, max_staleness_seconds: int = 120) -> Optional[Quote]:
-        """Gets current Bid and Ask quote with staleness validation and verified timezone adjustment."""
+        """Gets Bid/Ask with UTC epoch conversion and staleness validation."""
         with _mt5_lock:
             if not self.is_connected():
                 return None
@@ -192,13 +336,15 @@ class MT5MarketDataProvider(IMarketDataProvider):
 
             now_utc = datetime.now(timezone.utc)
 
-            # If timezone offset is not yet verified, attempt verification with this live tick
-            if self.time_converter.server_offset_seconds is None:
-                self.time_converter.detect_and_set_offset_from_live_tick(tick.time, now_utc=now_utc)
-
-            # Convert raw MT5 broker timestamp to true UTC
-            tick_dt, _ = self.time_converter.raw_to_utc(tick.time, require_verified_offset=False)
-            if tick_dt is None:
+            # Broker-clock correction: for the configured server the epoch
+            # carries broker server-time; subtract the measured offset before
+            # UTC interpretation. With offset 0 this is the identity.
+            raw_epoch = int(tick.time)
+            raw_dt = datetime.fromtimestamp(raw_epoch, tz=timezone.utc)
+            try:
+                tick_dt = datetime.fromtimestamp(raw_epoch - self._offset_seconds, tz=timezone.utc)
+            except (TypeError, ValueError, OverflowError, OSError) as exc:
+                logger.warning(f"Invalid MT5 tick timestamp for {symbol}: {exc}")
                 return None
 
             val_res = self.time_converter.validate_timestamp(
@@ -207,18 +353,51 @@ class MT5MarketDataProvider(IMarketDataProvider):
                 max_staleness_seconds=max_staleness_seconds,
             )
 
-            # Marked stale if validation fails or broker offset is unverified
-            is_stale = (not val_res.is_valid) or (self.time_converter.server_offset_seconds is None)
+            # Live-consistency guard: if the RAW stamp would already be valid,
+            # the configured offset is contradicted by this very tick — fail
+            # closed instead of accepting ambiguous data.
+            if self._offset_seconds and val_res.is_valid:
+                raw_res = self.time_converter.validate_timestamp(
+                    raw_dt,
+                    now_utc=now_utc,
+                    max_staleness_seconds=max_staleness_seconds,
+                )
+                if raw_res.is_valid:
+                    logger.error(
+                        "MT5 offset ambiguity for %s: raw stamp AND corrected stamp "
+                        "are both fresh (raw age %.1fs, corrected age %.1fs); "
+                        "refusing to accept ambiguous data.",
+                        symbol, raw_res.age_seconds, val_res.age_seconds,
+                    )
+                    return None
+
+            # Freshness is determined by timestamp validation, not broker timezone guesses.
+            is_stale = not val_res.is_valid
 
             sym_info = mt5.symbol_info(symbol)
-            point = sym_info.point if sym_info else 0.0001
-            spread_points = int(round((tick.ask - tick.bid) / (point or 0.0001)))
+            if sym_info is None:
+                logger.warning(f"MT5 symbol specifications are unavailable for {symbol}.")
+                return None
+            try:
+                point = float(sym_info.point)
+                bid = float(tick.bid)
+                ask = float(tick.ask)
+            except (TypeError, ValueError, OverflowError):
+                return None
+            if (
+                not math.isfinite(point) or point <= 0
+                or not math.isfinite(bid) or not math.isfinite(ask)
+                or bid <= 0 or ask < bid
+            ):
+                logger.warning(f"MT5 returned invalid quote/specification values for {symbol}.")
+                return None
+            spread_points = int(round((ask - bid) / point))
 
             return Quote(
                 symbol=symbol,
                 time=tick_dt,
-                bid=tick.bid,
-                ask=tick.ask,
+                bid=bid,
+                ask=ask,
                 spread_points=spread_points,
                 is_stale=is_stale,
             )
@@ -230,7 +409,7 @@ class MT5MarketDataProvider(IMarketDataProvider):
         count: int = 500,
         start_pos: int = 0
     ) -> List[Candle]:
-        """Fetches historical candles chronologically under thread lock with verified UTC timestamps."""
+        """Fetches historical candles chronologically using MT5 UTC epoch timestamps."""
         with _mt5_lock:
             if not self.is_connected():
                 return []
@@ -245,8 +424,11 @@ class MT5MarketDataProvider(IMarketDataProvider):
             total = len(rates)
             for i, r in enumerate(rates):
                 is_closed = True if (start_pos > 0 or i < total - 1) else False
-                candle_time, _ = self.time_converter.raw_to_utc(r['time'], require_verified_offset=False)
-                if candle_time is None:
+                try:
+                    candle_time = datetime.fromtimestamp(
+                        int(r['time']) - self._offset_seconds, tz=timezone.utc)
+                except (TypeError, ValueError, OverflowError, OSError) as exc:
+                    logger.warning(f"Skipping candle with invalid MT5 timestamp for {symbol}: {exc}")
                     continue
                 candles.append(Candle(
                     time=candle_time,

@@ -12,6 +12,15 @@ from backend.app.services.market_data.mock_provider import MockMarketDataProvide
 from backend.app.services.execution.demo_executor import DemoTradingExecutor
 
 
+@pytest.fixture(autouse=True)
+def _session_filter_disabled_for_security_tests(monkeypatch):
+    """These tests verify OTHER rejection semantics (risk volume, idempotency)
+    at arbitrary wall-clock times. The session-hours gate is now wired into
+    the dispatch path; its behavior is covered separately in
+    test_risk_gates_wiring.py."""
+    monkeypatch.setattr(settings, "ENFORCE_SESSION_FILTER", False)
+
+
 @pytest.fixture
 def db_session():
     engine = create_engine("sqlite:///:memory:")
@@ -104,6 +113,47 @@ def test_executor_blocks_on_real_account(db_session, sample_approved_signal, mon
     success, order, msg = executor.execute_demo_signal(sample_approved_signal)
     assert success is False
     assert "Account could not be verified as a genuine DEMO account" in msg
+
+
+def test_executor_rejects_signal_when_stop_loss_is_invalid_at_current_price(
+    db_session, sample_approved_signal, monkeypatch
+):
+    """A past risk approval cannot bypass current-price SL/TP validation."""
+    monkeypatch.setattr(settings, "EXECUTION_MODE", ExecutionMode.DEMO_TRADING)
+    monkeypatch.setattr(settings, "DEMO_TRADING_ENABLED", True)
+
+    sample_approved_signal.stop_loss = 1.0860  # Above the current BUY entry at 1.08515.
+    db_session.commit()
+
+    provider = MockMarketDataProvider(is_demo_account=True)
+    executor = DemoTradingExecutor(db_session, provider)
+    success, order, msg = executor.execute_demo_signal(sample_approved_signal)
+
+    assert success is False
+    assert order is None
+    assert "REJECTED_INVALID_SL" in msg
+    assert db_session.query(DemoOrder).count() == 0
+
+
+def test_executor_rejects_volume_that_exceeds_current_risk_limit(
+    db_session, sample_approved_signal, monkeypatch
+):
+    """A stored approval cannot send more volume than current risk permits."""
+    monkeypatch.setattr(settings, "EXECUTION_MODE", ExecutionMode.DEMO_TRADING)
+    monkeypatch.setattr(settings, "DEMO_TRADING_ENABLED", True)
+
+    # The wider stop makes 0.10 lots exceed the current risk budget.
+    sample_approved_signal.stop_loss = 1.0000
+    db_session.commit()
+
+    provider = MockMarketDataProvider(is_demo_account=True)
+    executor = DemoTradingExecutor(db_session, provider)
+    success, order, msg = executor.execute_demo_signal(sample_approved_signal)
+
+    assert success is False
+    assert order is None
+    assert "current risk permits at most" in msg
+    assert db_session.query(DemoOrder).count() == 0
 
 
 def test_order_idempotency_prevents_duplicate_dispatch(db_session, sample_approved_signal, monkeypatch):

@@ -1,0 +1,66 @@
+# Adaptive Trader AI — dependency lock (generated 2026-10-31)
+#
+# Reproducible-environment lock for the project's full transitive dependency
+# closure (runtime + test toolchain), pinned to the EXACT versions the
+# verified test suite ran green against (Python 3.14.4, Windows x64):
+#   python -m pytest tests   -> exit 0
+#
+# Reproduce the environment with:
+#   python -m pip install -r requirements-lock.txt
+#
+# Regenerate after a dependency change by recomputing the closure of
+# pyproject.toml's dependencies (direct deps + transitives, environment
+# markers resolved). The three backport packages below are excluded by their
+# own markers on Python >= 3.11: backports.asyncio.runner, exceptiongroup,
+# tomli.
+
+alembic==1.20.0
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anyio==4.14.2
+certifi==2026.6.17
+click==8.5.0
+cloudpickle==3.1.2
+colorama==0.4.6
+coverage==7.17.2
+defusedxml==0.7.1
+et-xmlfile==2.0.0
+fastapi==0.143.0
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+idna==3.18
+iniconfig==2.3.1
+joblib==1.6.0
+mako==1.4.3
+markupsafe==3.0.4
+metatrader5==5.0.6231
+narwhals==2.27.1
+numpy==2.5.3
+openpyxl==3.1.5
+opentelemetry-api==1.45.1
+packaging==26.3
+pandas==3.0.6
+pluggy==1.6.0
+pydantic-core==2.46.4
+pydantic-settings==2.14.2
+pydantic==2.13.4
+pygments==2.20.0
+pymupdf==1.28.2
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0
+pytest==9.1.1
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.2
+python-multipart==0.0.32
+ruff==0.17.0
+scikit-learn==1.9.1
+scipy==1.18.1
+six==1.17.0
+sqlalchemy==2.1.4
+starlette==1.7.0
+threadpoolctl==3.7.0
+typing-extensions==4.16.0
+typing-inspection==0.4.2
+tzdata==2026.5
+uvicorn==0.54.0
