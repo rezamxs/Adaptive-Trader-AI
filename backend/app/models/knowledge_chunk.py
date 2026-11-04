@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from sqlalchemy import String, Integer, DateTime, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 
 
 class KnowledgeChunk(Base):
@@ -24,4 +24,4 @@ class KnowledgeChunk(Base):
     parameters: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     exceptions_and_limits: Mapped[List[str]] = mapped_column(JSON, default=list, nullable=False)
     
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)

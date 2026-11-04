@@ -1,0 +1,1469 @@
+{
+  "schema_version": "1.1.0",
+  "phase": "Phase O Comprehensive Source Extraction",
+  "total_rules": 52,
+  "all_status": "UNAPPROVED",
+  "rules": [
+    {
+      "rule_id": "STR-001",
+      "name": "Target Instrument Lock",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۵ و صفحه ۱۰",
+      "exact_source_text": "در متاتریدر نمودار طلا (XAUUSD) را باز کرده و تایم‌فریم آن را روی ۱ دقیقه (M1) تنظیم کنید. معاملات طلا به طور طبیعی به مارجین بالاتری نسبت به جفت‌ارزها نیاز دارد.",
+      "interpretation": "نماد معاملاتی اصلی سیستم باید منحصراً طلا در برابر دلار آمریکا (XAUUSD) باشد.",
+      "executable_definition": {
+        "condition": "symbol == 'XAUUSD'",
+        "action": "ALLOW_EVALUATION",
+        "fallback": "REJECT_UNSUPPORTED_SYMBOL"
+      },
+      "inputs": [
+        "symbol"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "طلا در بروکرهای مختلف دارای قراردادهای متفاوت (لات ۱۰۰ انس در برابر سایر اوزان) و اسپرد متغیر است."
+      ],
+      "approval_blockers": [
+        "عدم اعتبارسنجی انطباق اندازه قرارداد بروکر با محاسبات مارجین.",
+        "وضعیت این قانون هنوز توسط کاربر در فاز P بازبینی و تأیید نشده است."
+      ]
+    },
+    {
+      "rule_id": "STR-002",
+      "name": "Operational Timeframe Lock",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۱، ۵ و ۱۰",
+      "exact_source_text": "برای شروع تست رایگان ربات در تایم‌فریم ۱ دقیقه (M1)، مراحل زیر را انجام دهید... تایم‌فریم ۱ دقیقه (M1) — نسخه تخصصی کاربران.",
+      "interpretation": "دوره تناوب زمانی کندل‌های معاملاتی باید دقیقاً ۱ دقیقه (۶۰ ثانیه) باشد.",
+      "executable_definition": {
+        "condition": "timeframe_seconds == 60",
+        "action": "ALLOW_EVALUATION",
+        "fallback": "REJECT_TIMEFRAME"
+      },
+      "inputs": [
+        "timeframe_seconds"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "تایم‌فریم M1 بالاترین نرخ نویز قیمتی و بیشترین حساسیت به تأخیر شبکه (Latency) و اسپرد را دارد."
+      ],
+      "approval_blockers": [
+        "عدم ارزیابی هزینه معاملاتی اسپرد در برابر طول میانگین کندل M1.",
+        "وضعیت این قانون در فاز P معلق است."
+      ]
+    },
+    {
+      "rule_id": "STR-003",
+      "name": "Minimum Capital Requirement",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۴ و صفحه ۱۰",
+      "exact_source_text": "موجودی (Deposit) را روی حداقل ۵,۰۰۰ دلار (ایده‌آل ۱۰,۰۰۰ دلار) قرار دهید... استفاده از ربات روی طلا با سرمایه کمتر از ۵,۰۰۰ دلار، به‌ویژه در فاز مارتینگل، ریسک کال مارجین را به شدت افزایش می‌دهد.",
+      "interpretation": "حداقل موجودی مجاز حساب برای فعال‌سازی استراتژی روی طلا ۵٬۰۰۰ دلار و موجودی پیشنهادی پایدار ۱۰٬۰۰۰ دلار است.",
+      "executable_definition": {
+        "condition": "account_equity >= 5000.0",
+        "action": "ALLOW_EXECUTION",
+        "fallback": "INSUFFICIENT_MARGIN_LOCK"
+      },
+      "inputs": [
+        "account_equity"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "سرمایه ۵٬۰۰۰ دلار در اهرم ۱:۵۰۰ با پله‌های مارتینگل ۱.۴ لات در نوسان ۲۰ دلاری طلا دچار افت سرمایه شدید (دراودان سنگین) می‌شود."
+      ],
+      "approval_blockers": [
+        "عدم تست فشار ریاضی تحمل دراودان ۵٬۰۰۰ دلار در بدترین سناریوی تاریخی.",
+        "نیازمند بازبینی انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-004",
+      "name": "Account Leverage Requirement",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۴",
+      "exact_source_text": "در صفحه تنظیمات حساب اهرم (Leverage) را روی 1:500 تنظیم کنید.",
+      "interpretation": "اهرم حساب معاملاتی در بروکر باید دقیقاً ۱:۵۰۰ تنظیم شده باشد.",
+      "executable_definition": {
+        "condition": "account_leverage == 500",
+        "action": "PERMIT_RISK_PROFILE",
+        "fallback": "INVALID_LEVERAGE_WARNING"
+      },
+      "inputs": [
+        "account_leverage"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "اهرم بالا ریسک لیکویید شدن سریع در صورت وقوع جهش قیمت یا قطع ارتباط سیستم را به شدت تشدید می‌کند."
+      ],
+      "approval_blockers": [
+        "سیاست‌های ایمنی پلتفرم اجازه دادوستد خودکار با اهرم ۱:۵۰۰ بدون محدودیت‌های توقف اضطراری را نمی‌دهد.",
+        "قانون در وضعیت بازبینی معلق باقی می‌ماند."
+      ]
+    },
+    {
+      "rule_id": "STR-005",
+      "name": "Daily Profit Target Shutdown",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۸ و صفحه ۱۱",
+      "exact_source_text": "تارگت کم‌ریسک و ایده‌آل: کسب سود روزانه بین ۰.۵٪ تا ۱٪. پس از رسیدن به تارگت، حتماً ربات را خاموش کنید یا ریسک را به حداقل برسانید. در صورت رسیدن به تارگت در بازه زمانی کوتاه (حتی ۲ تا ۳ ساعت)، ربات را غیرفعال کرده و معاملات را متوقف کنید.",
+      "interpretation": "به محض اینکه سود محقق‌شده روزانه حساب به ۰.۵٪ الی ۱.۰٪ موجودی ابتدای روز برسد، سیستم باید فوراً معاملات جدید را متوقف کند.",
+      "executable_definition": {
+        "condition": "daily_realized_profit_pct >= target_profit_pct",
+        "target_profit_pct_default": 0.01,
+        "action": "DISABLE_NEW_ENTRIES",
+        "fallback": "CONTINUE_MONITORING"
+      },
+      "inputs": [
+        "daily_realized_profit_pct",
+        "target_profit_pct"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "سند مشخص نکرده اگر تارگت سود محقق شود ولی پوزیشن باز در ضرر وجود داشته باشد، آیا باید پوزیشن باز بسته شود یا تا پایان چرخه بماند."
+      ],
+      "approval_blockers": [
+        "عدم رفع تناقض بین بستن معاملات باز و تحقق تارگت.",
+        "نیازمند تصمیم‌گیری در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-006",
+      "name": "Baseline Position Sizing",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۸ و صفحه ۱۱",
+      "exact_source_text": "حجم معاملات باید همیشه بین ۰.۰۱ تا نهایتاً ۰.۰۵ لات تنظیم شود... حجم معاملات (لات) را در حالت استاندارد بین ۰.۰۱ تا حداکثر ۰.۰۵ فیکس کنید.",
+      "interpretation": "حجم ورودی اولین معامله در هر چرخه اسکلپ باید در بازه ۰.۰۱ الی ۰.۰۵ لات قرار گیرد.",
+      "executable_definition": {
+        "condition": "0.01 <= base_order_lot <= 0.05",
+        "action": "PERMIT_BASE_LOT",
+        "fallback": "LOT_OUT_OF_STANDARD_BOUNDS"
+      },
+      "inputs": [
+        "base_order_lot"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "انتخاب عدد ثابت بدون تناسب با میزان سرمایه (مثلاً ۰.۰۵ لات برای ۵٬۰۰۰ دلار در برابر ۲۰٬۰۰۰ دلار تفاوت ۴ برابری در درصد ریسک ایجاد می‌کند)."
+      ],
+      "approval_blockers": [
+        "نبود فرمول دینامیک بر اساس درصد سرمایه.",
+        "قانون در وضعیت غیرتأییدشده باقی می‌ماند."
+      ]
+    },
+    {
+      "rule_id": "STR-007",
+      "name": "Permitted Session Window",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۱۱",
+      "exact_source_text": "سشن پیشنهادی: آسیا + بخش ابتدایی اروپا. بازه زمانی تقریبی به وقت ایران: از ساعت ۰۳:۳۰ - ۰۴:۰۰ بامداد تا حدود ساعت ۱۴:۰۰ - ۱۵:۰۰ (قبل از باز شدن سشن نیویورک). در این بازه، حجم معاملات و نوسانات معمولاً متعادل‌تر است و کنترل مارتینگل آسان‌تر انجام می‌شود.",
+      "interpretation": "فعالیت معاملاتی فقط در بازه زمانی بین ۰۳:۳۰ تا ۱۵:۰۰ به وقت محلی ایران مجاز است.",
+      "executable_definition": {
+        "condition": "time_tehran >= '03:30' and time_tehran <= '14:30'",
+        "action": "ALLOW_TRADING_WINDOW",
+        "fallback": "OUT_OF_SESSION_LOCK"
+      },
+      "inputs": [
+        "time_tehran"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "تغییرات ساعت تابستانی/زمستانی در بروکرهای خارجی با تقویم ایران تطابق یک‌به‌یک ندارد و باید مستقیماً با UTC تنظیم شود."
+      ],
+      "approval_blockers": [
+        "عدم تعریف معادل ساعتی بر اساس زمان بین‌المللی UTC.",
+        "نیازمند ممیزی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-008",
+      "name": "Pre-New York Cutoff Lock",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۹ و ۱۱",
+      "exact_source_text": "قانون طلایی: پیش از آغاز سشن نیویورک، وضعیت معاملات باز باید مشخص شده باشد. از ۱ تا ۲ ساعت قبل (حدود ساعت ۱۲:۰۰ تا ۱۳:۰۰ به وقت ایران)، در صورتی که معامله بازی وجود ندارد، ربات را غیرفعال کنید. ورود معامله جدید در دقایق پایانی قبل از نیویورک می‌تواند ریسک بالایی ایجاد کند.",
+      "interpretation": "از دو ساعت مانده به شروع سشن نیویورک، در صورت خالی بودن صف معاملات، نباید معامله جدیدی باز شود.",
+      "executable_definition": {
+        "condition": "time_tehran >= '12:00' and open_positions_count == 0",
+        "action": "PREVENT_NEW_CYCLE",
+        "fallback": "EVALUATE_EXISTING_POSITIONS"
+      },
+      "inputs": [
+        "time_tehran",
+        "open_positions_count"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "اگر معامله از قبل باز مانده باشد، سند اجازه ادامه را می‌دهد ولی هم‌زمان نگهداری آن را در نیویورک قدغن می‌کند که ایجاد بن‌بست تصمیم‌گیری می‌کند."
+      ],
+      "approval_blockers": [
+        "تضاد منطقی بین ادامه چرخه و ممنوعیت حضور در نیویورک.",
+        "تعلیق در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-009",
+      "name": "Strict Prohibition of NY Martingale Carryover",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۹ و صفحه ۱۴",
+      "exact_source_text": "هرگز اجازه ندهید معاملات باز مارتینگل به سشن نیویورک یا کلوز روزانه کشیده شوند. نوسانات شدید این بازه‌ها می‌تواند وضعیت را به سرعت بحرانی کند.",
+      "interpretation": "معاملات دارای پله‌های مارتینگل باز به هیچ وجه نباید وارد سشن نیویورک یا زمان بسته شدن بازار روزانه شوند.",
+      "executable_definition": {
+        "condition": "current_session == 'NEW_YORK' and active_martingale_steps > 1",
+        "action": "FORCE_CRISIS_CLOSE",
+        "fallback": "NORMAL_OPERATION"
+      },
+      "inputs": [
+        "current_session",
+        "active_martingale_steps"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "بستن اجباری در این زمان ممکن است درست در اوج ضرر شناور رخ دهد و زیان سنگینی را تثبیت کند."
+      ],
+      "approval_blockers": [
+        "عدم وجود الگوریتم خروج بهینه در صورت گیر افتادن در پله‌های بالا قبل از نیویورک.",
+        "غیرقابل تأیید در وضعیت فعلی."
+      ]
+    },
+    {
+      "rule_id": "STR-010",
+      "name": "Economic News Calendar Filter",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۸ و صفحه ۱۲",
+      "exact_source_text": "در روزهایی که تقویم اقتصادی بررسی شده و هیچ خبر مهم و تاثیرگذاری وجود ندارد... در روزهای انتشار اخبار بسیار مهم، ترجیحاً از بازار خارج باشید یا با ریسک بسیار پایین و برای بازه زمانی محدود فعالیت کنید (روزهای FOMC, CPI و سایر داده‌های مهم).",
+      "interpretation": "در ساعات مجاور یا روزهای انتشار داده‌های پرتاثیر تقویم اقتصادی آمریکا، موتور معاملاتی باید مسدود شود.",
+      "executable_definition": {
+        "condition": "high_impact_news_window_active == True",
+        "action": "BLOCK_ALL_ORDERS",
+        "fallback": "CHECK_CALENDAR_HEALTH"
+      },
+      "inputs": [
+        "high_impact_news_window_active"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "سند فاصله دقیق زمانی قبل و بعد از خبر (مثلاً ۳۰ دقیقه یا ۲ ساعت) را به صورت عددی مشخص نکرده است."
+      ],
+      "approval_blockers": [
+        "پروژه در حال حاضر فید برخط تقویم اقتصادی متصل به متاتریدر ندارد.",
+        "غیرقابل تأیید خودکار."
+      ]
+    },
+    {
+      "rule_id": "STR-011",
+      "name": "Weekend and Week-Start Caution Filter",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۸ و صفحه ۱۲",
+      "exact_source_text": "عدم استفاده در روزهای شروع هفته، شروع ماه و روز جمعه... دوشنبه‌ها (به‌ویژه ابتدای ماه) و جمعه‌ها سطح احتیاط را افزایش دهید. جمعه به دلیل ریسک گپ آخر هفته اهمیت بیشتری دارد.",
+      "interpretation": "در روزهای دوشنبه و جمعه باید از فعالیت با حجم بالا یا فعال‌سازی چرخه‌های پرریسک اجتناب شود.",
+      "executable_definition": {
+        "condition": "day_of_week in ['MONDAY', 'FRIDAY']",
+        "action": "ENFORCE_MINIMUM_RISK_PROFILE",
+        "fallback": "STANDARD_RISK_PROFILE"
+      },
+      "inputs": [
+        "day_of_week"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "سند مشخص نکرده آیا جمعه کلاً باید خاموش باشد یا فقط ساعات بعدازظهر."
+      ],
+      "approval_blockers": [
+        "تعریف غیردقیق پارامترهای زمانی روزهای پایانی هفته.",
+        "معلق برای بازبینی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-012",
+      "name": "Arithmetic Martingale Grid Stepping",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۸ و ۱۲",
+      "exact_source_text": "سیستم مارتینگل (پله‌ریزی حجم) مهم‌ترین و در عین حال سودآورترین بخش الگوریتم ربات است... نمونه ساختار پله‌های مارتینگل (حالت ریسک بالاتر): پله ۱: ۰.۰۵، پله ۲: ۰.۱۰، پله ۳: ۰.۱۵، پله ۴: ۰.۲۰، پله ۵: ۰.۲۵، پله ۶: ۰.۳۰، پله ۷: ۰.۳۵ لات.",
+      "interpretation": "محاسبه تصاعد حسابی حجم در صورت حرکت قیمت در جهت مخالف با گام افزایشی ثابت ۰.۰۵ لات به ازای هر پله.",
+      "executable_definition": {
+        "step_lot_formula": "lot(step_k) = base_lot + (step_k - 1) * 0.05",
+        "max_steps": 7,
+        "action": "CALCULATE_NEXT_GRID_LOT",
+        "fallback": "REJECT_UNCHECKED_MARTINGALE"
+      },
+      "inputs": [
+        "base_lot",
+        "step_k"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "تصاعد مارتینگل بدون محدودیت در بازارهای روندی شدید طلا منجر به کال مارجین حتمی حساب می‌شود (مطابق نتایج سند KX Eight Myths).",
+        "فاصله قیمتی یا پیپی بین پله‌ها در سند ذکر نشده است."
+      ],
+      "approval_blockers": [
+        "مغایرت بنیادین با قضیه ورشکستگی قمارباز (Gambler's Ruin Theorem) و اثبات شکست قطعی در ممیزی ۴۳ میلیون معامله واقعی در سند KX Eight Myths.",
+        "چولگی منفی شدید (Negative Skewness) و ریسک دم کشنده؛ تحمیل تعهد ۱.۴۰ لات در ۷ پله روی طلا که در حرکت ۱۰ دلاری بدون پولبک به کال مارجین حساب می‌انجامد.",
+        "مسدود قطعی برای هرگونه معامله خودکار (BLOCKED_FROM_APPROVAL)؛ به صورت دائم در وضعیت UNAPPROVED باقی می‌ماند."
+      ]
+    },
+    {
+      "rule_id": "STR-013",
+      "name": "H1/H4 Major Technical Level Validation in Crisis",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۹ و صفحه ۱۴",
+      "exact_source_text": "در مواقعی که ریسک افزایش یافته و مارتینگل فعال شده... به چارت مراجعه کنید؛ اگر ربات روی فروش مارتینگل کرده و قیمت به یک مقاومت ماژور رسیده است (یا روی خرید به حمایت ماژور رسیده)، جای نگرانی نیست؛ ربات میانگین کم کرده و با برگشت قیمت معامله با سود بسته می‌شود.",
+      "interpretation": "در فاز بحران، تصمیم‌گیری پیرامون حفظ پوزیشن‌ها منوط به قرارگیری قیمت در زون‌های ماژور تایم‌فریم H1 و H4 است.",
+      "executable_definition": {
+        "condition": "price_near_major_support_resistance(H1, H4) == True",
+        "action": "PERMIT_PULLBACK_HOLD",
+        "fallback": "FLAG_NO_TECHNICAL_SUPPORT"
+      },
+      "inputs": [
+        "price",
+        "major_sr_levels_h1_h4"
+      ],
+      "timeframe": "H1/H4",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "تعریف 'ماژور' در سند کاملاً سلیقه‌ای و کیفی بیان شده و هیچ فرمول ریاضی برای پیوت، سوئینگ یا فرکتال ارائه نشده است."
+      ],
+      "approval_blockers": [
+        "فقدان الگوریتم مدون برای تشخیص عینی سطوح ماژور.",
+        "نیازمند مداخله انسانی."
+      ]
+    },
+    {
+      "rule_id": "STR-014",
+      "name": "Manual Loss Acceptance Stop Rule",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۹ و صفحه ۱۴",
+      "exact_source_text": "در صورتی که هیچ سطح تکنیکال معتبری در نزدیکی قیمت مشاهده نمی‌شود، شخصاً و به صورت دستی معاملات را ببندید. هر زمان ضرر مجموع به حداقل رسید، ضرر را بپذیرید و از شر معاملات مارتینگل خلاص شوید. پذیرفتن ۱۰۰ الی ۲۰۰ دلار ضرر بسیار عاقلانه‌تر از استاپ خوردن کل حساب است.",
+      "interpretation": "در نبود سطح ماژور، کاربر باید کل پوزیشن‌های پله‌ای را با ضرر محدود (۱۰۰ تا ۲۰۰ دلار) ببندد.",
+      "executable_definition": {
+        "condition": "no_major_level_ahead == True and unrealized_loss >= 100.0",
+        "action": "EMERGENCY_DISCRETIONARY_EXIT",
+        "fallback": "CONTINUE_GRID_EVALUATION"
+      },
+      "inputs": [
+        "no_major_level_ahead",
+        "unrealized_loss"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "قاعده غیرالگوریتمی و متکی به سرعت دست، احساسات کاربر، و قضاوت ذهنی است."
+      ],
+      "approval_blockers": [
+        "عدم قابلیت خودکارسازی بدون فرمولاسیون قطعی.",
+        "غیرقابل تأیید در رجیستری خودکار."
+      ]
+    },
+    {
+      "rule_id": "STR-015",
+      "name": "Fixed Spread Broker Sensitivity Lock",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۱۴",
+      "exact_source_text": "ربات نسبت به تغییرات اسپرد حساسیت بالایی دارد. اسپرد شناور می‌تواند منجر به عدم باز شدن معاملات، استاپ‌های غیرمنتظره یا رفتار غیرقابل پیش‌بینی شود. بروکر GTC اسپرد ثابت ۱۸ ارائه می‌دهد که در طول روز تقریباً بدون تغییر باقی می‌ماند.",
+      "interpretation": "اجرای ربات تنها در شرایط اسپرد پایدار و زیر ۱۸ پوینت مجاز دانسته شده است.",
+      "executable_definition": {
+        "condition": "current_spread_points <= 18",
+        "action": "PERMIT_SPREAD_EXECUTION",
+        "fallback": "SPREAD_EXCEEDED_HALT"
+      },
+      "inputs": [
+        "current_spread_points"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "بروکرها معمولاً در زمان اخبار، بازگشایی و پایان روز اسپرد طلا را چند برابر افزایش می‌دهند؛ مفهوم 'اسپرد ثابت دائمی' در بازار ECN طلا غیرواقعی است."
+      ],
+      "approval_blockers": [
+        "ناسازگاری بنیادین با ریزساختار بازار بین‌بانکی طلا؛ نماد XAUUSD دارای اسپرد کاملاً شناور است و ادعای اسپرد ثابت ۱۸ پوینت در بروکرهای استاندارد ناممکن است.",
+        "تعارض قطعی با دیتابیس واقعی پروژه (data/raw/xauusd_m1.parquet) که نشان‌دهنده اسپرد شناور با جهش‌های چند برابری در زمان اخبار و رول‌اور است.",
+        "مسدود قطعی برای هرگونه معامله خودکار (BLOCKED_FROM_APPROVAL)؛ به صورت دائم در وضعیت UNAPPROVED باقی می‌ماند."
+      ]
+    },
+    {
+      "rule_id": "STR-016",
+      "name": "EA Operational Credential Check",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۶",
+      "exact_source_text": "سپس به تب Inputs بروید. در ردیف user_password، رمز عبور اختصاصی (AmirActive) را دقیقاً وارد کنید.",
+      "interpretation": "فایل کامپایل‌شده ربات به رمز عبور امیر اکتیو جهت فعال‌سازی وابستگی دارد.",
+      "executable_definition": {
+        "condition": "input_password == 'AmirActive'",
+        "action": "AUTHORIZE_MODULE",
+        "fallback": "AUTHENTICATION_FAILED"
+      },
+      "inputs": [
+        "input_password"
+      ],
+      "timeframe": "N/A",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "نشان‌دهنده بسته بودن و اختصاصی بودن باینری متاتریدر بدون دسترسی به کدهای منبع MQL5."
+      ],
+      "approval_blockers": [
+        "پروژه اجازه اجرای باینری بدون ممیزی کد منبع را ندارد.",
+        "معلق در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-017",
+      "name": "Allow Algo Trading Platform Prerequisite",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۵ و ۷",
+      "exact_source_text": "حتماً تیک گزینه Allow Algo Trading را فعال کنید... در نوار ابزار متاتریدر روی دکمه Algo Trading کلیک کنید تا آیکون آن سبز شود.",
+      "interpretation": "مجوز انجام معامله خودکار در متاتریدر باید هم در سطح ترمینال و هم در سطح اکسپرت فعال باشد.",
+      "executable_definition": {
+        "condition": "terminal_algo_trading_allowed == True",
+        "action": "ENABLE_ALGO_FLAG",
+        "fallback": "BLOCK_ORDER_SEND"
+      },
+      "inputs": [
+        "terminal_algo_trading_allowed"
+      ],
+      "timeframe": "N/A",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "در معماری ایمنی پروژه فعلی، ارسال سفارش زنده غیرفعال است (EXECUTION_MODE=SIGNAL_ONLY)."
+      ],
+      "approval_blockers": [
+        "محدودیت ایمنی فاز O صدور هرگونه سفارش زنده یا دمو را ممنوع کرده است.",
+        "رد قطعی برای فعال‌سازی در این فاز."
+      ]
+    },
+    {
+      "rule_id": "STR-018",
+      "name": "Mandatory Continuous VPS Hosting",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۸ و ۱۴",
+      "exact_source_text": "اولین و مهم‌ترین پیش‌نیاز تهیه یک VPS پایدار است. ربات و نرم‌افزار متاتریدر باید به صورت ۲۴ ساعته روی این سرور فعال باشند تا هیچ اختلالی در روند کار ربات ایجاد نشود.",
+      "interpretation": "سیستم معاملاتی باید روی سرور مجازی پایدار با اتصال بدون وقفه اینترنت و برق مستقر باشد.",
+      "executable_definition": {
+        "condition": "hosting_environment == 'VPS' and uptime_pct >= 99.9",
+        "action": "CONFIRM_HOST_HEALTH",
+        "fallback": "WARN_HOST_RISK"
+      },
+      "inputs": [
+        "hosting_environment",
+        "uptime_pct"
+      ],
+      "timeframe": "N/A",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "سرورهای VPS نیز ممکن است دچار ری‌استارت ویندوز یا قطعی اتصال متاتریدر شوند."
+      ],
+      "approval_blockers": [
+        "عدم اعتبارسنجی مستقل سرور میزبان.",
+        "معلق در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-019",
+      "name": "Prohibition of Unsupervised Continuous 24h Operation",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۱۱ و ۱۵",
+      "exact_source_text": "از روشن نگه‌داشتن ۲۴ ساعته ربات خودداری کنید. این رویکرد با ماهیت اسکالپ و مدیریت سرمایه اصولی در تضاد است... رها کردن کامل سیستم بدون نظارت، توصیه نشدنی است.",
+      "interpretation": "سیستم نباید به صورت ۲۴ ساعته بی‌وقفه و بدون نظارت انسان فعال رها شود.",
+      "executable_definition": {
+        "condition": "continuous_runtime_hours <= 12 and supervisor_heartbeat == True",
+        "action": "MAINTAIN_EXECUTION",
+        "fallback": "AUTO_SHUTDOWN_TIMER"
+      },
+      "inputs": [
+        "continuous_runtime_hours",
+        "supervisor_heartbeat"
+      ],
+      "timeframe": "N/A",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "تضاد ظاهری با بند الزام اجرای ۲۴ ساعته VPS در صفحه ۸ سند (در ادامه تصریح شده که روشن بودن سرور ۲۴ ساعته است اما معامله باید در بازه محدود باشد)."
+      ],
+      "approval_blockers": [
+        "نیاز به پیاده‌سازی تایمر خودکار خاموشی در پروژه.",
+        "معلق در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-020",
+      "name": "Discretionary Risk-On Eligibility Preconditions",
+      "category": "SCALPER_EA",
+      "status": "UNAPPROVED",
+      "source_document": "راهنمای_جامع_و_سند_راهبردی_ربات_اسکلپر_1 (2).pdf",
+      "source_reference": "صفحه ۸",
+      "exact_source_text": "استراتژی افزایش ریسک (مقطعی): حجم بین ۰.۱۰ تا ۰.۵۰ لات فقط و فقط تحت شرایط: ۱. زمان‌های خلوت بازار (قبل از نیویورک) ۲. بدون خبر در تقویم اقتصادی ۳. عدم وجود گپ قیمتی ۴. عدم استفاده در دوشنبه، شروع ماه و جمعه.",
+      "interpretation": "افزایش حجم به سطوح پرریسک مشروط به احراز هم‌زمان چهار شرط عدم خبر، عدم گپ، زمان خلوت و روز میانی هفته است.",
+      "executable_definition": {
+        "condition": "quiet_hours == True and no_news == True and no_gap == True and mid_week == True",
+        "action": "PERMIT_INCREASED_LOT_RANGE",
+        "fallback": "RESTRICT_TO_BASELINE_LOT"
+      },
+      "inputs": [
+        "quiet_hours",
+        "no_news",
+        "no_gap",
+        "mid_week"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "افزایش لات پایه به ۰.۵۰ در گام اول، پله هفتم مارتینگل را به ۳.۵ لات می‌رساند که برای حساب ۱۰ هزار دلاری ریسک فروپاشی فوری دارد."
+      ],
+      "approval_blockers": [
+        "ریسک فاجعه‌بار اهرم و حجم.",
+        "رد کامل برای فعال‌سازی خودکار."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-001",
+      "name": "Data and Dependency Lock Valid (RULE-PA-DATA-VALID)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "6332607065685434115_526865520591018.zip",
+      "source_reference": "kx-professional-classical-price-action-expert/assets/rule-catalog.yaml",
+      "exact_source_text": "rule_id: RULE-PA-DATA-VALID, name: Data and dependency lock valid, rule_kind: BOOLEAN_TRISTATE, pseudocode: if any required fact missing return CANNOT_DETERMINE; if all facts true return TRUE; else return FALSE",
+      "interpretation": "پیش‌شرط ارزیابی پرایس اکشن، تطابق کامل داده‌های کندلی قرارداد DT-P1 و عدم وجود داده مفقود است.",
+      "executable_definition": {
+        "condition": "dt_p1_valid == True and foundations_pinned == True",
+        "action": "TRUE",
+        "fallback": "CANNOT_DETERMINE"
+      },
+      "inputs": [
+        "dt_p1_valid",
+        "foundations_pinned"
+      ],
+      "timeframe": "ALL",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "تغییر ساختار کندل یا عدم تطابق سشن‌ها داده را نامعتبر می‌کند."
+      ],
+      "approval_blockers": [
+        "وضعیت قانون به عنوان استاندارد مهندسی در بسته مدون قرار دارد اما برای استفاده به عنوان تریگر تجاری نیازمند تأیید در فاز P است."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-002",
+      "name": "Closed-Bar Predicate Eligibility (RULE-PA-CLOSED-BAR)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "6332607065685434115_526865520591018.zip",
+      "source_reference": "kx-professional-classical-price-action-expert/assets/rule-catalog.yaml",
+      "exact_source_text": "rule_id: RULE-PA-CLOSED-BAR, name: Closed-bar predicate eligible, rule_kind: BOOLEAN_TRISTATE",
+      "interpretation": "هیچ سیگنال یا شکستی پیش از اتمام و بسته شدن رسمی کندل باز در حال تشکیل قابل محاسبه نیست.",
+      "executable_definition": {
+        "condition": "bar_is_closed == True",
+        "action": "TRUE",
+        "fallback": "FALSE"
+      },
+      "inputs": [
+        "bar_is_closed"
+      ],
+      "timeframe": "M1, M5, M15, H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "در اسکلپ‌های بسیار سریع ممکن است تاخیر بسته‌شدن کندل ۱ دقیقه قیمت مطلوب را از بین ببرد."
+      ],
+      "approval_blockers": [
+        "معلق برای ارزیابی با بک‌تست فاز بعدی."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-003",
+      "name": "Structural Zone Boundary Resolution (RULE-PA-SR-ZONE)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "6332607065685434115_526865520591018.zip",
+      "source_reference": "kx-professional-classical-price-action-expert/assets/rule-catalog.yaml",
+      "exact_source_text": "rule_id: RULE-PA-SR-ZONE, name: Structural zone resolved, rule_kind: OBJECT_SPECIFIC_TRISTATE",
+      "interpretation": "سطوح حمایت و مقاومت به صورت یک پهنه (Zone) با حد بالا و پایین و تلرانس محاسبه می‌شوند نه یک خط دقیق ریاضی.",
+      "executable_definition": {
+        "condition": "zone_upper >= zone_lower and zone_touch_count >= 2",
+        "action": "RESOLVE_ZONE_OBJECT",
+        "fallback": "CANNOT_DETERMINE"
+      },
+      "inputs": [
+        "swing_highs",
+        "swing_lows",
+        "tolerance"
+      ],
+      "timeframe": "H1, H4",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "اندازه تلرانس در نمادهای پرنوسان مانند طلا نیاز به تنظیم پارامتریک با ضریب ATR دارد."
+      ],
+      "approval_blockers": [
+        "نیاز به کالیبراسیون مقدار تلرانس زون در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-004",
+      "name": "Breakout Confirmation Tri-State",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "6332607065685434115_526865520591018.zip",
+      "source_reference": "kx-professional-classical-price-action-expert/assets/conflict-register.yaml",
+      "exact_source_text": "conflict_id: CNF-PA-BREAKOUT, question: Intrabar cross versus close confirmation versus follow-through/retest, resolution: Require breakout confirmation profile",
+      "interpretation": "شکست یک سطح نیازمند عبور کل بدنه یا کندل تأییدی مجزا است و نفوذ سایه درون کندل نقض سطح محسوب نمی‌شود.",
+      "executable_definition": {
+        "condition": "bar_close > zone_upper and next_bar_confirms == True",
+        "action": "CONFIRMED_BREAKOUT",
+        "fallback": "POTENTIAL_FALSE_BREAK"
+      },
+      "inputs": [
+        "bar_close",
+        "zone_upper",
+        "next_bar_confirms"
+      ],
+      "timeframe": "H1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "تعریف فالو-ترو (کندل بعدی) در نوسانات سریع طلا ممکن است منجر به ورود در انتهای حرکت شود."
+      ],
+      "approval_blockers": [
+        "معلق برای بازبینی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-005",
+      "name": "Fail-Closed Cannot-Determine Boundary Law",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "6332607065685434115_526865520591018.zip",
+      "source_reference": "kx-professional-classical-price-action-expert/governance/FINAL_PRODUCT_RULINGS.md",
+      "exact_source_text": "A timeframe with insufficient evidence is silent; it does not vote support or conflict... Current analysis distinguishes Active, Pending and cannot-determine states.",
+      "interpretation": "چنانچه شواهد کافی برای تحلیل یک تایم‌فریم یا الگو موجود نباشد، خروجی سیستم باید مسدود (CANNOT_DETERMINE) بماند و حق رأی تصادفی ندارد.",
+      "executable_definition": {
+        "condition": "insufficient_history == True or profile_missing == True",
+        "action": "RETURN_CANNOT_DETERMINE",
+        "fallback": "EVALUATE_ACTIVE_PENDING"
+      },
+      "inputs": [
+        "history_depth",
+        "profile_resolution"
+      ],
+      "timeframe": "ALL",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "در صورت قطع موقت داده‌ها سیستم کل سیگنال‌ها را متوقف می‌کند که برای استراتژی‌های پیوسته محافظه‌کارانه است."
+      ],
+      "approval_blockers": [
+        "معلق جهت اعتبارسنجی یکپارچه در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-OF-001",
+      "name": "Volume Profile Value Area Boundary Rule",
+      "category": "ORDER_FLOW",
+      "status": "UNAPPROVED",
+      "source_document": "جزوه_بازطراحی_پروفایل_و_اوردر_فلو_جلسات_۱۱_تا_۲۵.docx",
+      "source_reference": "جلسه ۱۱ پاراگراف ۲۳ و ۳۱",
+      "exact_source_text": "Volume Profile توزیع حجم را روی محور قیمت نشان می‌دهد... در خواندن پروفایل، POC، Value Area، VAH و VAL و گره‌های حجمی مهم هستند و باید در کنار شکل کلی پروفایل دیده شوند.",
+      "interpretation": "ناحیه ارزش شامل ۶۸ درصد حجم معامله‌شده روزانه به عنوان محدوده قیمت منصفانه در نظر گرفته می‌شود.",
+      "executable_definition": {
+        "condition": "price >= VAL and price <= VAH",
+        "action": "INSIDE_VALUE_AREA",
+        "fallback": "OUTSIDE_VALUE_AREA"
+      },
+      "inputs": [
+        "price",
+        "VAL",
+        "VAH"
+      ],
+      "timeframe": "M1, M5, M15",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "محاسبه دقیق پروفایل نیاز به حجم واقعی معاملات (Real Volume) دارد نه تیک‌والیوم متاتریدر."
+      ],
+      "approval_blockers": [
+        "داده‌های فارکس متاتریدر صرفاً تیک‌والیوم هستند نه حجم قراردادهای مبادله‌شده.",
+        "معلق در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-OF-002",
+      "name": "Order Flow Absorption at Key Boundary",
+      "category": "ORDER_FLOW",
+      "status": "UNAPPROVED",
+      "source_document": "جزوه_بازطراحی_پروفایل_و_اوردر_فلو_جلسات_۱۱_تا_۲۵.docx",
+      "source_reference": "جزوه_بازطراحی_پروفایل_و_اوردر_فلو_جلسات_۱۱_تا_۲۵.docx، جلسه ۲۲ (Absorption، Exhaustion و واگرایی Delta)، پاراگراف‌های ۷۱۰ تا ۷۲۶",
+      "exact_source_text": "Absorption یعنی حجم تهاجمی قابل‌توجه وارد می‌شود اما نقدینگی مقابل اجازه پیشروی زیادی نمی‌دهد. برای جذب فروش، فروش تهاجمی در Bid زیاد است اما کف جدید محدود یا ناپایدار می‌ماند و سپس قیمت می‌تواند سطح را پس بگیرد... Delta منفی بزرگ در VAL اگر فقط چند Tick پیشروی ایجاد کند و سپس قیمت سطح را پس بگیرد، می‌تواند نامزد Absorption باشد.",
+      "exact_source_text_sha256": "3f9e91270e32dff30d7abf8eab63a89c0113c29a9979f8aa8c234df1079ab9e3",
+      "interpretation": "مشاهده حجم معاملات مارکت شدید بدون تغییر قیمت نشان‌دهنده جذب نقدینگی توسط پول هوشمند است.",
+      "executable_definition": {
+        "condition": "delta_volume >= threshold and price_progress_ticks == 0",
+        "action": "FLAG_ABSORPTION",
+        "fallback": "NORMAL_DELTA_FLOW"
+      },
+      "inputs": [
+        "delta_volume",
+        "price_progress_ticks"
+      ],
+      "timeframe": "M1",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "نیازمند فید تیک‌به‌تیک واقعی و اطلاعات Bid/Ask مجزا در لحظه معامله است."
+      ],
+      "approval_blockers": [
+        "عدم وجود داده جریان سفارشات تیک و عمق بازار (L2/DOM) در متاتریدر ۵ یا دیتای فعلی پروژه.",
+        "ممنوعیت صریح استنتاج دلتا، فوت‌پرینت یا جذب از کندل‌های OHLC متاتریدر ۵ طبق مشخصات مهندسی بسته KX (سند data-contract.yaml و claim-ledger.yaml CLM-PA-018).",
+        "تا زمان اتصال دیتای متمرکز فیوچرز کامکس (CME GC)، این قانون مسدود (BLOCKED) است و در وضعیت UNAPPROVED باقی می‌ماند."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-RTM-001",
+      "name": "RTM Flag Limit Zone (FL)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحات ۶۵ تا ۶۸",
+      "exact_source_text": "FL = Flag Limit Zone: اولین الگوی ترید در RTM. تشکیل در حوالی مناطق SR. SR ماژور باعث ایجاد فلگ‌های قوی‌تری می‌شود. SR با حرکت ناگهانی اینگلف می‌شود. حتماً حتماً کندل Base باید ایجاد شود. پس از تشکیل و تایید کندل مومنتوم زون قطعی است. معامله روی FTB (First Time Back).",
+      "interpretation": "ناحیه فلگ لیمیت بر روی یک سطح حمایت/مقاومت شکسته شده با تشکیل کندل بیس و تایید خروج پرمومنتوم ساخته می‌شود و ورود در اولین بازگشت (FTB) به این زون صورت می‌گیرد.",
+      "executable_definition": {
+        "condition": "level_engulfed_with_momentum == True and base_candle_formed == True and retest_is_first_time_back == True",
+        "action": "ENTER_LIMIT_ORDER_AT_FL",
+        "fallback": "ZONE_INVALIDATED"
+      },
+      "inputs": [
+        "sr_level",
+        "breakout_momentum",
+        "base_candle",
+        "ftb_touch"
+      ],
+      "timeframe": "M15, H1, H4",
+      "symbol": "XAUUSD, EURUSD",
+      "ambiguities_and_risks": [
+        "تعداد و اندازه دقیق کندل‌های بیس (۱ تا ۴ کندل دوجی/کوچک) در تایم‌فریم‌های مختلف نیاز به تعریف تلرانس دارد."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-RTM-002",
+      "name": "RTM Failure to Return (FTR)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحات ۶۸ تا ۷۲",
+      "exact_source_text": "FTR : Failure to Return: دومین الگوی ترید در RTM. در FL یک اینگلف داریم ولی در FTR دو بار. مراحل تشکیل FTR: ۱-تشکیل یک SnR ۲-اینگلف شدن و شکست قوی SnR ۳-ساخته شدن SnR دوم ۴-برگشت قیمت از SnR دوم و تشکیل کندل Base ۵-اینگلف شدن و شکست قوی SnR دوم. اولویت با آن‌هایی است که مومنتوم بیشتری داشته است. در روندها بعد از Fail شدن آخرین FTR آن روند از دست رفته است.",
+      "interpretation": "الگوی ناتوانی در بازگشت شامل شکست سطح اول، اصلاح و ساخت سطح دوم و بیس، و سپس شکست قدرتمند سطح دوم است. با نقض آخرین FTR روند رسماً خاتمه‌یافته تلقی می‌شود.",
+      "executable_definition": {
+        "condition": "snr1_engulfed == True and base_formed_between_snr == True and snr2_engulfed == True",
+        "action": "FLAG_FTR_ZONE",
+        "invalidation": "last_ftr_broken == True -> TREND_TERMINATED"
+      },
+      "inputs": [
+        "snr1",
+        "snr2",
+        "base_candles",
+        "breakout_strength"
+      ],
+      "timeframe": "M15, H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "تشخیص اتوماتیک SnR اول و دوم نیازمند الگوریتم فراکتال پیوت دقیق است."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-RTM-003",
+      "name": "RTM Price Action Zone (PAZ)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحات ۷۲ تا ۷۳",
+      "exact_source_text": "محدوده PAZ: محدوده‌ای که قیمت بین دو الگوی RTM قرار می‌گیرد. هرگاه الگو Fail شود و وارد PAZ شویم منتظریم به احتمال بسیار زیاد الگوی بعدی هم Fail شود و وارد PAZ بعدی شویم.",
+      "interpretation": "منطقه بین دو زون اصلی RTM به عنوان محدوده بدون مانع (PAZ) تعریف می‌شود؛ شکست یک زون موجب تسریع حرکت به سمت زون بعدی در PAZ می‌شود.",
+      "executable_definition": {
+        "condition": "boundary_zone_failed == True",
+        "action": "EXPECT_FAST_TRANSIT_TO_NEXT_ZONE",
+        "fallback": "MONITOR_IN_ZONE"
+      },
+      "inputs": [
+        "upper_rtm_zone",
+        "lower_rtm_zone",
+        "breakout_status"
+      ],
+      "timeframe": "M15, H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "در صورت کمبود نقدینگی، قیمت ممکن است در میانه PAZ دچار توقف‌های پیش‌بینی‌نشده شود."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-RTM-004",
+      "name": "RTM Caps Pattern (Institutional Profit Taking)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحات ۷۳ تا ۷۵",
+      "exact_source_text": "الگوی Caps: منطقه سیوسود نهنگ‌هاست. اولین الگوی برگشتی RTM. بعد تشکیل تغییر حرکت بزرگی خواهیم داشت. صعود با مومنتوم، سپس تصمیم موسسات برای سیوسود، ریزش، شروع حرکت رنج و فریب معامله‌گران خرد و ناگهان ریزش بزرگ! آناتومی الگوی Caps ایده‌آل: ۱-تشکیل زون Authentic اولیه ۲-تشکیل RBR/DBD ۳-اینگلف شدن زون Authentic ۴-تارگت یک زون مهم در جهت مخالف مانند FL یا FTR.",
+      "interpretation": "الگوی کپس یک ساختار چرخش روند ناشی از خروج نقدینگی نهادی است که پس از اینگلف زون اولیه، هدف قیمتی آن رسیدن به فلگ لیمیت یا FTR مخالف است.",
+      "executable_definition": {
+        "condition": "authentic_zone_engulfed == True and consolidation_trap_confirmed == True",
+        "action": "ENTER_CAPS_REVERSAL",
+        "target": "opposing_fl_or_ftr"
+      },
+      "inputs": [
+        "authentic_zone",
+        "consolidation_range",
+        "opposing_target_zone"
+      ],
+      "timeframe": "H1, H4",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "تفسیر نیت نهنگ‌ها و فریب بازار یک مفهوم کیفی است و نیازمند شواهد ساختاری کندل است."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-RTM-005",
+      "name": "RTM SWAP Levels",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحه ۷۶",
+      "exact_source_text": "سطوح SWAP: تغییر ذهنیت در بازار: مثلاً در سطح مقاومت ذهنیت فروش بوده ولی بعد شکست ذهنیت خرید ایجاد می‌گردد. دومین الگوی برگشتی. تغییر زون با مومنتوم.",
+      "interpretation": "تغییر نقش سطح حمایت به مقاومت یا برعکس که با کندل پرقدرت مومنتوم شکسته شده باشد.",
+      "executable_definition": {
+        "condition": "resistance_broken_with_momentum == True and retested_as_support == True",
+        "action": "CONFIRM_SWAP_SUPPORT",
+        "fallback": "FAILED_SWAP"
+      },
+      "inputs": [
+        "sr_level",
+        "momentum_bar",
+        "retest_bar"
+      ],
+      "timeframe": "M15, H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "نفوذهای سایه (شدود) ممکن است با شکست واقعی اشتباه گرفته شوند."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-RTM-006",
+      "name": "RTM Compression Pattern (CP)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحات ۷۷ تا ۷۸",
+      "exact_source_text": "الگوی CP (Compression): نشانه تغییر روند. همان الگوی کنج در تحلیل تکنیکال کلاسیک. بعد تشکیل یک زون از بین می‌رود و حرکت شارپی داریم. نقطه شروع فشردگی تارگت اول است. زاویه فشردگی نباید کمتر از ۴۵ درجه باشد! زون در ابتدا باید تست شود.",
+      "interpretation": "حرکت فشرده قیمت با زاویه حداقل ۴۵ درجه به سمت یک زون، نقدینگی سر راه را جمع‌آوری کرده و پس از برخورد به زون، حرکت شارپی معکوس به سمت آغاز فشردگی رخ می‌دهد.",
+      "executable_definition": {
+        "condition": "compression_slope_deg >= 45 and zone_tested == True",
+        "action": "PREPARE_REVERSAL_ORDER",
+        "target": "compression_origin"
+      },
+      "inputs": [
+        "price_slope",
+        "target_zone",
+        "compression_start_price"
+      ],
+      "timeframe": "M15, H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "محاسبه زاویه ۴۵ درجه به مقیاس چارت (Scale) بستگی دارد و باید با رگرسیون نرمالایز شود."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-RTM-007",
+      "name": "RTM 3 Drive Approach Filter",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحات ۷۸ تا ۷۹",
+      "exact_source_text": "الگوی 3 Drive: مانند الگوی فشردگی نحوه رسیدن به زون را بررسی می‌کند. در راه رسیدن به زون ۳ مثلث صعودی/نزولی می‌سازد. الگوی برگشتی است و انتظار تغییر روند شدید داریم. روی الگوی 3D ترید نمی‌کنیم! (همان الگوی 3Drive هارمونیک است).",
+      "interpretation": "تشکیل ۳ قله یا دره متوالی فشرده به عنوان هشدار پایان روند است. قانون صریح سند: نباید مستقیماً روی خود امواج 3D معامله کرد، بلکه باید منتظر واکنش زون اصلی ماند.",
+      "executable_definition": {
+        "condition": "three_drive_formed == True and zone_reached == False",
+        "action": "PROHIBIT_TRADE_UNTIL_ZONE_REACTION",
+        "fallback": "NORMAL_EVALUATION"
+      },
+      "inputs": [
+        "swing_swings_count",
+        "distance_to_zone"
+      ],
+      "timeframe": "M15, H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "شناسایی امواج سه‌گانه متقارن نیازمند نسبت‌های هارمونیک دقیق است."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-RTM-008",
+      "name": "RTM Liquidity Spike (LQ)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحه ۸۰",
+      "exact_source_text": "LQ = Liquidity Spike: نمایش آخرین قدرت خریداران/فروشندگان. یک حرکت شارپ قبل از تغییر روند. معمولاً یک فشردگی قبل از رسیدن به زون داریم و بعد از آن زون اصلی وجود دارد.",
+      "interpretation": "پرتاب سریع قیمت فراتر از محدوده رنج برای شکار استاپ‌ها قبل از ریزش یا صعود ناگهانی.",
+      "executable_definition": {
+        "condition": "compression_precedes == True and sharp_spike_into_liquidity == True",
+        "action": "FLAG_EXHAUSTION_SPIKE",
+        "fallback": "CONTINUATION_BREAKOUT"
+      },
+      "inputs": [
+        "bar_volatility",
+        "wick_size",
+        "liquidity_pool_level"
+      ],
+      "timeframe": "M1, M5, M15",
+      "symbol": "XAUUSD",
+      "ambiguities_and_risks": [
+        "تشخیص اسپایک نقدینگی از شکست معتبر در تایم‌های کوچک نیازمند بررسی بسته شدن کندل است."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-RTM-009",
+      "name": "RTM Quasimodo Pattern (QM)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحات ۸۱ تا ۸۲",
+      "exact_source_text": "الگوی QM (Quasimodo): قدرتمندترین الگوی برگشتی. یک اینگلف در جهت و یک اینگلف در خلاف جهت. برای ورود در اینگلف QM Zone وارد می‌شویم. بررسی مفهوم QM - MPL (Maximum Pain Level).",
+      "interpretation": "الگوی کوازیمودو شامل شکست سقف قبلی (Higher High) و سپس شکست کف قبلی (Lower Low) در روند صعودی است. نقطه ورود بازگشت قیمت به خط شانه چپ / زون MPL است.",
+      "executable_definition": {
+        "condition": "swing_high_exceeded == True and swing_low_engulfed == True and price_returns_to_left_shoulder == True",
+        "action": "ENTER_LIMIT_AT_QM_LEVEL",
+        "stop_loss": "beyond_highest_high"
+      },
+      "inputs": [
+        "left_shoulder",
+        "highest_high",
+        "lower_low",
+        "mpl_price"
+      ],
+      "timeframe": "M15, H1, H4",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "تعیین نقطه دقیق MPL بین شانه چپ و سقف ماژور نیازمند زون‌بندی ظریف است."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-RTM-010",
+      "name": "RTM Diamond Pattern (Failed QM)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحات ۸۳ تا ۸۴",
+      "exact_source_text": "الگوی الماس Diamond: الگوی بازگشتی. زمان از دست رفتن الگوی QM تشکیل می‌شود. چهار اینگلف خواهیم داشت و رسماً استاپ همه معامله‌گران خواهد خورد! همان الگوی الماس در الگوهای کلاسیک است.",
+      "interpretation": "چنانچه الگوی QM فیل شود و هر دو سمت را با ۴ بار اینگلف متوالی متوقف کند، الگوی دایموند تشکیل می‌شود که نشان‌دهنده تغییر جهت نهایی روند است.",
+      "executable_definition": {
+        "condition": "qm_failed == True and diamond_boundaries_resolved == True and breakout_confirmed == True",
+        "action": "ENTER_DIAMOND_BREAKOUT",
+        "fallback": "WAIT_FOR_BREAKOUT"
+      },
+      "inputs": [
+        "quad_engulf_points",
+        "diamond_apex"
+      ],
+      "timeframe": "H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "تعداد نوسانات بالا ممکن است تاخیر ورود را افزایش دهد."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-RTM-011",
+      "name": "RTM Can Can Pattern",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحه ۸۴",
+      "exact_source_text": "الگوی Can Can: الگوی بازگشتی. ترکیب دو الگوی CP و CAPS. محل ورود پس از تکمیل ساختار کپس و فشردگی.",
+      "interpretation": "هم‌پوشانی و ترکیب هم‌زمان الگوی فشردگی با الگوی کپس به عنوان یک سیگنال برگشتی با ضریب اطمینان بالاتر.",
+      "executable_definition": {
+        "condition": "is_cp_active == True and is_caps_confirmed == True",
+        "action": "EXECUTE_CAN_CAN_SETUP",
+        "fallback": "CANNOT_DETERMINE"
+      },
+      "inputs": [
+        "cp_status",
+        "caps_status"
+      ],
+      "timeframe": "H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "نادر بودن وقوع هم‌زمان در تایم‌فریم‌های بالا."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-SND-001",
+      "name": "Supply and Demand Base Formation Quality",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحات ۵۸ تا ۶۱",
+      "exact_source_text": "۴ ساختار مهم در RTM: Rally Base Rally, Drop Base Rally, Rally Base Drop, Drop Base Drop. بیس‌های مناسب: بدنه کوتاه، شدو کوتاه، تعداد کم (۱ الی ۴ کندل Doji)، ورود و خروج با مومنتوم بالا (Extended Range Candles: ERC)، حجم کم کندل‌ها، BOS کردن.",
+      "interpretation": "کیفیت بیس در زون‌های عرضه و تقاضا مشروط به ۱ تا ۴ کندل بدنه کوتاه (NRC) است که قبل و بعد از آن کندل‌های کشیده با مومنتوم بالا (ERC) قرار گرفته باشند.",
+      "executable_definition": {
+        "condition": "1 <= base_candle_count <= 4 and all_base_are_nrc == True and entry_is_erc == True and exit_is_erc == True and bos_confirmed == True",
+        "action": "VALIDATE_QUALITY_BASE",
+        "fallback": "REJECT_LOW_QUALITY_BASE"
+      },
+      "inputs": [
+        "base_candle_count",
+        "candle_body_ratios",
+        "bos_flag"
+      ],
+      "timeframe": "M15, H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "تعریف عددی نسبت بدنه NRC و ERC نیازمند پارامتر حداقل طول کندل نسبت به ATR است."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-SND-002",
+      "name": "First Time Back (FTB) Zone Trading",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحه ۶۳ تا ۶۴",
+      "exact_source_text": "زون‌های Reaction / Fresh / Nested. FTB (First Time Back). چک لیست ترید با زون‌ها: نوع کندل Base، جهش قیمت، زمان ماندن در زون، زمان دور ماندن از زون (NX)، Fresh بودن زون.",
+      "interpretation": "معامله در زون عرضه یا تقاضا فقط در اولین بازگشت قیمت (FTB) زمانی که زون دست‌نخورده (Fresh) است مجاز است. بازگشت‌های دوم و سوم اعتبار زون را به شدت کاهش می‌دهند.",
+      "executable_definition": {
+        "condition": "touch_count == 1 and zone_is_fresh == True",
+        "action": "ALLOW_FTB_ENTRY",
+        "fallback": "REJECT_CONSUMED_ZONE"
+      },
+      "inputs": [
+        "touch_count",
+        "zone_freshness"
+      ],
+      "timeframe": "M15, H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "آیا نفوذ شدوی باریک لمس (Touch) محسوب می‌شود یا خیر."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-HARM-001",
+      "name": "Harmonic AB=CD Pattern",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحات ۴۳ تا ۴۴",
+      "exact_source_text": "1. AB=CD: تایید گرفتن از فیبو اکستنشن... اگر Ret عدد ۶۱.۸ را نشان دهد Ext باید ۱۶۱.۸ باشد. اگر Ret عدد ۷۸.۶ باشد Ext باید ۱۲۷.۲ باشد. اگر Ret عدد ۵۰ باشد Ext باید ۲۰۰ باشد. در نقطه D وارد معامله می‌شویم. حد سود معمولاً حداقل ۵۰ و حداکثر ۶۱٪ اصلاح از C به D است.",
+      "interpretation": "الگوی هارمونیک متقارن با روابط معکوس Retracement نقطه C و Extension نقطه D. ورود در نقطه D و حد سود بین ۵۰٪ تا ۶۱.۸٪ موج CD.",
+      "executable_definition": {
+        "condition": "matches_abcd_fib_ratio(ret_c, ext_d) == True",
+        "action": "ENTER_AT_D",
+        "take_profit": "0.50_to_0.618_of_CD",
+        "stop_loss": "beyond_D_with_atr_buffer"
+      },
+      "inputs": [
+        "point_A",
+        "point_B",
+        "point_C",
+        "point_D"
+      ],
+      "timeframe": "M15, H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "تلرانس انحراف از درصدهای فیبوناچی در بازارهای واقعی نیاز به درصد خطا (مثلاً ±۳٪) دارد."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-HARM-002",
+      "name": "Harmonic Gartley Pattern",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحات ۴۴ تا ۴۵",
+      "exact_source_text": "2. Gartley: در الگوی گرتلی هیچ‌گاه نقطه D فراتر از X نمی‌رود! نقطه B باید الزاماً روی ۶۱.۸٪ فیبو Ret از X تا A باشد. نقطه D باید الزاماً روی ۷۸.۶٪ باشد. در حالت M در نقطه D خرید و در W در نقطه D فروش می‌کنیم. حد سود نرمال ۵۰٪ تا ۶۱٪ موج CD است.",
+      "interpretation": "الگوی گرتلی با نسبت ثابت B روی ۶۱.۸٪ و D روی ۷۸.۶٪ اصلاح موج XA. عدم نفوذ D فراتر از X شرط اعتبارسنجی قطعی است.",
+      "executable_definition": {
+        "condition": "b_retracement_xa == 0.618 and d_retracement_xa == 0.786 and price_D_does_not_exceed_X == True",
+        "action": "ENTER_GARTLEY_REVERSAL_AT_D",
+        "take_profit": "0.50_to_0.618_CD",
+        "stop_loss": "beyond_point_X"
+      },
+      "inputs": [
+        "point_X",
+        "point_A",
+        "point_B",
+        "point_C",
+        "point_D"
+      ],
+      "timeframe": "M15, H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "حساسیت شدید به دقت پیوت‌ها."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-HARM-003",
+      "name": "Harmonic Bat Pattern",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحات ۴۶ تا ۴۷",
+      "exact_source_text": "3. BAT: نقطه D به X نمی‌رسد. اگر از X به A فیبو Ret رسم کنیم نقطه B باید ۳۸٪ الی ۵۰٪ را نشان دهد و نقطه D الزاماً باید روی ۸۸.۶٪ باشد. در حالت M نقطه C پایین‌تر از A و در W بالاتر از A است. حد سود روی ۵۰٪ موج CD قرار می‌گیرد.",
+      "interpretation": "الگوی خفاش با اصلاح کم‌عمق B (۳۸.۲٪ تا ۵۰٪) و اصلاح عمیق D روی ۸۸.۶٪ بدون شکست نقطه X.",
+      "executable_definition": {
+        "condition": "0.382 <= b_retracement_xa <= 0.50 and d_retracement_xa == 0.886 and d_does_not_break_X == True",
+        "action": "ENTER_BAT_REVERSAL_AT_D",
+        "take_profit": "0.50_CD",
+        "stop_loss": "beyond_point_X"
+      },
+      "inputs": [
+        "point_X",
+        "point_A",
+        "point_B",
+        "point_C",
+        "point_D"
+      ],
+      "timeframe": "M15, H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "نقطه D در ۸۸.۶٪ بسیار نزدیک به X است، بنابراین حد ضرر فشرده است."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-HARM-004",
+      "name": "Harmonic Butterfly Pattern",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحه ۴۷",
+      "exact_source_text": "4. Butterfly: نقطه D از X عبور می‌کند. از X تا A فیبو Ret رسم می‌کنیم و نقطه B باید روی ۷۸.۶٪ باشد. نقطه D باید بین ۱۲۷.۲٪ تا ۱۶۱.۸٪ فیبو اکستنشن XA باشد.",
+      "interpretation": "الگوی پروانه با عبور نقطه D از مبدا X و دستیابی به اکستنشن ۱۲۷.۲٪ الی ۱۶۱.۸٪.",
+      "executable_definition": {
+        "condition": "b_retracement_xa == 0.786 and 1.272 <= d_extension_xa <= 1.618 and d_exceeds_X == True",
+        "action": "ENTER_BUTTERFLY_REVERSAL_AT_D",
+        "stop_loss": "beyond_1.618_XA"
+      },
+      "inputs": [
+        "point_X",
+        "point_A",
+        "point_B",
+        "point_C",
+        "point_D"
+      ],
+      "timeframe": "M15, H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "فاصله بین ۱۲۷.۲ تا ۱۶۱.۸ نسبتاً وسیع است و نیاز به تریگر کندلی در نقطه D دارد."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-HARM-005",
+      "name": "Harmonic Crab and Deep Crab Patterns",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحات ۴۸ تا ۴۹",
+      "exact_source_text": "5. Crab: مانند الگوی پروانه نقطه D از X عبور می‌کند. فیبو Ret از X تا A برای B بین ۳۸ تا ۶۱٪ است. نقطه D باید ۱۶۱.۸٪ باشد. Deep Crab: در این الگو نقطه B به جای حداکثر ۶۱٪، تا ۸۸٪ برگشت دارد و نقطه D روی ۱۶۱.۸٪ است.",
+      "interpretation": "الگوهای خرچنگ و خرچنگ عمیق با اکستنشن شارپ نقطه D در سطح ۱۶۱.۸٪ اکستنشن موج XA.",
+      "executable_definition": {
+        "condition": "d_extension_xa == 1.618 and (0.382 <= b_retracement_xa <= 0.618 or b_retracement_xa == 0.886)",
+        "action": "ENTER_CRAB_REVERSAL_AT_D",
+        "stop_loss": "beyond_1.618_with_buffer"
+      },
+      "inputs": [
+        "point_X",
+        "point_A",
+        "point_B",
+        "point_C",
+        "point_D"
+      ],
+      "timeframe": "M15, H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "اکستنشن‌های عمیق ۱۶۱.۸٪ ممکن است در روندهای قوی با شتاب ادامه یابند."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-BEGGS-001",
+      "name": "Lance Beggs Test of Support/Resistance (TST)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحه ۳۳",
+      "exact_source_text": "ستاپ تست حمایت و مقاومت (TST): قیمت توانایی عبور از این دو محدوده را ندارد. این سطوح حفظ خواهند شد. احتمال موفقیت بالاتر در صورت واکنش قیمت به سطوح تایم‌فریم بالاتر.",
+      "interpretation": "معامله در جهت بازگشت از سطح حمایت یا مقاومت پس از مشاهده ناتوانی قیمت در عبور و تایید در تایم‌فریم بالاتر.",
+      "executable_definition": {
+        "condition": "price_touches_zone == True and rejection_confirmed == True and htf_zone_aligns == True",
+        "action": "ENTER_TST_REVERSAL",
+        "stop_loss": "beyond_tested_zone"
+      },
+      "inputs": [
+        "sr_zone",
+        "rejection_candle",
+        "htf_alignment"
+      ],
+      "timeframe": "M5, M15",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "تست‌های مکرر ممکن است سطح را تضعیف کرده و به شکست منجر شود."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-BEGGS-002",
+      "name": "Lance Beggs Breakout Failure (BOF)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحه ۳۳ و ۳۴",
+      "exact_source_text": "ستاپ شکست ناموفق (Breakout Failure - BOF): بعد از نفوذ در محدوده به دلیل عدم توانایی روند تغییر می‌کند. یکی از بزرگترین تله‌ها برای تریدرها. اندیکاتور حجم. تاییدیه تایم‌فریم Base.",
+      "interpretation": "ورود در جهت معکوس پس از وقوع شکست جعلی و بازگشت سریع قیمت به درون محدوده رنج قبلی.",
+      "executable_definition": {
+        "condition": "level_breached == True and bar_closes_back_inside == True and volume_diverges == True",
+        "action": "ENTER_BOF_FADE",
+        "stop_loss": "beyond_false_break_extreme"
+      },
+      "inputs": [
+        "range_extreme",
+        "breakout_bar",
+        "close_inside_bar"
+      ],
+      "timeframe": "M5, M15",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "تشخیص شکست جعلی از پولبک اولیه نیازمند زمان و کندل تایید است."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-BEGGS-003",
+      "name": "Lance Beggs Breakout Pullback (BPB)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحه ۳۳ و ۳۴",
+      "exact_source_text": "ستاپ پولبک بعد از شکست (Breakeout Pullback Setup - BPB): پس از عبور از محدوده حمایت و مقاومت، یک پولبک ضعیف را ایجاد می‌کند. باید روند را تا مشاهده ضعف دنبال کرد.",
+      "interpretation": "ورود در جهت شکست سطح پس از وقوع یک پولبک کم‌جان و ضعیف به سطح شکسته شده.",
+      "executable_definition": {
+        "condition": "breakout_holds == True and pullback_momentum_is_weak == True and rejection_at_broken_level == True",
+        "action": "ENTER_BPB_CONTINUATION",
+        "stop_loss": "beyond_pullback_pivot"
+      },
+      "inputs": [
+        "broken_level",
+        "pullback_bars",
+        "continuation_trigger"
+      ],
+      "timeframe": "M5, M15",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "ضعف پولبک باید بر اساس دامنه کندل‌ها و شیب نسبت به لگ شکست سنجیده شود."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-BEGGS-004",
+      "name": "Lance Beggs Simple Pullback in Trend (PB)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحه ۳۳ و ۳۴",
+      "exact_source_text": "ستاپ پولبک ساده در روند (Pullback Setup - PB): پس از پولبک و در جهت روند باید وارد معامله شد. تحلیل کندل به کندل در تمامی ستاپ‌ها اهمیت دارد.",
+      "interpretation": "معامله در جهت روند اصلی در اولین اصلاح قیمتی ساده تک‌موجی پس از تثبیت کندل تایید.",
+      "executable_definition": {
+        "condition": "trend_direction != 'NONE' and single_leg_pullback == True and candle_by_candle_confirms == True",
+        "action": "ENTER_PB_TREND",
+        "stop_loss": "below_pullback_low"
+      },
+      "inputs": [
+        "trend_direction",
+        "pullback_depth",
+        "confirmation_candle"
+      ],
+      "timeframe": "M5, M15",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "عمق مجاز پولبک ساده معمولاً نباید از ۵۰٪ تا ۶۱.۸٪ لگ قبلی فراتر رود."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-BEGGS-005",
+      "name": "Lance Beggs Complex Pullback (CPB)",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحه ۳۳ و ۳۵",
+      "exact_source_text": "ستاپ پولبک پیچیده در روند (Complex Pullback - CPB): متشکل از چندین نوسان و یا اصلاح زمانی و فرسایشی. وقوع PBهای ناموفق که تاکنون قیمت در جهت روند حرکت نکرده، می‌تواند سبب فرصت CPB شود.",
+      "interpretation": "اصلاح‌های چندموجی (دو یا چند لِگ اصلاحی) در دل روند که پس از شکست اصلاح‌های تک‌موجی شکل می‌گیرند و فرصت ورود کم‌ریسک‌تر در انتهای اصلاح چندموجی می‌سازند.",
+      "executable_definition": {
+        "condition": "trend_intact == True and legs_in_pullback >= 2 and exhaustion_reached == True",
+        "action": "ENTER_CPB_TREND",
+        "stop_loss": "below_complex_correction_low"
+      },
+      "inputs": [
+        "trend_intact",
+        "pullback_leg_count",
+        "exhaustion_signal"
+      ],
+      "timeframe": "M15, H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "شمارش لگ‌های اصلاحی نیازمند قوانین دقیق پیوت‌گذاری است."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-CNDL-001",
+      "name": "High-Impact Candlestick Reversal Confirmation",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحات ۲۱ تا ۲۹",
+      "exact_source_text": "کندل‌های چکش، مرد دارآویز، ستاره ثاقب، اینگلفینگ صعودی و نزولی، ستاره صبحگاهی و عصرگاهی، و خط نافذ (Piercing Line): کندل دوم باید حداقل ۵۰ درصد از کندل قبلی خود بازگشت کرده باشد. هر چه طول کندل‌ها بیشتر باشد قدرت بازگشت بیشتر است. تاییدیه کندل بعدی الزامی است.",
+      "interpretation": "الگوهای کندلی برگشتی معتبر تنها با تایید بسته شدن کندل بعدی و پوشش حداقل ۵۰ درصدی کندل قبلی در زون‌های کلیدی رسمیت می‌یابند.",
+      "executable_definition": {
+        "condition": "pattern_detected in ['HAMMER', 'ENGULFING', 'MORNING_STAR', 'PIERCING_LINE'] and penetration_pct >= 50.0 and next_bar_confirms == True",
+        "action": "CONFIRM_CANDLE_TRIGGER",
+        "fallback": "WAIT_FOR_CONFIRMATION"
+      },
+      "inputs": [
+        "pattern_detected",
+        "penetration_pct",
+        "next_bar_confirms"
+      ],
+      "timeframe": "M5, M15, H1",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "الگوهای کندلی بدون حضور در زون‌های حمایت و مقاومت نرخ خطای بالایی دارند."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    },
+    {
+      "rule_id": "STR-PA-IND-001",
+      "name": "Oscillator 5 and 10 Period Cycle Calibration",
+      "category": "PRICE_ACTION",
+      "status": "UNAPPROVED",
+      "source_document": "_⁨پرایس اکشن⁩.pdf",
+      "source_reference": "صفحه ۸۹",
+      "exact_source_text": "تذکر مهم: دلیل انتخاب اعداد ۵ و ۱۰ برای اسیلاتورها این است که تقریباً در همه‌ی حرکات صعودی یا نزولی، دارای الگوی ۱۰ کندلی هستند! عدد ۵ هم به‌عنوان نصف آن مهم است.",
+      "interpretation": "تنظیم دوره‌های اسیلاتورها (مانند RSI یا استوکاستیک یا مومنتوم) روی دوره‌های ۵ و ۱۰ بر مبنای فرضیه امواج نوسانی ۱۰ کندلی در ساختار قیمت.",
+      "executable_definition": {
+        "fast_period": 5,
+        "slow_period": 10,
+        "condition": "cycle_length == 10",
+        "action": "SET_OSCILLATOR_PARAMETERS"
+      },
+      "inputs": [
+        "oscillator_type"
+      ],
+      "timeframe": "ALL",
+      "symbol": "ALL",
+      "ambiguities_and_risks": [
+        "چرخه ۱۰ کندلی یک قاعده سرانگشتی سنتی است و در بازارهای مختلف ثبات آماری تضمین‌شده ندارد."
+      ],
+      "approval_blockers": [
+        "نیازمند بازبینی و تایید انسانی در فاز P."
+      ]
+    }
+  ]
+}

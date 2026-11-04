@@ -14,14 +14,27 @@ class BacktestStressTester:
         signals: pd.Series,
         symbol: str = "EURUSD",
         timeframe: str = "M15",
-        initial_balance: float = 10000.0
+        initial_balance: float = 10000.0,
+        base_spread_points: int = 15,
+        point_value: float = 0.00001,
+        contract_size: float = 100000.0,
+        tick_size: float = 0.0,
+        tick_value: float = 0.0,
+        lot_step: float = 0.01,
+        min_lot: float = 0.01,
+        max_lot: float = 10.0,
+        base_slippage_points: int = 3,
+        commission_per_lot: float = 7.0,
     ) -> Dict[str, Any]:
-        """Runs four execution cost stress scenarios."""
+        """Runs cost stress scenarios using the same broker contract as the base test."""
+        base_spread = max(0, int(base_spread_points))
+        base_slippage = max(0, int(base_slippage_points))
+        base_commission = max(0.0, float(commission_per_lot))
         scenarios = {
-            "baseline": {"spread_points": 15, "slippage_points": 3, "commission": 7.0},
-            "elevated_spread": {"spread_points": 30, "slippage_points": 3, "commission": 7.0},
-            "high_slippage": {"spread_points": 15, "slippage_points": 9, "commission": 7.0},
-            "adverse_stress": {"spread_points": 35, "slippage_points": 10, "commission": 10.0},
+            "baseline": {"spread_points": base_spread, "slippage_points": base_slippage, "commission": base_commission},
+            "elevated_spread": {"spread_points": max(base_spread + 1, int(round(base_spread * 2))), "slippage_points": base_slippage, "commission": base_commission},
+            "high_slippage": {"spread_points": base_spread, "slippage_points": max(base_slippage + 1, int(round(base_slippage * 3))), "commission": base_commission},
+            "adverse_stress": {"spread_points": max(base_spread + 1, int(round(base_spread * 2.5))), "slippage_points": max(base_slippage + 1, int(round(base_slippage * 3))), "commission": base_commission * 1.5},
         }
 
         results = {}
@@ -33,6 +46,13 @@ class BacktestStressTester:
                 spread_points=params["spread_points"],
                 slippage_points=params["slippage_points"],
                 commission_per_lot=params["commission"],
+                point_value=point_value,
+                contract_size=contract_size,
+                tick_size=tick_size,
+                tick_value=tick_value,
+                lot_step=lot_step,
+                min_lot=min_lot,
+                max_lot=max_lot,
             )
             res = engine.run(df, signals, strategy_name=f"Stress Test ({name})")
             results[name] = {

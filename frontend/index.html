@@ -321,7 +321,10 @@
       <span id="badge-mt5">MT5: در حال بررسی...</span>
     </div>
     <div class="header-actions">
-      <button id="btn-emergency-toggle" class="btn-emergency" onclick="toggleEmergencyStop()">
+      <button class="btn" data-action="set-token" title="توکن API برای endpointهای تغییردهنده وضعیت">
+        🔑 توکن API
+      </button>
+      <button id="btn-emergency-toggle" class="btn-emergency" data-action="toggle-emergency">
         ⛔ توقف اضطراری (غیرفعال)
       </button>
     </div>
@@ -329,12 +332,12 @@
 
   <!-- Navigation Tabs -->
   <nav>
-    <button class="nav-tab active" onclick="switchTab('system')">وضعیت سامانه</button>
-    <button class="nav-tab" onclick="switchTab('knowledge')">اسناد و استراتژی</button>
-    <button class="nav-tab" onclick="switchTab('data-ml')">داده و مدل هوش مصنوعی</button>
-    <button class="nav-tab" onclick="switchTab('backtest')">بکتست واقع‌گرایانه</button>
-    <button class="nav-tab" onclick="switchTab('signals')">سیگنال‌ها و دمو</button>
-    <button class="nav-tab" onclick="switchTab('settings')">تنظیمات و رخدادها</button>
+    <button class="nav-tab active" data-action="switch-tab" data-tab="system">وضعیت سامانه</button>
+    <button class="nav-tab" data-action="switch-tab" data-tab="knowledge">اسناد و استراتژی</button>
+    <button class="nav-tab" data-action="switch-tab" data-tab="data-ml">داده و مدل هوش مصنوعی</button>
+    <button class="nav-tab" data-action="switch-tab" data-tab="backtest">بکتست واقع‌گرایانه</button>
+    <button class="nav-tab" data-action="switch-tab" data-tab="signals">سیگنال‌ها و دمو</button>
+    <button class="nav-tab" data-action="switch-tab" data-tab="settings">تنظیمات و رخدادها</button>
   </nav>
 
   <!-- Main Content -->
@@ -412,7 +415,7 @@
             <label>توضیح کوتاه منبع:</label>
             <input type="text" id="input-doc-desc" placeholder="مثال: جزوه پرایس اکشن یا قوانین حد ضرر">
           </div>
-          <button class="btn btn-primary" onclick="uploadDocument()">بارگذاری و استخراج قوانین</button>
+          <button class="btn btn-primary" data-action="upload-document">بارگذاری و استخراج قوانین</button>
         </div>
 
         <div class="card">
@@ -473,7 +476,7 @@
             <label>تعداد کندل‌های آموزش (M15):</label>
             <input type="number" id="ml-bars" value="300" min="100" max="1000">
           </div>
-          <button class="btn btn-primary" onclick="trainModel()">شروع آموزش و ارزیابی زمانی</button>
+          <button class="btn btn-primary" data-action="train-model">شروع آموزش و ارزیابی زمانی</button>
         </div>
 
         <div class="card">
@@ -533,7 +536,7 @@
             <input type="number" id="bt-comm" value="7">
           </div>
           <div style="align-self: flex-end;">
-            <button class="btn btn-primary" onclick="runBacktest()">اجرای شبیه‌سازی و تحلیل استرس</button>
+            <button class="btn btn-primary" data-action="run-backtest">اجرای شبیه‌سازی و تحلیل استرس</button>
           </div>
         </div>
       </div>
@@ -588,7 +591,7 @@
               بررسی قواعد تأییدشده و مدل هوش مصنوعی فعال بر روی آخرین کندل بسته شده.
             </p>
           </div>
-          <button class="btn btn-primary" onclick="generateSignal()">ارزیابی و صدور سیگنال</button>
+          <button class="btn btn-primary" data-action="generate-signal">ارزیابی و صدور سیگنال</button>
         </div>
       </div>
 
@@ -657,435 +660,7 @@
     Adaptive Trader AI &copy; 2026 | معماری ایمن و ضد نشت اطلاعات | نسخه 1.0.0
   </footer>
 
-  <script>
-    const API_BASE = "/api/v1";
+  <script src="/static/app.js" defer></script>
 
-    function switchTab(tabName) {
-      document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
-      document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
-      
-      const btn = Array.from(document.querySelectorAll(".nav-tab")).find(b => b.innerText.includes(getTabTitle(tabName)));
-      if (btn) btn.classList.add("active");
-      
-      const content = document.getElementById("tab-" + tabName);
-      if (content) content.classList.add("active");
-
-      // Auto-refresh data on tab change
-      if (tabName === "system") loadSystemStatus();
-      if (tabName === "knowledge") loadRules();
-      if (tabName === "data-ml") loadModels();
-      if (tabName === "signals") loadSignals();
-      if (tabName === "settings") loadAuditLogs();
-    }
-
-    function getTabTitle(name) {
-      if (name === "system") return "وضعیت";
-      if (name === "knowledge") return "اسناد";
-      if (name === "data-ml") return "داده";
-      if (name === "backtest") return "بکتست";
-      if (name === "signals") return "سیگنال";
-      if (name === "settings") return "تنظیمات";
-      return "";
-    }
-
-    async function loadSystemStatus() {
-      try {
-        const res = await fetch(`${API_BASE}/system/status`);
-        const data = await res.json();
-
-        // Backend Liveness
-        const badgeBackend = document.getElementById("badge-backend");
-        if (badgeBackend) {
-          badgeBackend.innerText = `Backend: ${data.liveness || "LIVE"}`;
-          badgeBackend.className = "badge badge-success";
-        }
-
-        // Worker Telemetry
-        const worker = data.worker || {};
-        const badgeWorker = document.getElementById("badge-worker");
-        if (badgeWorker) {
-          const isWorkerLive = worker.liveness === "LIVE";
-          badgeWorker.innerText = `Worker: ${worker.liveness || "STOPPED"}`;
-          badgeWorker.className = isWorkerLive ? "badge badge-success" : "badge badge-warning";
-        }
-
-        const elWorkerStatus = document.getElementById("val-worker-status");
-        if (elWorkerStatus) {
-          elWorkerStatus.innerText = `${worker.liveness || "STOPPED"} (${worker.readiness || "UNKNOWN"})`;
-          elWorkerStatus.style.color = worker.readiness === "READY" ? "var(--success)" : "var(--warning)";
-        }
-        const elWorkerInfo = document.getElementById("val-worker-info");
-        if (elWorkerInfo) {
-          elWorkerInfo.innerText = `نماد: ${worker.symbol || "XAUUSD"} | ${worker.timeframe || "M1"} | بازه پایش: ${worker.poll_interval_seconds || 3}s`;
-        }
-
-        const elWorkerCycles = document.getElementById("val-worker-cycles-count");
-        if (elWorkerCycles) {
-          elWorkerCycles.innerText = `${worker.successful_cycles || 0} موفق / ${worker.total_cycles || 0} کل`;
-        }
-        const elWorkerCycleTime = document.getElementById("val-worker-cycle-time");
-        if (elWorkerCycleTime) {
-          elWorkerCycleTime.innerText = worker.last_cycle_time ? `آخرین چرخه: ${worker.last_cycle_time.substring(11, 19)} UTC` : "هنوز اجرا نشده";
-        }
-
-        const elWorkerBar = document.getElementById("val-worker-bar");
-        if (elWorkerBar) {
-          elWorkerBar.innerText = worker.last_processed_bar_time ? worker.last_processed_bar_time.substring(0, 16).replace("T", " ") : "در انتظار کندل جدید";
-        }
-        const elWorkerBarKey = document.getElementById("val-worker-bar-key");
-        if (elWorkerBarKey) {
-          elWorkerBarKey.innerText = worker.last_processed_bar_key ? `کلید: ${worker.last_processed_bar_key}` : `کد وضعیت: ${worker.last_status_code || "-"}`;
-        }
-
-        const elWorkerDecision = document.getElementById("val-worker-decision");
-        if (elWorkerDecision) {
-          elWorkerDecision.innerText = worker.last_decision || "HOLD";
-          elWorkerDecision.style.color = (worker.last_decision === "BUY" ? "var(--success)" : (worker.last_decision === "SELL" ? "var(--danger)" : "var(--text-main)"));
-        }
-        const elWorkerReason = document.getElementById("val-worker-reason");
-        if (elWorkerReason) {
-          elWorkerReason.innerText = worker.last_reason || "در انتظار چرخه";
-        }
-
-        document.getElementById("badge-mode").innerText = data.execution_mode;
-        document.getElementById("cfg-mode").innerText = data.execution_mode;
-        document.getElementById("cfg-demo-gate").innerText = data.demo_trading_gate_enabled ? "فعال" : "غیرفعال (پیش‌فرض امن)";
-        document.getElementById("cfg-mt5-path").innerText = data.mt5.terminal_path;
-
-        // MT5 info
-        const isMt5 = data.mt5.is_connected;
-        document.getElementById("badge-mt5").innerText = isMt5 ? "MT5: متصل" : "MT5: قطع";
-        document.getElementById("badge-mt5").className = isMt5 ? "badge badge-success" : "badge badge-danger";
-        document.getElementById("val-mt5-status").innerText = isMt5 ? "متصل به سرور" : "قطع اتصال";
-        document.getElementById("val-mt5-server").innerText = `سرور: ${data.mt5.server}`;
-
-        // Account info
-        document.getElementById("val-account-type").innerText = data.mt5.account_verified_demo ? "حساب دمو (Demo)" : "نامشخص / غیر دمو";
-        document.getElementById("val-account-login").innerText = `شناسه کاربری: ${data.mt5.login_masked}`;
-        document.getElementById("val-account-balance").innerText = `$${data.mt5.balance.toLocaleString()} ${data.mt5.currency}`;
-        document.getElementById("val-account-equity").innerText = `اکوئیتی: $${data.mt5.equity.toLocaleString()}`;
-
-        // Emergency Stop
-        const isStop = data.emergency_stop.is_active;
-        const btnStop = document.getElementById("btn-emergency-toggle");
-        if (isStop) {
-          btnStop.innerText = "🚨 رفع قفل اضطراری";
-          btnStop.className = "btn-emergency inactive-mode";
-          document.getElementById("val-circuit-status").innerText = "فعال (مسدود)";
-          document.getElementById("val-circuit-status").style.color = "var(--danger)";
-        } else {
-          btnStop.innerText = "⛔ توقف اضطراری (غیرفعال)";
-          btnStop.className = "btn-emergency";
-          document.getElementById("val-circuit-status").innerText = "آماده‌به‌کار (عادی)";
-          document.getElementById("val-circuit-status").style.color = "var(--success)";
-        }
-        document.getElementById("val-circuit-reason").innerText = data.emergency_stop.reason;
-      } catch (e) {
-        console.error("Status load failed", e);
-        const badgeBackend = document.getElementById("badge-backend");
-        if (badgeBackend) {
-          badgeBackend.innerText = "Backend: قطع ارتباط";
-          badgeBackend.className = "badge badge-danger";
-        }
-        const badgeWorker = document.getElementById("badge-worker");
-        if (badgeWorker) {
-          badgeWorker.innerText = "Worker: متوقف";
-          badgeWorker.className = "badge badge-danger";
-        }
-        const elWorkerStatus = document.getElementById("val-worker-status");
-        if (elWorkerStatus) {
-          elWorkerStatus.innerText = "عدم پاسخ سرور";
-          elWorkerStatus.style.color = "var(--danger)";
-        }
-      }
-    }
-
-    async function toggleEmergencyStop() {
-      const btn = document.getElementById("btn-emergency-toggle");
-      const isCurrentlyActive = btn.innerText.includes("رفع قفل");
-
-      if (isCurrentlyActive) {
-        await fetch(`${API_BASE}/system/emergency-stop/deactivate`, {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({notes: "Resumed from dashboard by user"})
-        });
-      } else {
-        await fetch(`${API_BASE}/system/emergency-stop/activate`, {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({reason: "Manual emergency stop triggered via Web Dashboard", actor: "USER"})
-        });
-      }
-      loadSystemStatus();
-    }
-
-    async function uploadDocument() {
-      const fileInput = document.getElementById("input-doc-file");
-      const descInput = document.getElementById("input-doc-desc");
-      if (!fileInput.files[0]) {
-        alert("لطفاً یک فایل انتخاب کنید.");
-        return;
-      }
-
-      const fd = new FormData();
-      fd.append("file", fileInput.files[0]);
-      fd.append("description", descInput.value);
-
-      try {
-        const res = await fetch(`${API_BASE}/documents/upload`, {
-          method: "POST",
-          body: fd,
-        });
-        const data = await res.json();
-        alert(`سند با موفقیت پردازش شد. تعداد ${data.rules_extracted_count} قانون استخراج گردید.`);
-        fileInput.value = "";
-        descInput.value = "";
-        loadRules();
-      } catch (e) {
-        alert("خطا در بارگذاری سند: " + e);
-      }
-    }
-
-    async function loadRules() {
-      try {
-        const res = await fetch(`${API_BASE}/rules/`);
-        const rules = await res.json();
-        const tbody = document.getElementById("tbody-rules");
-        if (rules.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="7" style="text-align: center;">قانونی یافت نشد. سندی بارگذاری کنید.</td></tr>`;
-          return;
-        }
-
-        tbody.innerHTML = rules.map(r => {
-          let badgeClass = "badge-warning";
-          if (r.approval_status === "approved") badgeClass = "badge-success";
-          if (r.approval_status === "rejected") badgeClass = "badge-danger";
-
-          const ambigText = r.ambiguities && r.ambiguities.length > 0 
-            ? `<span style="color: #fbbf24;">⚠️ ${r.ambiguities.join('<br>')}</span>`
-            : "صریح و بدون ابهام";
-
-          const actions = r.approval_status === "pending" ? `
-            <button class="btn btn-primary btn-sm" onclick="approveRule('${r.rule_id}')">تأیید</button>
-            <button class="btn btn-emergency btn-sm" onclick="rejectRule('${r.rule_id}')" style="margin-right: 0.25rem;">رد</button>
-          ` : `<span style="color: var(--text-muted); font-size: 0.8rem;">تکمیل‌شده</span>`;
-
-          return `
-            <tr>
-              <td><code>${r.rule_id}</code></td>
-              <td><strong>${r.name}</strong></td>
-              <td>${r.category}</td>
-              <td>صفحه ${r.source_pages.join(', ') || '1'}</td>
-              <td style="max-width: 250px; font-size: 0.8rem;">${ambigText}</td>
-              <td><span class="badge ${badgeClass}">${r.approval_status}</span></td>
-              <td>${actions}</td>
-            </tr>
-          `;
-        }).join("");
-      } catch (e) {
-        console.error("Rules load error", e);
-      }
-    }
-
-    async function approveRule(ruleId) {
-      await fetch(`${API_BASE}/rules/${ruleId}/approve`, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({actor: "USER"})
-      });
-      loadRules();
-    }
-
-    async function rejectRule(ruleId) {
-      const reason = prompt("علت رد این قانون را وارد کنید:", "قانون مبهم است یا با سیستم ناسازگار است.");
-      if (!reason) return;
-      await fetch(`${API_BASE}/rules/${ruleId}/reject`, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({reason: reason, actor: "USER"})
-      });
-      loadRules();
-    }
-
-    async function trainModel() {
-      const sym = document.getElementById("ml-symbol").value;
-      const algo = document.getElementById("ml-algo").value;
-      const bars = document.getElementById("ml-bars").value;
-
-      try {
-        const res = await fetch(`${API_BASE}/ml/train`, {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({symbol: sym, algorithm: algo, bars_count: parseInt(bars)})
-        });
-        const data = await res.json();
-        alert(`آموزش مدل نامزد ${data.model_id} با موفقیت انجام شد. AUC تست: ${data.test_metrics.roc_auc || 'N/A'}`);
-        loadModels();
-      } catch (e) {
-        alert("خطا در آموزش مدل: " + e);
-      }
-    }
-
-    async function loadModels() {
-      try {
-        const res = await fetch(`${API_BASE}/ml/models`);
-        const models = await res.json();
-        const tbody = document.getElementById("tbody-models");
-        if (models.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="6" style="text-align: center;">هنوز مدلی آموزش داده نشده است.</td></tr>`;
-          return;
-        }
-
-        tbody.innerHTML = models.map(m => {
-          let badge = m.status === "active" ? "badge-success" : (m.status === "candidate" ? "badge-warning" : "badge-danger");
-          const promoteBtn = m.status === "candidate" ? `
-            <button class="btn btn-primary btn-sm" onclick="promoteModel('${m.model_id}')">ارتقا به فعال</button>
-          ` : `<span style="color: var(--text-muted); font-size: 0.8rem;">${m.status}</span>`;
-
-          const mStr = `AUC: ${m.test_metrics.roc_auc ?? '-'} | Brier: ${m.test_metrics.brier_score ?? '-'} | F1: ${m.test_metrics.f1 ?? '-'}`;
-
-          return `
-            <tr>
-              <td><code>${m.model_id}</code></td>
-              <td>${m.algorithm}</td>
-              <td><span class="badge ${badge}">${m.status}</span></td>
-              <td>${mStr}</td>
-              <td>${new Date(m.trained_at).toLocaleTimeString('fa-IR')}</td>
-              <td>${promoteBtn}</td>
-            </tr>
-          `;
-        }).join("");
-      } catch (e) {
-        console.error("Models load error", e);
-      }
-    }
-
-    async function promoteModel(modelId) {
-      await fetch(`${API_BASE}/ml/models/${modelId}/promote`, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({notes: "Manual promotion via dashboard"})
-      });
-      loadModels();
-    }
-
-    async function runBacktest() {
-      const sym = document.getElementById("bt-symbol").value;
-      const spread = document.getElementById("bt-spread").value;
-      const slip = document.getElementById("bt-slip").value;
-      const comm = document.getElementById("bt-comm").value;
-
-      try {
-        const res = await fetch(`${API_BASE}/backtest/run`, {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({
-            symbol: sym,
-            spread_points: parseInt(spread),
-            slippage_points: parseInt(slip),
-            commission_per_lot: parseFloat(comm)
-          })
-        });
-        const data = await res.json();
-        const m = data.metrics;
-
-        document.getElementById("bt-net-profit").innerText = `$${m.net_profit.toFixed(2)}`;
-        document.getElementById("bt-max-dd").innerText = `${m.max_drawdown_percent}% ($${m.max_drawdown_amount})`;
-        document.getElementById("bt-profit-factor").innerText = m.profit_factor;
-        document.getElementById("bt-win-rate").innerText = `${m.win_rate}% (${m.winning_trades}/${m.total_trades})`;
-
-        // Stress table
-        const tbodyStress = document.getElementById("tbody-stress");
-        if (data.stress_test && data.stress_test.scenarios) {
-          tbodyStress.innerHTML = Object.entries(data.stress_test.scenarios).map(([scName, sc]) => `
-            <tr>
-              <td><strong>${scName}</strong></td>
-              <td style="color: ${sc.net_profit >= 0 ? '#34d399' : '#f87171'}">$${sc.net_profit.toFixed(2)}</td>
-              <td>${sc.profit_factor}</td>
-              <td>${sc.max_drawdown_percent}%</td>
-              <td>${sc.win_rate}%</td>
-            </tr>
-          `).join("");
-        }
-
-        document.getElementById("backtest-results").style.display = "block";
-      } catch (e) {
-        alert("خطا در بکتست: " + e);
-      }
-    }
-
-    async function generateSignal() {
-      try {
-        const res = await fetch(`${API_BASE}/signals/generate`, {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({symbol: "EURUSD"})
-        });
-        const data = await res.json();
-        if (data.status === "NO_SIGNAL") {
-          alert("نتیجه بررسی: " + data.message);
-        } else {
-          alert(`سیگنال صادر شد! جهت: ${data.direction} | نماد: ${data.symbol} | وضعیت ریسک: ${data.risk_status}`);
-        }
-        loadSignals();
-      } catch (e) {
-        alert("خطا در صدور سیگنال: " + e);
-      }
-    }
-
-    async function loadSignals() {
-      try {
-        const res = await fetch(`${API_BASE}/signals/`);
-        const signals = await res.json();
-        const tbody = document.getElementById("tbody-signals");
-        if (signals.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="9" style="text-align: center;">هنوز سیگنالی تولید نشده است.</td></tr>`;
-          return;
-        }
-
-        tbody.innerHTML = signals.map(s => `
-          <tr>
-            <td><code>${s.signal_id}</code></td>
-            <td><strong>${s.symbol}</strong></td>
-            <td><span class="badge ${s.direction === 'BUY' ? 'badge-success' : 'badge-danger'}">${s.direction}</span></td>
-            <td>${s.entry_price}</td>
-            <td>${s.stop_loss} / ${s.take_profit}</td>
-            <td><span class="badge ${s.risk_status === 'APPROVED' ? 'badge-success' : 'badge-danger'}">${s.risk_status}</span></td>
-            <td>${s.calculated_volume || '-'}</td>
-            <td><span class="badge badge-info">${s.execution_mode}</span></td>
-            <td>${new Date(s.bar_time).toLocaleTimeString('fa-IR')}</td>
-          </tr>
-        `).join("");
-      } catch (e) {
-        console.error("Signals load error", e);
-      }
-    }
-
-    async function loadAuditLogs() {
-      try {
-        const res = await fetch(`${API_BASE}/system/audit-logs`);
-        const logs = await res.json();
-        const tbody = document.getElementById("tbody-audit");
-        tbody.innerHTML = logs.map(l => `
-          <tr>
-            <td>#${l.id}</td>
-            <td><strong>${l.event_type}</strong></td>
-            <td><span class="badge badge-warning">${l.severity}</span></td>
-            <td>${l.actor}</td>
-            <td style="font-size: 0.8rem;"><code>${JSON.stringify(l.details)}</code></td>
-            <td>${new Date(l.created_at).toLocaleTimeString('fa-IR')}</td>
-          </tr>
-        `).join("");
-      } catch (e) {
-        console.error("Audit load error", e);
-      }
-    }
-
-    // Initial load
-    window.onload = () => {
-      loadSystemStatus();
-    };
-  </script>
 </body>
 </html>

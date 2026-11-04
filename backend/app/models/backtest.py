@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from sqlalchemy import String, Integer, Float, DateTime, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 
 
 class BacktestRun(Base):
@@ -45,4 +45,4 @@ class BacktestRun(Base):
     equity_curve: Mapped[List[Dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
     trades_summary: Mapped[List[Dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
     
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)

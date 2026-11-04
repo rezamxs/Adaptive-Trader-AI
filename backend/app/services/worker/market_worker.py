@@ -2,22 +2,31 @@
 Strictly Read-Only and Fail-Closed: Operates strictly in SIGNAL_ONLY mode and NEVER executes orders.
 """
 import asyncio
+import json
 import uuid
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings, ExecutionMode
 from backend.app.core.logging import logger, log_security_event
 from backend.app.db.session import SessionLocal
+from backend.app.db.base import utc_now_naive
 from backend.app.models.worker_cycle import WorkerCycleRecord
 from backend.app.models.signal import TradeSignal
-from backend.app.services.market_data.base import IMarketDataProvider, TimeFrame, Candle
-from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
+from backend.app.models.audit_log import AuditLog
+from backend.app.services.market_data.base import IMarketDataProvider, TimeFrame, Candle, Quote
+from backend.app.services.market_data.provider_manager import (
+    acquire_shared_provider,
+    release_shared_provider,
+    shared_provider_instance,
+)
 from backend.app.services.knowledge.manager import KnowledgeManager
 from backend.app.services.ml.registry import ModelRegistry
+from backend.app.services.execution.demo_executor import DemoTradingExecutor
 from backend.app.services.dataset.features import FeatureEngineer
 from backend.app.services.signal.generator import SignalGenerator
 from backend.app.services.signal.manager import SignalManager
@@ -35,7 +44,10 @@ class MarketMonitoringWorker:
         timeframe: Optional[TimeFrame] = None,
         poll_interval: Optional[float] = None,
     ):
-        self.data_provider = data_provider or MT5MarketDataProvider()
+        # M12: default to the process-wide shared terminal. Endpoint requests
+        # release WITHOUT shutdown, so request traffic can no longer cut the
+        # worker's long-lived connection mid-cycle.
+        self.data_provider = data_provider or acquire_shared_provider()
         self.db_factory = db_factory
         self.symbol = symbol or settings.WORKER_SYMBOL
         raw_tf = timeframe or settings.WORKER_TIMEFRAME
@@ -142,39 +154,33 @@ class MarketMonitoringWorker:
             return "MARKET_DATA_FRESH_AND_STREAMING"
         return self.market_status
 
-    @property
-    def trading_ready(self) -> bool:
-        """Signal generation readiness: True ONLY if service is ready, market data is fresh,
-        and approved strategy rules and active ML model artifact exist in database.
-        NOTE: Never enables trade execution; strictly governs signal generation validity.
+    def trading_governance_probe(self) -> Tuple[bool, str]:
+        """Single governance probe behind both trading-readiness views: it
+        short-circuits on service/market readiness, then checks approved rules
+        and the active ML artifact with ONE artifact load. A diagnostics or
+        /health poll that reads both views previously deserialized the pickle
+        artifact twice from disk (O(artifact size) per poll); this method
+        keeps the two views consistent from one shared evaluation.
+
+        The rules query mirrors KnowledgeManager.get_active_strategy_rules,
+        including its CRITICAL invariant: approval_status == 'approved' ONLY.
+        Constructing KnowledgeManager here would eagerly build the whole BM25
+        corpus index, which a probe evaluated around every worker cycle must
+        not pay for (item 8) — hence the direct query.
         """
-        if not self.service_ready or not self.market_data_ready:
-            return False
-
-        db = self.db_factory()
-        try:
-            from backend.app.services.knowledge.manager import KnowledgeManager
-            from backend.app.services.ml.registry import ModelRegistry
-            rules = KnowledgeManager(db).get_active_strategy_rules()
-            model = ModelRegistry(db).load_active_model_artifact()
-            return len(rules) > 0 and model is not None
-        except Exception:
-            return False
-        finally:
-            db.close()
-
-    @property
-    def trading_readiness_reason(self) -> str:
         if not self.service_ready:
-            return f"SERVICE_NOT_READY ({self.service_ready_reason})"
+            return False, f"SERVICE_NOT_READY ({self.service_ready_reason})"
         if not self.market_data_ready:
-            return f"MARKET_DATA_NOT_READY ({self.market_data_reason})"
+            return False, f"MARKET_DATA_NOT_READY ({self.market_data_reason})"
 
         db = self.db_factory()
         try:
-            from backend.app.services.knowledge.manager import KnowledgeManager
+            from backend.app.models.rule import TradingRule
+            from backend.app.schemas.rule_schema import ApprovalStatus
             from backend.app.services.ml.registry import ModelRegistry
-            rules = KnowledgeManager(db).get_active_strategy_rules()
+            rules = db.query(TradingRule).filter(
+                TradingRule.approval_status == ApprovalStatus.APPROVED.value
+            ).all()
             model = ModelRegistry(db).load_active_model_artifact()
             missing = []
             if len(rules) == 0:
@@ -182,12 +188,24 @@ class MarketMonitoringWorker:
             if model is None:
                 missing.append("NO_ACTIVE_MODEL")
             if missing:
-                return "_AND_".join(missing)
-            return "READY_FOR_SIGNAL_GENERATION"
+                return False, "_AND_".join(missing)
+            return True, "READY_FOR_SIGNAL_GENERATION"
         except Exception as e:
-            return f"GOVERNANCE_CHECK_FAILED: {e}"
+            return False, f"GOVERNANCE_CHECK_FAILED: {e}"
         finally:
             db.close()
+
+    @property
+    def trading_ready(self) -> bool:
+        """Signal generation readiness: True ONLY if service is ready, market data is fresh,
+        and approved strategy rules and active ML model artifact exist in database.
+        NOTE: Never enables trade execution; strictly governs signal generation validity.
+        """
+        return self.trading_governance_probe()[0]
+
+    @property
+    def trading_readiness_reason(self) -> str:
+        return self.trading_governance_probe()[1]
 
     def evaluate_market_freshness(self, quote: Optional[Quote], now_utc: datetime) -> Tuple[str, str]:
         """Evaluates market state independently:
@@ -196,8 +214,18 @@ class MarketMonitoringWorker:
         """
         if not quote:
             return "NO_RECENT_TICK", "No quote or tick data received from broker terminal."
-        
-        age_seconds = (now_utc - quote.time).total_seconds()
+        if not isinstance(quote.time, datetime) or quote.time.tzinfo is None or quote.time.utcoffset() is None:
+            return "INVALID_TICK_TIMESTAMP", "Quote timestamp must be timezone-aware UTC."
+        if not isinstance(now_utc, datetime) or now_utc.tzinfo is None or now_utc.utcoffset() is None:
+            return "INVALID_WORKER_CLOCK", "Worker evaluation time must be timezone-aware UTC."
+
+        quote_time_utc = quote.time.astimezone(timezone.utc)
+        now_utc = now_utc.astimezone(timezone.utc)
+        age_seconds = (now_utc - quote_time_utc).total_seconds()
+        if age_seconds < -5.0:
+            return "FUTURE_TICK_TIMESTAMP", (
+                f"Quote timestamp is {-age_seconds:.1f}s in the future; freshness cannot be verified."
+            )
         if age_seconds <= settings.WORKER_STALE_TICK_SECONDS:
             return "MARKET_OPEN_DATA_FRESH", f"Market is open with live quotes (tick age {age_seconds:.1f}s)."
         
@@ -222,6 +250,9 @@ class MarketMonitoringWorker:
         now_utc = datetime.now(timezone.utc)
         heartbeat_age = (now_utc - self.last_heartbeat).total_seconds() if self.last_heartbeat else None
         last_cycle_age = (now_utc - self.last_cycle_time).total_seconds() if self.last_cycle_time else None
+        # One shared governance probe for both readiness views: a single
+        # artifact load per diagnostics poll instead of two.
+        probe_ready, probe_reason = self.trading_governance_probe()
 
         return {
             "liveness": self.liveness_status,
@@ -230,8 +261,8 @@ class MarketMonitoringWorker:
             "service_ready_reason": self.service_ready_reason,
             "market_data_ready": self.market_data_ready,
             "market_data_reason": self.market_data_reason,
-            "trading_ready": self.trading_ready,
-            "trading_readiness_reason": self.trading_readiness_reason,
+            "trading_ready": probe_ready,
+            "trading_readiness_reason": probe_reason,
             "is_running": self.is_running,
             "symbol": self.symbol,
             "timeframe": self.timeframe.value,
@@ -304,8 +335,15 @@ class MarketMonitoringWorker:
                     pass
                 self._task = None
 
-            # Disconnect data provider in thread
-            await asyncio.to_thread(self.data_provider.disconnect)
+            # Disconnect the data provider in a thread. When the worker holds
+            # the process-wide shared provider (M12), only the worker's stop —
+            # i.e. application shutdown — may tear the terminal down.
+            if self.data_provider is shared_provider_instance():
+                from backend.app.services.market_data.provider_manager import shutdown_shared_provider
+
+                await asyncio.to_thread(shutdown_shared_provider)
+            else:
+                await asyncio.to_thread(self.data_provider.disconnect)
             self.last_status_code = "STOPPED"
             self.last_reason = "Worker stopped cleanly on application shutdown."
             logger.info("MarketMonitoringWorker stopped cleanly.")
@@ -436,7 +474,7 @@ class MarketMonitoringWorker:
                     }
                 elif existing_record.lifecycle_phase == "PROCESSING":
                     # Check age of processing record
-                    age_proc = (datetime.utcnow() - (existing_record.created_at or datetime.utcnow())).total_seconds()
+                    age_proc = (utc_now_naive() - (existing_record.created_at or utc_now_naive())).total_seconds()
                     if age_proc < 120.0:
                         self.last_status_code = "BAR_UNDER_PROCESSING"
                         self.last_reason = f"Bar {bar_key} is currently being processed by cycle {existing_record.cycle_id}."
@@ -473,8 +511,8 @@ class MarketMonitoringWorker:
                         decision="PENDING",
                         duration_ms=0.0,
                         details="Bar discovered, analysis in progress",
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
+                        created_at=utc_now_naive(),
+                        updated_at=utc_now_naive(),
                     )
                     db.add(rec)
                     db.commit()
@@ -500,7 +538,23 @@ class MarketMonitoringWorker:
                 except Exception as db_res_err:
                     db.rollback()
                     logger.warning(f"Failed to reserve bar {bar_key} in DB: {db_res_err}")
-                    rec = None
+                    # Fail-closed: continuing here would run the analysis
+                    # UNRESERVED, and the finalizer's insert would then collide
+                    # with the unique bar_key — guaranteed DATABASE_WRITE_FAILED
+                    # churn on every cycle. Skip instead; the same bar is
+                    # retried on the next poll once the DB recovers.
+                    self.last_status_code = "RESERVATION_FAILED"
+                    self.last_reason = f"Bar reservation failed for {bar_key}; cycle skipped: {db_res_err}"
+                    self.last_decision = "NONE"
+                    self.last_lifecycle_phase = "RESERVATION_FAILED"
+                    return {
+                        "cycle_id": cycle_id,
+                        "bar_key": bar_key,
+                        "status_code": self.last_status_code,
+                        "lifecycle_phase": self.last_lifecycle_phase,
+                        "reason": self.last_reason,
+                        "analysis_executed": False,
+                    }
 
             # 7. A NEW CLOSED BAR IS RESERVED! Process through Analysis Pipeline
             self.last_processed_bar_time = bar_time_utc
@@ -530,7 +584,7 @@ class MarketMonitoringWorker:
                         rec.lifecycle_phase = "FAILED"
                         rec.error_message = str(fe_err)
                         rec.details = self.last_reason
-                        rec.updated_at = datetime.utcnow()
+                        rec.updated_at = utc_now_naive()
                         db.commit()
                     except Exception:
                         db.rollback()
@@ -545,11 +599,19 @@ class MarketMonitoringWorker:
             active_model_artifact = model_reg.load_active_model_artifact()
 
             # Evaluate rules & model
-            rule_dir, rule_str, triggered_rules = SignalGenerator.evaluate_rules(latest_feat_series, approved_rules)
+            rule_dir, rule_str, triggered_rules = SignalGenerator.evaluate_rules(
+                latest_feat_series, approved_rules, symbol=self.symbol, timeframe=self.timeframe.value
+            )
             model_dir, model_prob = SignalGenerator.evaluate_model(latest_feat_series, active_model_artifact)
 
-            # Determine direction & status code
-            final_direction = "HOLD"
+            # Determine direction through the same consensus policy as SignalManager.
+            final_direction, _ = SignalGenerator.resolve_consensus(
+                rule_direction=rule_dir,
+                rule_strength=rule_str,
+                model_direction=model_dir,
+                model_strength=model_prob,
+                approved_rule_count=len(approved_rules),
+            )
             status_code = "NO_VALID_SIGNAL"
             reason_details = []
 
@@ -557,13 +619,6 @@ class MarketMonitoringWorker:
                 reason_details.append("NO_APPROVED_RULES")
             if active_model_artifact is None:
                 reason_details.append("NO_ACTIVE_MODEL")
-
-            if rule_dir != "HOLD" and model_dir == rule_dir:
-                final_direction = rule_dir
-            elif rule_dir != "HOLD" and model_dir is None:
-                final_direction = rule_dir
-            elif model_dir is not None and model_dir != "HOLD" and len(approved_rules) == 0:
-                final_direction = model_dir
 
             signal_id_created = None
             if final_direction == "HOLD":
@@ -578,9 +633,16 @@ class MarketMonitoringWorker:
                 status_code = "SIGNAL_DETECTED_EXECUTION_DISABLED"
                 reason_msg = f"Valid {final_direction} signal detected on {bar_key}. Execution disabled in SIGNAL_ONLY mode."
 
-                # Persist TradeSignal record using SignalManager
+                # Persist TradeSignal record using SignalManager. The worker
+                # passes the feature frame it ALREADY computed for the reserved
+                # bar: without it the manager re-fetches candles, and a new M1
+                # bar closing in between records bar N+1's signal under cycle N
+                # (item 40 race).
                 sig_mgr = SignalManager(db=db, data_provider=self.data_provider)
-                sig_record = sig_mgr.process_latest_bar(symbol=self.symbol, timeframe=self.timeframe)
+                sig_record = sig_mgr.process_latest_bar(
+                    symbol=self.symbol, timeframe=self.timeframe,
+                    precomputed_features=df_feats,
+                )
                 if sig_record:
                     signal_id_created = sig_record.signal_id
                     self.last_signal_id = signal_id_created
@@ -592,34 +654,34 @@ class MarketMonitoringWorker:
             self.last_lifecycle_phase = "COMPLETED"
             self.successful_cycles += 1
 
+            # Item 6 / M5: recovery sweep for demo orders whose broker outcome
+            # was never confirmed (PENDING stuck by a failed post-fill commit,
+            # or EXECUTION_UNKNOWN). Read-only toward the broker (history check
+            # only) and never dispatches, so it runs regardless of the demo
+            # gate: stale rows from before demo trading was disabled still
+            # deserve reconciliation.
+            try:
+                DemoTradingExecutor(db, self.data_provider).reconcile_stale_pending_orders()
+            except Exception as sweep_err:
+                logger.warning(f"PENDING reconciliation sweep failed: {sweep_err}")
+
             dur_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-            if rec:
-                try:
-                    rec.status_code = status_code
-                    rec.lifecycle_phase = "COMPLETED"
-                    rec.decision = final_direction
-                    rec.signal_id = signal_id_created
-                    rec.duration_ms = dur_ms
-                    rec.details = reason_msg
-                    rec.updated_at = datetime.utcnow()
-                    db.commit()
-                except Exception as commit_err:
-                    db.rollback()
-                    logger.error(f"Failed to commit completed cycle record: {commit_err}")
-                    self.last_status_code = "DATABASE_WRITE_FAILED"
-                    self.last_reason = f"Database commit failed: {commit_err}"
-            else:
-                self._record_cycle_in_db(
-                    db=db,
-                    cycle_id=cycle_id,
-                    bar_key=bar_key,
-                    bar_time=bar_time_utc,
-                    status_code=status_code,
-                    decision=final_direction,
-                    signal_id=signal_id_created,
-                    t0=t0,
-                    details=reason_msg
-                )
+            # rec is guaranteed non-None here: every reservation-failure path
+            # returns early, so analysis always finalizes against a reserved row.
+            try:
+                rec.status_code = status_code
+                rec.lifecycle_phase = "COMPLETED"
+                rec.decision = final_direction
+                rec.signal_id = signal_id_created
+                rec.duration_ms = dur_ms
+                rec.details = reason_msg
+                rec.updated_at = utc_now_naive()
+                db.commit()
+            except Exception as commit_err:
+                db.rollback()
+                logger.error(f"Failed to commit completed cycle record: {commit_err}")
+                self.last_status_code = "DATABASE_WRITE_FAILED"
+                self.last_reason = f"Database commit failed: {commit_err}"
 
             return {
                 "cycle_id": cycle_id,
@@ -637,44 +699,6 @@ class MarketMonitoringWorker:
         finally:
             db.close()
 
-    def _record_cycle_in_db(
-        self,
-        db: Session,
-        cycle_id: str,
-        bar_key: Optional[str],
-        bar_time: Optional[datetime],
-        status_code: str,
-        decision: str,
-        signal_id: Optional[str],
-        t0: float,
-        details: str,
-    ) -> None:
-        """Saves a WorkerCycleRecord to database, safely catching any write errors."""
-        try:
-            dur_ms = (time.perf_counter() - t0) * 1000.0
-            rec = WorkerCycleRecord(
-                cycle_id=cycle_id,
-                symbol=self.symbol,
-                timeframe=self.timeframe.value,
-                bar_key=bar_key,
-                bar_time=bar_time,
-                status_code=status_code,
-                decision=decision,
-                signal_id=signal_id,
-                duration_ms=dur_ms,
-                details=details,
-                error_message=self.last_error_message,
-                lifecycle_phase="COMPLETED",
-                updated_at=datetime.utcnow(),
-            )
-            db.add(rec)
-            db.commit()
-        except Exception as db_err:
-            db.rollback()
-            logger.error(f"Failed to record WorkerCycleRecord in DB: {db_err}")
-            self.last_status_code = "DATABASE_WRITE_FAILED"
-            self.last_reason = f"Database commit failed: {db_err}"
-
 
 # Global worker instance holder
 _global_worker: Optional[MarketMonitoringWorker] = None
@@ -686,3 +710,133 @@ def get_market_worker() -> MarketMonitoringWorker:
     if _global_worker is None:
         _global_worker = MarketMonitoringWorker()
     return _global_worker
+
+
+# Retention table specs: per-table created/status attributes for the
+# monthly archive + pruning pass (owner decision 2026-11-01: 30-day windows).
+_OPERATIONAL_TABLES = (
+    ("worker_cycle_records", WorkerCycleRecord, "created_at", "status_code"),
+    ("audit_logs", AuditLog, "created_at", "severity"),
+    ("trade_signals", TradeSignal, "created_at", "status"),
+    ("demo_orders", None, "created_at", "status"),  # DemoOrder resolved lazily (import order)
+)
+
+
+def _archive_monthly_summary(
+    db: Session,
+    table_name: str,
+    model,
+    created_attr: str,
+    status_attr: str,
+    cutoff,
+) -> Dict[str, int]:
+    """Write one monthly aggregate JSON per calendar month about to be pruned.
+
+    Owner decision 2026-11-01 (step 3.7): before retention deletes rows older
+    than the window, a per-month summary (total + per-status counts) is
+    archived to <ARTIFACTS_REPORTS_DIR>/archive/<table>/<YYYY-MM>.json. If a
+    summary file already exists the counts are MERGED, so repeated pruning
+    passes accumulate instead of losing history. Raises on IO failure so the
+    caller can skip pruning instead of deleting unarchived rows.
+    """
+    if model is None:
+        from backend.app.models.order import DemoOrder
+
+        model = DemoOrder
+    rows = (
+        db.query(getattr(model, created_attr), getattr(model, status_attr))
+        .filter(getattr(model, created_attr) < cutoff)
+        .all()
+    )
+    if not rows:
+        return {}
+    months: Dict[str, Dict[str, Any]] = {}
+    for ts, status_value in rows:
+        month = ts.strftime("%Y-%m") if ts is not None else "unknown"
+        bucket = months.setdefault(month, {"count": 0, "by_status": {}})
+        bucket["count"] += 1
+        status_key = str(status_value) if status_value is not None else "NONE"
+        bucket["by_status"][status_key] = bucket["by_status"].get(status_key, 0) + 1
+
+    archive_root = Path(settings.ARTIFACTS_REPORTS_DIR) / "archive" / table_name
+    archive_root.mkdir(parents=True, exist_ok=True)
+    for month, bucket in months.items():
+        target = archive_root / f"{month}.json"
+        if target.exists():
+            try:
+                existing = json.loads(target.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                existing = {}
+            bucket["count"] += int(existing.get("archived_count") or 0)
+            merged_status = dict(existing.get("by_status") or {})
+            for status_key, n in bucket["by_status"].items():
+                merged_status[status_key] = merged_status.get(status_key, 0) + int(n)
+            bucket["by_status"] = merged_status
+        payload = {
+            "table": table_name,
+            "month": month,
+            "archived_count": bucket["count"],
+            "by_status": bucket["by_status"],
+            "generated_at": utc_now_naive().isoformat(),
+        }
+        target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    logger.info("Monthly archive written for %s: %s", table_name, ", ".join(sorted(months)))
+    return {month: bucket["count"] for month, bucket in months.items()}
+
+
+def prune_operational_records(
+    db,
+    worker_cycle_days: int = 0,
+    audit_log_days: int = 0,
+    trade_signal_days: int = 0,
+    demo_order_days: int = 0,
+) -> Dict[str, int]:
+    """Configurable retention for operational tables (item 40 + owner decision).
+
+    Deletes worker_cycle_records / audit_logs / trade_signals / demo_orders
+    rows older than the respective window (in days). A window of 0 DISABLES
+    pruning for that table. BEFORE deleting, a monthly aggregate summary is
+    archived (owner decision 2026-11-01); if the archive write fails, pruning
+    for that table is SKIPPED this pass — rows are never deleted without a
+    surviving summary. Returns the per-table delete counts.
+    """
+    windows = {
+        "worker_cycle_records": int(worker_cycle_days or 0),
+        "audit_logs": int(audit_log_days or 0),
+        "trade_signals": int(trade_signal_days or 0),
+        "demo_orders": int(demo_order_days or 0),
+    }
+    deleted = {name: 0 for name in windows}
+    now = utc_now_naive()
+    for table_name, model, created_attr, status_attr in _OPERATIONAL_TABLES:
+        if model is None:
+            from backend.app.models.order import DemoOrder
+
+            model = DemoOrder
+        window = windows[table_name]
+        if window <= 0:
+            continue
+        cutoff = now - timedelta(days=window)
+        try:
+            _archive_monthly_summary(db, table_name, model, created_attr, status_attr, cutoff)
+        except Exception as e:
+            logger.error(
+                "Monthly archive failed for %s; pruning skipped this pass (fail-safe): %s",
+                table_name, e,
+            )
+            continue
+        removed = (
+            db.query(model)
+            .filter(getattr(model, created_attr) < cutoff)
+            .delete(synchronize_session=False)
+        )
+        deleted[table_name] = int(removed)
+    if any(deleted.values()):
+        db.commit()
+        logger.info(
+            "Operational retention applied: %d worker_cycle_records, %d audit_logs, "
+            "%d trade_signals, %d demo_orders pruned.",
+            deleted["worker_cycle_records"], deleted["audit_logs"],
+            deleted["trade_signals"], deleted["demo_orders"],
+        )
+    return deleted

@@ -15,6 +15,11 @@ from backend.app.db.base import Base
 from backend.app.models.worker_cycle import WorkerCycleRecord
 from backend.app.models.signal import TradeSignal
 from backend.app.models.emergency_stop import EmergencyStopState
+
+
+def _api_headers() -> dict:
+    """M15: gated GET reads require the same shared-secret header as POSTs."""
+    return {"X-API-TOKEN": settings.API_TOKEN}
 from backend.app.services.market_data.base import TimeFrame, Candle, Quote, SymbolInfo, AccountDetails
 from backend.app.services.market_data.mock_provider import MockMarketDataProvider
 from backend.app.services.worker.market_worker import MarketMonitoringWorker
@@ -277,7 +282,7 @@ def test_worker_market_closed_detection(test_db_session):
     assert res2["status_code"] == "NO_NEW_CLOSED_BAR"
 
 
-def test_worker_status_and_cycles_api_endpoints():
+def test_worker_status_and_cycles_api_endpoints(isolated_app_db):
     """Integration test: Verifies that FastAPI exposes worker status and cycle history correctly."""
     with TestClient(app) as client:
         # 1. Health check with worker telemetry
@@ -288,8 +293,8 @@ def test_worker_status_and_cycles_api_endpoints():
         assert "readiness" in data_h
         assert data_h["mode"] == "SIGNAL_ONLY"
 
-        # 2. Worker Status Endpoint
-        res_ws = client.get("/api/v1/system/worker/status")
+        # 2. Worker Status Endpoint (M15: token-gated read)
+        res_ws = client.get("/api/v1/system/worker/status", headers=_api_headers())
         assert res_ws.status_code == 200
         data_ws = res_ws.json()
         assert "liveness" in data_ws
@@ -297,7 +302,7 @@ def test_worker_status_and_cycles_api_endpoints():
         assert data_ws["symbol"] == "XAUUSD"
         assert data_ws["execution_mode"] == "SIGNAL_ONLY"
 
-        # 3. Worker Cycles History Endpoint
-        res_wc = client.get("/api/v1/system/worker/cycles")
+        # 3. Worker Cycles History Endpoint (M15: token-gated read)
+        res_wc = client.get("/api/v1/system/worker/cycles", headers=_api_headers())
         assert res_wc.status_code == 200
         assert isinstance(res_wc.json(), list)

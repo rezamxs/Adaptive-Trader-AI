@@ -35,8 +35,10 @@ class BacktestReportGenerator:
             "## ۲. فرض‌ها و پارامترهای هزینه (Assumptions & Cost Model)",
             f"- **اسپرد منظور شده:** {a['spread_points']} پوینت",
             f"- **لغزش قیمت (Slippage):** {a['slippage_points']} پوینت در ورود و خروج",
-            f"- **کمیسیون کارگزار:** ${a['commission_per_lot']} به ازای هر لات استاندارد",
+            f"- **کمیسیون کارگزار:** ${a['commission_per_lot']} به ازای هر لات استاندارد در هر سمت (ورود + خروج؛ مدل {a.get('commission_model', 'PER_SIDE')})",
             f"- **سیاست برخورد همزمان (Collision Policy):** {a['same_bar_collision_policy']} (محافظه‌کارانه)",
+            f"- **سیاست گپ عبوری از حد ضرر:** {a.get('gap_through_stop_policy', 'FILL_AT_BAR_OPEN')} (پُر در قیمت بازشدن کندل)",
+            f"- **حداکثر افت سرمایه:** شامل ضرر شناور داخل کندل با قرارداد محافظه‌کارانه (قلهٔ مطلوب سپس کف نامساعد در هر کندل باز؛ سفارش limit در TP و fill استاپ سقف/کف را محدود می‌کند)",
             "",
             "## ۳. محدودیت‌ها و هشدار آماری (Limitations)",
         ]
@@ -57,8 +59,15 @@ class BacktestReportGenerator:
         # Save to artifacts/reports
         save_dir = settings.ARTIFACTS_REPORTS_DIR
         save_dir.mkdir(parents=True, exist_ok=True)
-        report_path = save_dir / f"{backtest_result['run_id']}_report.md"
-        with open(report_path, "w", encoding="utf-8") as f:
-            f.write(report_content)
+        # The report filename embeds the engine-generated run_id (bt_ + hex).
+        # Defense-in-depth: the centralised helper validates the identifier,
+        # refuses separators/traversal, and containment-checks the resolved
+        # path (a tampered result dict must not write outside the reports
+        # directory).
+        from backend.app.core.security import build_contained_path
+
+        run_id = str(backtest_result.get("run_id", ""))
+        report_path = build_contained_path(save_dir, run_id, "report.md")
+        report_path.write_text(report_content, encoding="utf-8")
 
         return report_content

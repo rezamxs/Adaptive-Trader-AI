@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 from sqlalchemy import String, Integer, Float, DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 
 
 class DemoOrder(Base):
@@ -26,13 +26,13 @@ class DemoOrder(Base):
     stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
     take_profit: Mapped[float] = mapped_column(Float, nullable=False)
     
-    status: Mapped[str] = mapped_column(String(32), default="PENDING", index=True, nullable=False)  # PENDING, FILLED, REJECTED, CANCELLED, CLOSED
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", index=True, nullable=False)  # PENDING, FILLED, REJECTED, CANCELLED, CLOSED, EXECUTION_UNKNOWN
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     commission: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     swap: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     profit: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)
     executed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

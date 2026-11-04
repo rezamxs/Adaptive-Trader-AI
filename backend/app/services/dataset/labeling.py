@@ -23,16 +23,43 @@ class BarrierLabeler:
         1: Take Profit reached strictly before Stop Loss within horizon.
         0: Stop Loss hit first, same-bar collision, or horizon expired without reaching TP.
         """
+        if max_horizon_bars < 1:
+            raise ValueError("max_horizon_bars must be at least 1.")
+        if not np.isfinite(point_value) or point_value <= 0:
+            raise ValueError("point_value must be finite and positive.")
+        if spread_points < 0:
+            raise ValueError("spread_points must not be negative.")
+
         n = len(df)
         labels = np.full(n, fill_value=np.nan)
         close_prices = df["close"].values
         high_prices = df["high"].values
         low_prices = df["low"].values
-        atrs = df[atr_col].values if atr_col in df.columns else np.full(n, 0.0010)
+        if atr_col not in df.columns:
+            # Fail loud instead of a hardcoded 0.0010 fallback ATR: on XAUUSD
+            # (~$2000) that barrier is sub-tick and degenerates every label
+            # to 0 with no warning — silently corrupt training targets.
+            raise ValueError(
+                f"Barrier labeling requires the ATR column '{atr_col}' in the frame; "
+                "refusing to substitute a hardcoded fallback ATR."
+            )
+        atrs = df[atr_col].values
 
-        spread_cost = spread_points * point_value
+        # Prefer historical per-bar spread, available in MT5 rates, over today's
+        # broker spread. This avoids labeling all history with the current spread.
+        if "spread" in df.columns:
+            try:
+                historical_spreads = pd.to_numeric(df["spread"], errors="coerce").to_numpy(dtype=float)
+            except (TypeError, ValueError):
+                historical_spreads = np.full(n, float(spread_points))
+        else:
+            historical_spreads = np.full(n, float(spread_points))
 
         for i in range(n - max_horizon_bars):
+            bar_spread = historical_spreads[i]
+            if not np.isfinite(bar_spread) or bar_spread < 0:
+                bar_spread = float(spread_points)
+            spread_cost = bar_spread * point_value
             entry_price = close_prices[i] + spread_cost  # Pay ask price to buy
             atr = atrs[i]
             if np.isnan(atr) or atr <= 0:

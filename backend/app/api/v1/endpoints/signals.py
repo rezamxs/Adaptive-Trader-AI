@@ -1,20 +1,55 @@
 """Signal Generation and Demo Execution Endpoints."""
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
+from backend.app.core.auth import require_api_token
 from backend.app.db.session import get_db
 from backend.app.models.signal import TradeSignal
 from backend.app.models.order import DemoOrder
 from backend.app.services.market_data.base import TimeFrame
-from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
-from backend.app.services.market_data.mock_provider import MockMarketDataProvider
+from backend.app.services.market_data.provider_manager import (
+    acquire_shared_provider,
+    release_shared_provider,
+)
 from backend.app.services.signal.manager import SignalManager
-from backend.app.services.execution.demo_executor import DemoTradingExecutor
+from backend.app.services.execution.demo_executor import (
+    DemoTradingExecutor,
+    EXEC_MSG_DUPLICATE,
+    EXEC_MSG_UNRESOLVED,
+    EXEC_MSG_SAFETY_GATE,
+    EXEC_MSG_RISK_CHECKS,
+    EXEC_MSG_RISK_STATUS,
+    EXEC_MSG_STALE_QUOTE,
+    EXEC_MSG_NO_SPECS,
+)
 
 router = APIRouter()
+
+
+def _execution_failure_status(message: str) -> int:
+    """M22: demo-executor failures are heterogeneous — the HTTP status must
+    say what kind of failure happened instead of flattening everything to a
+    request-body 400. The fragments come from the executor's OWN constants
+    (single source of truth in demo_executor.py) — rewording a message there
+    updates the mapping automatically.
+
+    409 — conflict with a prior dispatch (duplicate idempotency) or an
+          unresolved outcome (EXECUTION_UNKNOWN reconciliation required).
+    403 — policy refusal (safety gate, risk-status/risk-check rejection).
+    503 — upstream market-data condition (stale quote, missing symbol specs).
+    400 — request/record data problems (volume validity).
+    """
+    m = message or ""
+    if EXEC_MSG_DUPLICATE in m or EXEC_MSG_UNRESOLVED in m:
+        return 409
+    if EXEC_MSG_SAFETY_GATE in m or EXEC_MSG_RISK_CHECKS in m or EXEC_MSG_RISK_STATUS in m:
+        return 403
+    if EXEC_MSG_STALE_QUOTE in m or EXEC_MSG_NO_SPECS in m:
+        return 503
+    return 400
 
 
 class GenerateSignalRequest(BaseModel):
@@ -23,8 +58,10 @@ class GenerateSignalRequest(BaseModel):
 
 
 @router.get("/")
-def list_signals(limit: int = 50, db: Session = Depends(get_db)):
-    """Lists recent trade signals."""
+def list_signals(limit: int = Query(50, ge=1, le=500), db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+    """Lists recent trade signals (M15: entry/SL/TP levels — gated)."""
+    # limit is bounded: SQLite treats LIMIT -1 as unlimited, so an unbounded
+    # query param could dump the whole table (memory DoS / bulk exfiltration).
     signals = db.query(TradeSignal).order_by(TradeSignal.id.desc()).limit(limit).all()
     return [{
         "signal_id": s.signal_id,
@@ -44,11 +81,15 @@ def list_signals(limit: int = 50, db: Session = Depends(get_db)):
 
 
 @router.post("/generate")
-def generate_signal(req: GenerateSignalRequest, db: Session = Depends(get_db)):
+def generate_signal(req: GenerateSignalRequest, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
     """Evaluates latest bar and generates a signal in current execution mode."""
-    provider = MT5MarketDataProvider()
+    provider = acquire_shared_provider()
     if not provider.connect():
-        provider = MockMarketDataProvider()
+        release_shared_provider(provider)
+        raise HTTPException(
+            status_code=503,
+            detail="MT5 is unavailable; signal generation from synthetic market data is disabled.",
+        )
 
     try:
         manager = SignalManager(db=db, data_provider=provider)
@@ -69,12 +110,12 @@ def generate_signal(req: GenerateSignalRequest, db: Session = Depends(get_db)):
             "execution_mode": sig.execution_mode,
         }
     finally:
-        provider.disconnect()
+        release_shared_provider(provider)
 
 
 @router.get("/orders")
-def list_demo_orders(limit: int = 50, db: Session = Depends(get_db)):
-    """Lists executed demo orders."""
+def list_demo_orders(limit: int = Query(50, ge=1, le=500), db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+    """Lists executed demo orders (M15: broker tickets and executed prices — gated)."""
     orders = db.query(DemoOrder).order_by(DemoOrder.id.desc()).limit(limit).all()
     return [{
         "order_id": o.order_id,
@@ -92,21 +133,25 @@ def list_demo_orders(limit: int = 50, db: Session = Depends(get_db)):
 
 
 @router.post("/{signal_id}/execute-demo")
-def execute_demo_order(signal_id: str, db: Session = Depends(get_db)):
+def execute_demo_order(signal_id: str, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
     """Dispatches an approved signal to DEMO account through the isolated demo executor."""
     sig = db.query(TradeSignal).filter_by(signal_id=signal_id).first()
     if not sig:
         raise HTTPException(status_code=404, detail=f"Signal {signal_id} not found.")
 
-    provider = MT5MarketDataProvider()
+    provider = acquire_shared_provider()
     if not provider.connect():
-        provider = MockMarketDataProvider()
+        release_shared_provider(provider)
+        raise HTTPException(
+            status_code=503,
+            detail="MT5 is unavailable; demo execution requires a verified terminal and account.",
+        )
 
     try:
         executor = DemoTradingExecutor(db=db, data_provider=provider)
         success, order, msg = executor.execute_demo_signal(sig)
         if not success:
-            raise HTTPException(status_code=400, detail=msg)
+            raise HTTPException(status_code=_execution_failure_status(msg), detail=msg)
 
         return {
             "status": "SUCCESS",
@@ -117,4 +162,4 @@ def execute_demo_order(signal_id: str, db: Session = Depends(get_db)):
             "message": msg,
         }
     finally:
-        provider.disconnect()
+        release_shared_provider(provider)

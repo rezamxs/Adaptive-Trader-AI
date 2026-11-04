@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from sqlalchemy import String, Integer, Float, DateTime, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 
 
 class TradingRule(Base):
@@ -13,6 +13,12 @@ class TradingRule(Base):
     rule_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     category: Mapped[str] = mapped_column(String(32), index=True, nullable=False)  # entry, exit, filter, risk
+    # M4: explicit direction — the ONLY source of rule direction. Never inferred
+    # from the rule name. NULL (undecided) rules never cast a direction vote.
+    direction: Mapped[Optional[str]] = mapped_column(String(4), nullable=True)  # 'BUY' | 'SELL' | NULL
+    # Step 3.3: extractor suggestion from the document TEXT (never the name).
+    # Informational only — the generator reads `direction`, never this field.
+    suggested_direction: Mapped[Optional[str]] = mapped_column(String(4), nullable=True)  # 'BUY' | 'SELL' | NULL
     description: Mapped[str] = mapped_column(Text, nullable=False)
     
     # Structured rule components
@@ -36,5 +42,5 @@ class TradingRule(Base):
     rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, onupdate=utc_now_naive, nullable=False)

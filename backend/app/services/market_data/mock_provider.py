@@ -48,6 +48,28 @@ class MockMarketDataProvider(IMarketDataProvider):
             is_demo=self.is_demo,
         )
 
+    def get_open_positions_count(self) -> Optional[int]:
+        """Synthetic providers have no actual open broker positions."""
+        return 0 if self._connected else None
+
+    def get_open_positions(self) -> Optional[list]:
+        """Synthetic providers hold no open positions; an empty grid."""
+        return [] if self._connected else None
+
+    def get_daily_loss_percent(self) -> Optional[float]:
+        """Synthetic provider reports only its fixed demo fixture state."""
+        return 0.0 if self._connected else None
+
+    def calculate_order_margin(
+        self, symbol: str, direction: str, volume: float, price: float
+    ) -> Optional[float]:
+        """Approximate margin for isolated tests; this is not broker execution evidence."""
+        info = self.get_symbol_info(symbol)
+        account = self.get_account_info()
+        if not info or not account or direction not in {"BUY", "SELL"} or volume <= 0 or price <= 0:
+            return None
+        return float(volume * info.trade_contract_size * price / max(account.leverage, 1))
+
     def get_symbols(self) -> List[str]:
         return ["EURUSD", "GBPUSD", "USDJPY"]
 
