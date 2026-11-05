@@ -60,6 +60,12 @@ class MarketMonitoringWorker:
         self.is_running = False
         self._task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
+        # Buglist item 17: TTL cache for the trading governance probe so a
+        # public /health poller cannot force a joblib artifact load per poll.
+        import threading as _threading
+
+        self._probe_cache_lock = _threading.Lock()
+        self._gov_probe_cache: Optional[Tuple[float, bool, str]] = None
 
         # Telemetry & Diagnostics State
         self.started_at: Optional[datetime] = None
@@ -162,12 +168,33 @@ class MarketMonitoringWorker:
         artifact twice from disk (O(artifact size) per poll); this method
         keeps the two views consistent from one shared evaluation.
 
+        Buglist item 17: the probe result is TTL-cached — the PUBLIC /health
+        endpoint deserialized the joblib artifact on EVERY unauthenticated
+        poll, so a repeated external poller could burn CPU/memory for free.
+        The cache window is HEALTH_PROBE_CACHE_SECONDS (0 disables it); the
+        worker's own cycle path calls the probe too and benefits equally, and
+        the probe still re-evaluates immediately after the window so a stale
+        readiness verdict cannot outlive the operator's model/rule changes by
+        more than one cache window.
+
         The rules query mirrors KnowledgeManager.get_active_strategy_rules,
         including its CRITICAL invariant: approval_status == 'approved' ONLY.
         Constructing KnowledgeManager here would eagerly build the whole BM25
         corpus index, which a probe evaluated around every worker cycle must
         not pay for (item 8) — hence the direct query.
         """
+        cache_ttl = float(getattr(settings, "HEALTH_PROBE_CACHE_SECONDS", 20.0) or 0.0)
+        now = time.monotonic()
+        with self._probe_cache_lock:
+            cached = self._gov_probe_cache
+            if cached is not None and cache_ttl > 0 and (now - cached[0]) < cache_ttl:
+                return cached[1], cached[2]
+        result = self._trading_governance_probe_uncached()
+        with self._probe_cache_lock:
+            self._gov_probe_cache = (now, result[0], result[1])
+        return result
+
+    def _trading_governance_probe_uncached(self) -> Tuple[bool, str]:
         if not self.service_ready:
             return False, f"SERVICE_NOT_READY ({self.service_ready_reason})"
         if not self.market_data_ready:
@@ -714,12 +741,19 @@ def get_market_worker() -> MarketMonitoringWorker:
 
 # Retention table specs: per-table created/status attributes for the
 # monthly archive + pruning pass (owner decision 2026-11-01: 30-day windows).
+# demo_orders additionally excludes NON-FINAL statuses from pruning
+# (buglist item 2): an order still awaiting broker reconciliation (PENDING,
+# EXECUTION_UNKNOWN) must never be aged out of the table — deleting it would
+# destroy the only record needed to reconcile the broker response later.
 _OPERATIONAL_TABLES = (
     ("worker_cycle_records", WorkerCycleRecord, "created_at", "status_code"),
     ("audit_logs", AuditLog, "created_at", "severity"),
     ("trade_signals", TradeSignal, "created_at", "status"),
     ("demo_orders", None, "created_at", "status"),  # DemoOrder resolved lazily (import order)
 )
+
+# DemoOrder statuses that still carry an open reconciliation obligation.
+_UNFINAL_ORDER_STATUSES = ("PENDING", "EXECUTION_UNKNOWN")
 
 
 def _archive_monthly_summary(
@@ -799,6 +833,11 @@ def prune_operational_records(
     archived (owner decision 2026-11-01); if the archive write fails, pruning
     for that table is SKIPPED this pass — rows are never deleted without a
     surviving summary. Returns the per-table delete counts.
+
+    Buglist item 2: demo_orders in a NON-FINAL status (PENDING,
+    EXECUTION_UNKNOWN) are NEVER pruned regardless of age — they are the only
+    record available to reconcile the broker outcome; they are aged out once
+    they reach a final status (FILLED/REJECTED/CANCELLED/CLOSED).
     """
     windows = {
         "worker_cycle_records": int(worker_cycle_days or 0),
@@ -825,11 +864,12 @@ def prune_operational_records(
                 table_name, e,
             )
             continue
-        removed = (
-            db.query(model)
-            .filter(getattr(model, created_attr) < cutoff)
-            .delete(synchronize_session=False)
-        )
+        prune_query = db.query(model).filter(getattr(model, created_attr) < cutoff)
+        if table_name == "demo_orders":
+            prune_query = prune_query.filter(
+                getattr(model, status_attr).notin_(_UNFINAL_ORDER_STATUSES)
+            )
+        removed = prune_query.delete(synchronize_session=False)
         deleted[table_name] = int(removed)
     if any(deleted.values()):
         db.commit()

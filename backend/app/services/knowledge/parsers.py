@@ -188,15 +188,52 @@ class DocumentParser:
         return full_text, 1, page_chunks
 
     @staticmethod
+    def _bounded_xlsx_zipfile(source) -> "zipfile.ZipFile":
+        """Opens an XLSX container and bounds every OOXML member's DECOMPRESSED
+        size (buglist item 6).
+
+        An XLSX is a ZIP of XML members; openpyxl decompresses sharedStrings.xml
+        and the sheet parts fully into memory, so a crafted workbook can expand
+        ~1000x from a tiny compressed archive (the same decompression-bomb shape
+        the DOCX/ZIP parsers already guard against). This pre-pass reads at most
+        cap+1 bytes from every member and refuses the file before openpyxl ever
+        touches it.
+        """
+        import zipfile
+
+        zf = zipfile.ZipFile(source)
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            with zf.open(info) as member:
+                probe = member.read(_MAX_MEMBER_BYTES + 1)
+            if len(probe) > _MAX_MEMBER_BYTES:
+                zf.close()
+                raise ValueError(
+                    f"XLSX member '{info.filename}' exceeds the "
+                    f"{_MAX_MEMBER_BYTES}-byte per-member limit; refusing "
+                    "possible decompression bomb."
+                )
+        return zf
+
+    @staticmethod
     def parse_excel(file_bytes: bytes) -> Tuple[str, int, List[Dict[str, int]]]:
-        """Parses Excel (.xlsx) workbooks across all sheets."""
-        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+        """Parses Excel (.xlsx) workbooks across all sheets (bounded)."""
+        # Bounded pre-pass over every OOXML member; openpyxl then re-opens the
+        # (already-verified) container itself — it cannot consume a ZipFile.
+        zf = DocumentParser._bounded_xlsx_zipfile(io.BytesIO(file_bytes))
+        zf.close()
+        # read_only=True streams rows instead of materializing a full cell DOM
+        # per sheet; the decompressed-size cap bounds shared strings too.
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
         return DocumentParser._excel_from_workbook(wb)
 
     @staticmethod
     def parse_excel_path(path: Path) -> Tuple[str, int, List[Dict[str, int]]]:
-        """Parses an Excel workbook from disk without materializing its bytes."""
-        wb = openpyxl.load_workbook(str(path), data_only=True)
+        """Parses an Excel workbook from disk without materializing its bytes (bounded)."""
+        zf = DocumentParser._bounded_xlsx_zipfile(str(path))
+        zf.close()
+        wb = openpyxl.load_workbook(str(path), data_only=True, read_only=True)
         return DocumentParser._excel_from_workbook(wb)
 
     @staticmethod

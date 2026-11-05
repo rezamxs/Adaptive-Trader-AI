@@ -9,6 +9,7 @@ import numpy as np
 
 from backend.app.db.session import get_db
 from backend.app.core.auth import require_api_token
+from backend.app.core.rate_limit import heavy_rate_limiter
 from backend.app.models.backtest import BacktestRun
 from backend.app.services.market_data.provider_manager import (
     acquire_shared_provider,
@@ -27,7 +28,7 @@ router = APIRouter()
 class RunBacktestRequest(BaseModel):
     symbol: str = "EURUSD"
     timeframe: TimeFrame = TimeFrame.M15
-    strategy_name: str = "Approved Strategy Backtest"
+    strategy_name: str = Field(default="Approved Strategy Backtest", max_length=200)  # item 19
     bars_count: int = Field(default=300, ge=50, le=100000)
     spread_points: Optional[int] = Field(default=None, ge=0, le=100000)
     slippage_points: int = Field(default=3, ge=0, le=100000)
@@ -63,11 +64,23 @@ def list_backtest_runs(
 
 
 @router.post("/run")
-def execute_backtest(req: RunBacktestRequest, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+def execute_backtest(
+    req: RunBacktestRequest,
+    db: Session = Depends(get_db),
+    _token: str = Depends(require_api_token),
+    _rate: None = Depends(heavy_rate_limiter),  # buglist item 18
+):
     """Executes realistic backtest with cost modeling and stress analysis."""
     provider = acquire_shared_provider()
-    if not provider.connect():
-        release_shared_provider(provider)
+    connected = False
+    try:
+        connected = provider.connect()
+    finally:
+        # Buglist item 16: an exception from connect() must release the
+        # acquired counter too, not strand it (the leak path).
+        if not connected:
+            release_shared_provider(provider)
+    if not connected:
         raise HTTPException(
             status_code=503,
             detail="MT5 is unavailable; backtesting with synthetic fallback data is disabled.",

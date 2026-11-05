@@ -1,7 +1,7 @@
 """Trading Rules and Human Approval Endpoints."""
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.app.db.session import get_db
@@ -19,8 +19,10 @@ router = APIRouter()
 
 
 class RejectRuleRequest(BaseModel):
-    reason: str
-    actor: str = "USER"
+    # Buglist item 19: the reason lands in an unbounded DB Text column —
+    # the API schema is the effective length gate.
+    reason: str = Field(min_length=1, max_length=2000)
+    actor: str = Field(default="USER", max_length=100)
 
 
 class ApproveRuleRequest(BaseModel):

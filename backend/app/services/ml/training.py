@@ -93,4 +93,88 @@ def train_candidate_from_market(
         logger.error(f"Model training failed: {outcome}")
         raise TrainingInternalError("Model training failed due to an internal error.")
 
+    # Buglist item 4: produce + persist + attach per-fold-retrained ML
+    # walk-forward evidence for the freshly registered candidate. Best-effort:
+    # a short dataset (the API default is only 300 bars) or any evaluation
+    # error must never fail the training itself — the outcome is reported
+    # explicitly instead, and the promotion gate treats absent evidence the
+    # same way it did before (the strategy-level walk-forward gate covers it).
+    train_res["ml_walk_forward_evidence"] = produce_ml_walk_forward_evidence(
+        db,
+        train_res,
+        df_raw,
+        symbol=symbol,
+        timeframe=timeframe,
+        algorithm=algorithm,
+        horizon_bars=horizon_bars,
+        spread_points=max(0, broker_spread),
+        point_value=point_value,
+    )
+
     return train_res
+
+
+def produce_ml_walk_forward_evidence(
+    db,
+    train_res: Dict[str, Any],
+    df_raw,
+    *,
+    symbol: str,
+    timeframe: str,
+    algorithm: str,
+    horizon_bars: int,
+    spread_points: int,
+    point_value: float,
+) -> Dict[str, Any]:
+    """Runs, persists, and attaches ML walk-forward evidence for one candidate.
+
+    The evaluation reuses the EXACT data and configuration the candidate was
+    trained with (same raw frame, same algorithm/hyperparameters, same label
+    horizon and cost parameters), so the attach-time configuration binding
+    (buglist item 5) can never reject its own producer's output. Any failure
+    is reported as {"status": "skipped", "reason": ...} — evidence production
+    must not be able to break training.
+    """
+    from backend.app.core.config import settings
+    from backend.app.services.ml.walk_forward import run_ml_walk_forward
+    from backend.app.services.ml.registry import ModelRegistry
+
+    fold_count = int(getattr(settings, "ML_WALK_FORWARD_FOLDS", 4) or 0)
+    if fold_count < 2:
+        return {"status": "disabled", "reason": "ML_WALK_FORWARD_FOLDS < 2"}
+
+    try:
+        payload = run_ml_walk_forward(
+            df_raw,
+            symbol=symbol,
+            timeframe=timeframe,
+            algorithm=algorithm,
+            hyperparameters=dict(train_res.get("hyperparameters") or {}),
+            fold_count=fold_count,
+            horizon_bars=int(horizon_bars),
+            spread_points=int(spread_points),
+            point_value=float(point_value),
+        )
+        registry = ModelRegistry(db)
+        run_id = registry.persist_ml_walk_forward_evaluation(payload)
+        registry.attach_ml_walk_forward_metrics(
+            train_res["model_id"], payload, run_id=run_id
+        )
+        logger.info(
+            "ML walk-forward evidence recorded for %s (run_id=%s, folds=%d, "
+            "oos_auc=%.4f)",
+            train_res["model_id"], run_id, payload["fold_count"],
+            payload["aggregate"]["roc_auc"]["mean"],
+        )
+        return {
+            "status": "evidence_recorded",
+            "run_id": run_id,
+            "fold_count": payload["fold_count"],
+            "oos_roc_auc_mean": payload["aggregate"]["roc_auc"]["mean"],
+        }
+    except Exception as exc:
+        logger.warning(
+            "ML walk-forward evidence skipped for %s: %s: %s",
+            train_res.get("model_id"), type(exc).__name__, exc,
+        )
+        return {"status": "skipped", "reason": f"{type(exc).__name__}: {exc}"}

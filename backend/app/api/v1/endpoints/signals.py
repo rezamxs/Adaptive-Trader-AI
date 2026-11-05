@@ -1,7 +1,7 @@
 """Signal Generation and Demo Execution Endpoints."""
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
@@ -53,7 +53,7 @@ def _execution_failure_status(message: str) -> int:
 
 
 class GenerateSignalRequest(BaseModel):
-    symbol: str = "EURUSD"
+    symbol: str = Field(default="EURUSD", min_length=1, max_length=32)  # item 19
     timeframe: TimeFrame = TimeFrame.M15
 
 
@@ -84,8 +84,15 @@ def list_signals(limit: int = Query(50, ge=1, le=500), db: Session = Depends(get
 def generate_signal(req: GenerateSignalRequest, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
     """Evaluates latest bar and generates a signal in current execution mode."""
     provider = acquire_shared_provider()
-    if not provider.connect():
-        release_shared_provider(provider)
+    connected = False
+    try:
+        connected = provider.connect()
+    finally:
+        # Buglist item 16: an exception from connect() must release the
+        # acquired counter too, not strand it (the leak path).
+        if not connected:
+            release_shared_provider(provider)
+    if not connected:
         raise HTTPException(
             status_code=503,
             detail="MT5 is unavailable; signal generation from synthetic market data is disabled.",
@@ -140,8 +147,15 @@ def execute_demo_order(signal_id: str, db: Session = Depends(get_db), _token: st
         raise HTTPException(status_code=404, detail=f"Signal {signal_id} not found.")
 
     provider = acquire_shared_provider()
-    if not provider.connect():
-        release_shared_provider(provider)
+    connected = False
+    try:
+        connected = provider.connect()
+    finally:
+        # Buglist item 16: an exception from connect() must release the
+        # acquired counter too, not strand it (the leak path).
+        if not connected:
+            release_shared_provider(provider)
+    if not connected:
         raise HTTPException(
             status_code=503,
             detail="MT5 is unavailable; demo execution requires a verified terminal and account.",
