@@ -79,6 +79,7 @@
     ├── reports/                    # گزارش‌های پژوهشی و ممیزی
     ├── data/                       # داده خام و پردازش‌شده
     ├── artifacts/                  # مدل‌ها و خروجی گزارش‌ها
+    ├── .agents/skills/             # مهارت‌ها و دانش مهندسی پروژه
     ├── requirements-lock.txt       # قفل نسخه‌های وابستگی
     └── pyproject.toml
 
@@ -347,6 +348,7 @@ Workflow گیت‌هاب در .github/workflows/core-regression.yml مجموعه
 - [مشخصات استراتژی‌ها](docs/strategy/strategy_spec.md)
 - [رجیستری قواعد](docs/strategy/rule_registry.json)
 - [نقشه کتابخانه‌ها و مهارت ML](docs/engineering/ml-library-map.md)
+- [حافظه مرجع پروژه](docs/PROJECT_MEMORY.md)
 
 ---
 
