@@ -82,6 +82,12 @@ def _ingest_one(db, entry: Path) -> Dict:
     The move happens only after the transactional ingest returns; a crash
     before the move leaves the file in place, and the next scan retries it
     (idempotent via content_sha256).
+
+    Buglist item 7: the manager returns a FAILED-status Document (instead of
+    raising) when the parser itself fails, so a bare "no exception" result is
+    NOT success. A file whose document did not reach 'completed' is counted as
+    failed and moved to failed/ — it is reported honestly and stays available
+    for a later manual retry instead of being silently archived as processed.
     """
     from backend.app.services.knowledge.manager import KnowledgeManager as _KM
 
@@ -90,14 +96,27 @@ def _ingest_one(db, entry: Path) -> Dict:
         doc, rules = _KM(db).ingest_document_path(
             entry.name, entry, source_description="document inbox"
         )
+        completed = doc.processing_status == "completed"
         result.update({
-            "ok": True,
+            "ok": completed,
             "document_id": doc.document_id,
             "processing_status": doc.processing_status,
             "rules_extracted": len(rules),
-            "page_type_summary": get_page_type_summary(db, doc.document_id),
+            "page_type_summary": get_page_type_summary(db, doc.document_id) if completed else [],
         })
-        _move(entry, entry.parent / "processed" / entry.name)
+        if not completed:
+            # Parse-level failure the manager swallowed into a failed record:
+            # report it like any other ingestion failure.
+            result["error"] = doc.error_message or (
+                f"document processing ended with status {doc.processing_status!r}"
+            )
+            logger.error(
+                "Inbox ingestion produced a %s document for %s: %s",
+                doc.processing_status, entry.name, result["error"],
+            )
+            _move(entry, entry.parent / "failed" / entry.name)
+        else:
+            _move(entry, entry.parent / "processed" / entry.name)
     except Exception as e:
         result["error"] = f"{type(e).__name__}: {e}"
         logger.error("Inbox ingestion FAILED for %s: %s", entry.name, e)

@@ -279,7 +279,7 @@ def test_verifier_rejects_forged_total_oos_samples(synthetic_frame):
 # ---------------------------------------------------------------- registry integration
 
 def _model(model_id, artifact_path, *, status="candidate", auc=0.56, brier=0.19,
-           walk_forward_metrics=None):
+           walk_forward_metrics=None, features_used=None):
     validation_metrics = {"roc_auc": auc, "brier_score": brier, "sample_count": 50}
     test_metrics = {"roc_auc": auc, "brier_score": brier, "sample_count": 50}
     wf = walk_forward_metrics if walk_forward_metrics is not None else {}
@@ -296,9 +296,11 @@ def _model(model_id, artifact_path, *, status="candidate", auc=0.56, brier=0.19,
     # Minor-17 contract: every artifact row carries the byte digest the load
     # path verifies BEFORE unpickling.
     artifact_sha256 = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    # Buglist item 5: attached evidence must match the record's training
+    # configuration, so callers pass the payload's own feature list.
     return MLModelRecord(
         model_id=model_id, dataset_version_tag="mlwf-dv", algorithm="logistic_regression",
-        hyperparameters={}, features_used=["rsi_14"], target_name="target_tp_before_sl",
+        hyperparameters={}, features_used=features_used or ["rsi_14"], target_name="target_tp_before_sl",
         train_metrics={}, validation_metrics=validation_metrics, test_metrics=test_metrics,
         calibration_metrics={}, walk_forward_metrics=wf, status=status,
         artifact_path=str(artifact_path), metrics_digest=digest,
@@ -314,7 +316,7 @@ def _persist_payload(db_session, payload):
 def test_attach_ml_walk_forward_verifies_and_stores(db_session, tmp_path, synthetic_frame):
     payload = _valid_payload(synthetic_frame)
     artifact = tmp_path / "mlwf.joblib"
-    candidate = _model("mlwf-candidate", artifact)
+    candidate = _model("mlwf-candidate", artifact, features_used=list(payload["feature_names"]))
     db_session.add(candidate)
     db_session.commit()
 
@@ -352,7 +354,7 @@ def test_attach_rejects_invalid_ml_walk_forward_payload(db_session, tmp_path, sy
     payload["folds"][1]["test_start_pos"] = payload["folds"][0]["test_end_pos"] - 5
     payload["folds"][1]["train_end_pos"] = payload["folds"][1]["test_start_pos"] - 36
     artifact = tmp_path / "mlwf_bad.joblib"
-    candidate = _model("mlwf-bad", artifact)
+    candidate = _model("mlwf-bad", artifact, features_used=list(payload["feature_names"]))
     db_session.add(candidate)
     db_session.commit()
 
@@ -373,19 +375,20 @@ def test_promotion_blocks_tampered_ml_walk_forward_evidence(db_session, tmp_path
         "backend.app.services.ml.registry.log_security_event", lambda *a, **k: None)
     seed_walk_forward_run(db_session, "bt_mlwf_promo")
 
-    artifact = tmp_path / "mlwf_tampered.joblib"
-    candidate = _model(
-        "mlwf-tampered", artifact, auc=0.56, brier=0.19,
-        walk_forward_metrics=build_walk_forward_payload("bt_mlwf_promo"),
-    )
-    db_session.add(candidate)
-    db_session.commit()
-
     registry = ModelRegistry(db_session)
     payload = run_ml_walk_forward(
         _mlwf_frame(), symbol="XAUUSD", timeframe="M15",
         algorithm="logistic_regression", fold_count=3, min_train_bars=300,
     )
+    artifact = tmp_path / "mlwf_tampered.joblib"
+    candidate = _model(
+        "mlwf-tampered", artifact, auc=0.56, brier=0.19,
+        walk_forward_metrics=build_walk_forward_payload("bt_mlwf_promo"),
+        features_used=list(payload["feature_names"]),
+    )
+    db_session.add(candidate)
+    db_session.commit()
+
     run_id = registry.persist_ml_walk_forward_evaluation(payload)
     registry.attach_ml_walk_forward_metrics("mlwf-tampered", payload, run_id=run_id)
     db_session.expire_all()
@@ -423,8 +426,8 @@ def test_persisted_run_cannot_be_rebound_to_a_different_model(db_session, tmp_pa
     validate for model B — the row records its owner, so a payload copied
     verbatim (including A's digest) fails closed on B."""
     payload = _valid_payload(synthetic_frame)
-    candidate_a = _model("mlwf-model-a", tmp_path / "a.joblib")
-    candidate_b = _model("mlwf-model-b", tmp_path / "b.joblib")
+    candidate_a = _model("mlwf-model-a", tmp_path / "a.joblib", features_used=list(payload["feature_names"]))
+    candidate_b = _model("mlwf-model-b", tmp_path / "b.joblib", features_used=list(payload["feature_names"]))
     db_session.add_all([candidate_a, candidate_b])
     db_session.commit()
 
@@ -447,7 +450,7 @@ def test_reattach_of_own_payload_stays_idempotent_and_promotable(db_session, tmp
     producing an evidence blob the promotion verifier would later reject as
     'tampered'. Idempotent re-attach must keep the evidence promotable."""
     payload = _valid_payload(synthetic_frame)
-    candidate = _model("mlwf-own", tmp_path / "own.joblib")
+    candidate = _model("mlwf-own", tmp_path / "own.joblib", features_used=list(payload["feature_names"]))
     db_session.add(candidate)
     db_session.commit()
 

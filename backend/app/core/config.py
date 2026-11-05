@@ -102,6 +102,25 @@ class Settings(BaseSettings):
     TRAINING_SCHEDULE_ENABLED: bool = True
     TRAINING_SCHEDULE_HOUR_UTC: int = 21
 
+    # Buglist item 4: the shared training flow (HTTP /ml/train AND the nightly
+    # scheduler) produces per-fold-retrained ML walk-forward evidence for each
+    # new candidate (persisted into ml_walk_forward_runs + attached to the
+    # candidate). This activates the promotion gate that previously had no
+    # producer. Best-effort: on failure the evidence is skipped with an
+    # explicit reason in the result, never breaking the training itself.
+    # 0 folds disables the producer entirely.
+    ML_WALK_FORWARD_FOLDS: int = 4
+
+    # Buglist item 18: per-minute call cap on the heavy CPU endpoints
+    # (POST /backtest/run and POST /ml/train), keyed by API token. 0 disables
+    # the limiter (tests may rely on that).
+    HEAVY_RATE_LIMIT_PER_MINUTE: int = 10
+
+    # Buglist item 17: TTL cache (seconds) for the trading governance probe
+    # behind the PUBLIC /health endpoint — every poll previously deserialized
+    # the active model artifact from disk. 0 disables the cache.
+    HEALTH_PROBE_CACHE_SECONDS: float = 20.0
+
     # Market Monitoring Worker Settings
     WORKER_ENABLED: bool = True
     WORKER_SYMBOL: str = "XAUUSD"

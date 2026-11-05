@@ -1,7 +1,7 @@
 """KnowledgeChunk Model for storing granular, sourced learning material with full content preservation."""
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from sqlalchemy import String, Integer, DateTime, Text, JSON
+from sqlalchemy import String, Integer, DateTime, Text, JSON, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.app.db.base import Base, utc_now_naive
 
@@ -11,7 +11,11 @@ class KnowledgeChunk(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     chunk_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
-    document_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    # Buglist item 13: the chunk-to-document relation is DB-enforced now,
+    # not merely a code convention (chunks are owned by their document).
+    document_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("documents.document_id", ondelete="CASCADE"),
+        index=True, nullable=False)
     source_file: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
     location_type: Mapped[str] = mapped_column(String(32), nullable=False)  # page, session, table_row, archive_member
     location_reference: Mapped[str] = mapped_column(String(128), index=True, nullable=False)

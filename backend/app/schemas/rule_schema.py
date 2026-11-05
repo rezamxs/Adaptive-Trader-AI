@@ -71,11 +71,13 @@ class BatchReviewItem(BaseModel):
     approved with no direction — it will never cast a direction vote).
     action=reject: requires `reason`."""
 
-    rule_id: str
+    rule_id: str = Field(min_length=1, max_length=64)
     action: str  # 'approve' | 'reject' (validated per item, not by the enum)
-    direction: Optional[str] = None  # 'BUY' | 'SELL' | 'SUGGESTED' | None
-    reason: Optional[str] = None
-    notes: Optional[str] = None
+    direction: Optional[str] = Field(default=None, max_length=16)  # 'BUY' | 'SELL' | 'SUGGESTED' | None
+    # Buglist item 19: free-text reasons land in unbounded DB Text columns —
+    # the API layer is the effective length gate.
+    reason: Optional[str] = Field(default=None, max_length=2000)
+    notes: Optional[str] = Field(default=None, max_length=2000)
 
 
 class BatchReviewRequest(BaseModel):
@@ -84,8 +86,8 @@ class BatchReviewRequest(BaseModel):
 
 class RuleApprovalUpdate(BaseModel):
     approval_status: ApprovalStatus
-    rejection_reason: Optional[str] = None
-    notes: Optional[str] = None
+    rejection_reason: Optional[str] = Field(default=None, max_length=2000)  # item 19
+    notes: Optional[str] = Field(default=None, max_length=2000)  # item 19
 
 
 class TradingRuleResponse(TradingRuleBase):

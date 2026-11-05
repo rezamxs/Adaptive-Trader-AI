@@ -8,6 +8,9 @@
 # Reproduce the environment with:
 #   python -m pip install -r requirements-lock.txt
 #
+# Buglist item 11: Windows-only distributions carry an explicit
+# sys_platform marker so the same file installs cleanly on Linux too.
+#
 # Regenerate after a dependency change by recomputing the closure of
 # pyproject.toml's dependencies (direct deps + transitives, environment
 # markers resolved). The three backport packages below are excluded by their
@@ -34,7 +37,11 @@ iniconfig==2.3.1
 joblib==1.6.0
 mako==1.4.3
 markupsafe==3.0.4
-metatrader5==5.0.6231
+# Buglist item 11: the MetaTrader5 distribution ships Windows wheels only;
+# without this marker a plain `pip install -r requirements-lock.txt` fails
+# outright on Linux (item 10's CI lock install). The provider import sets
+# MT5_AVAILABLE=False on non-Windows and the dependent tests skip themselves.
+metatrader5==5.0.6231; sys_platform == "win32"
 narwhals==2.27.1
 numpy==2.5.3
 openpyxl==3.1.5

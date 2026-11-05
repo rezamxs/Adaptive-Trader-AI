@@ -1,7 +1,7 @@
 """BacktestRun Model for storing verifiable backtest results and trade records."""
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from sqlalchemy import String, Integer, Float, DateTime, Text, JSON
+from sqlalchemy import String, Integer, Float, DateTime, Text, JSON, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.app.db.base import Base, utc_now_naive
 
@@ -12,7 +12,11 @@ class BacktestRun(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     strategy_name: Mapped[str] = mapped_column(String(128), nullable=False)
-    model_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Buglist item 13: DB-enforced reference to the producing model when the
+    # run belongs to one; SET NULL keeps standalone runs deletable.
+    model_id: Mapped[Optional[str]] = mapped_column(
+        String(64), ForeignKey("ml_models.model_id", ondelete="SET NULL"),
+        nullable=True)
     symbol: Mapped[str] = mapped_column(String(32), nullable=False)
     timeframe: Mapped[str] = mapped_column(String(16), nullable=False)
     
