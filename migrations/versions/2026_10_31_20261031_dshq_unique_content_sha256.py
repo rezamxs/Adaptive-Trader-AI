@@ -20,7 +20,7 @@ from typing import Sequence, Union
 from alembic import op
 import hashlib
 
-from sqlalchemy import inspect, text, text
+from sqlalchemy import inspect, text
 
 revision: str = "20261031_dshq"
 down_revision: Union[str, None] = "20261031_mlwfm"

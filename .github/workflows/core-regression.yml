@@ -20,7 +20,7 @@ name: Core Regression Tests
 on:
   pull_request:
   push:
-    branches: [main, fix/core-correctness-audit, reveo, automation/news-pause]
+    branches: [main, fix/core-correctness-audit, reveo, automation/news-pause, fix/buglist-1-20]
   workflow_dispatch:
 
 jobs:
@@ -43,6 +43,11 @@ jobs:
         run: |
           python -m pip install -r requirements-lock.txt
           python -m pip install -e . --no-deps
+      - name: Lint gate (runtime-critical Ruff codes)
+        # Keeps undefined names (F821), destructive redefinitions (F811) and
+        # syntax/runtime errors (E9) out of the tree; everything else stays
+        # advisory. ruff ships inside requirements-lock.txt.
+        run: python -m ruff check --select F821,F811,E9 backend/app backend/tests migrations
       - name: Compile and import application modules
         run: |
           python -m compileall -q backend migrations

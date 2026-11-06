@@ -2,6 +2,7 @@
 import io
 import csv
 import re
+import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 import pymupdf  # PyMuPDF
@@ -194,7 +195,7 @@ class DocumentParser:
         return full_text, 1, page_chunks
 
     @staticmethod
-    def _bounded_xlsx_zipfile(source) -> "zipfile.ZipFile":
+    def _bounded_xlsx_zipfile(source) -> zipfile.ZipFile:
         """Opens an XLSX container and bounds every OOXML member's DECOMPRESSED
         size (buglist item 6).
 
@@ -205,7 +206,6 @@ class DocumentParser:
         cap+1 bytes from every member and refuses the file before openpyxl ever
         touches it.
         """
-        import zipfile
 
         zf = zipfile.ZipFile(source)
         for info in zf.infolist():
@@ -266,14 +266,12 @@ class DocumentParser:
     @staticmethod
     def parse_docx(file_bytes: bytes) -> Tuple[str, int, List[Dict[str, Any]]]:
         """Parses DOCX documents using zipfile and hardened XML parsing (no DOCTYPE/ENTITY)."""
-        import zipfile
         with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
             return DocumentParser.parse_docx_from_zip(z)
 
     @staticmethod
     def parse_docx_path(path: Path) -> Tuple[str, int, List[Dict[str, Any]]]:
         """Parses a DOCX file from disk without materializing its bytes."""
-        import zipfile
         with zipfile.ZipFile(str(path)) as z:
             return DocumentParser.parse_docx_from_zip(z)
 
@@ -397,14 +395,12 @@ class DocumentParser:
     @staticmethod
     def parse_zip(file_bytes: bytes, max_chunk_chars: int = 8000) -> Tuple[str, int, List[Dict[str, Any]]]:
         """Parses ZIP archives into bounded structured member chunks without silent truncation."""
-        import zipfile
         with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
             return DocumentParser.parse_zip_from_zip(z, max_chunk_chars)
 
     @staticmethod
     def parse_zip_path(path: Path, max_chunk_chars: int = 8000) -> Tuple[str, int, List[Dict[str, Any]]]:
         """Parses a ZIP archive from disk without materializing its bytes."""
-        import zipfile
         with zipfile.ZipFile(str(path)) as z:
             return DocumentParser.parse_zip_from_zip(z, max_chunk_chars)
 
