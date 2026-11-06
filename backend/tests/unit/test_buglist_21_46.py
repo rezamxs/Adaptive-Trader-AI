@@ -571,3 +571,95 @@ def test_signing_key_warning_is_wired_in_lifespan():
     source = Path("backend/app/main.py").read_text(encoding="utf-8")
     assert "METRIC_SIGNING_KEY" in source and "tamper-PROOF" in source, (
         "an empty signing key must never be silent at startup (item 36)")
+
+
+# ------------------------------------------------- NaN/±inf hardening (README limitation 4)
+
+_VALID_MLWF_PAYLOAD = None
+
+
+def _valid_mlwf_payload():
+    """Builds ONE real evaluator payload (module-cached) for forgery tests."""
+    global _VALID_MLWF_PAYLOAD
+    if _VALID_MLWF_PAYLOAD is None:
+        import numpy as np
+        import pandas as pd
+
+        from backend.app.services.ml.walk_forward import run_ml_walk_forward
+
+        rng = np.random.default_rng(11)
+        n = 900
+        steps = rng.normal(loc=0.01, scale=1.0, size=n)
+        close = 2000.0 + np.cumsum(steps)
+        open_ = np.roll(close, 1)
+        open_[0] = 2000.0
+        high = np.maximum(open_, close) + np.abs(rng.normal(0, 0.35, size=n))
+        low = np.minimum(open_, close) - np.abs(rng.normal(0, 0.35, size=n))
+        idx = pd.date_range("2026-09-01 00:00", periods=n, freq="15min", tz="UTC")
+        df = pd.DataFrame({"open": open_, "high": high, "low": low, "close": close,
+                           "volume": 100.0, "spread": 20}, index=idx)
+        _VALID_MLWF_PAYLOAD = run_ml_walk_forward(
+            df, symbol="XAUUSD", timeframe="M15", fold_count=3, min_train_bars=300)
+    return _VALID_MLWF_PAYLOAD
+
+
+def _mutate(payload, path, value):
+    import copy
+
+    forged = copy.deepcopy(payload)
+    node = forged
+    for key in path[:-1]:
+        node = node[key]
+    node[path[-1]] = value
+    return forged
+
+
+FORGERIES = [
+    # (json-style path, forged value, expected fragment of the rejection)
+    (("aggregate", "roc_auc", "mean"), float("nan"), "finite"),
+    (("aggregate", "roc_auc", "std"), float("nan"), "finite"),
+    (("aggregate", "brier_score", "mean"), float("-inf"), "finite"),
+    (("aggregate", "accuracy", "mean"), float("inf"), "finite"),
+    (("aggregate", "roc_auc", "mean"), "nan", "finite"),   # string parses to NaN
+    (("folds", 0, "metrics", "roc_auc"), float("nan"), "finite"),
+    (("folds", 1, "baseline_metrics", "accuracy"), float("inf"), "finite"),
+    (("folds", 2, "metrics", "f1"), 5.0, "[0, 1]"),        # out-of-range forgery
+    (("folds", 0, "metrics", "brier_score"), -0.5, "[0, 1]"),
+    (("folds", 1, "metrics", "roc_auc"), True, "[0, 1]"),  # bool is not a metric
+]
+
+
+@pytest.mark.parametrize("path,value,fragment", FORGERIES)
+def test_nan_inf_and_out_of_range_forgeries_are_rejected(path, value, fragment):
+    """README limitation 4 (NaN/±inf in the ML-WF evidence validation) — now
+    CLOSED: every numeric claim in the payload must be a finite in-range
+    number. verify_ml_walk_forward_payload is the choke point for ALL
+    validation paths (persist, attach, promotion re-verification)."""
+    from backend.app.services.ml.walk_forward import verify_ml_walk_forward_payload
+
+    forged = _mutate(_valid_mlwf_payload(), path, value)
+    failure = verify_ml_walk_forward_payload(forged)
+    assert failure is not None, f"forgery {path}={value!r} must be rejected"
+    assert fragment in failure, f"unexpected rejection reason: {failure}"
+
+
+def test_registry_gate_rejects_nan_evidence():
+    """Both remaining validation paths funnel into the same verifier:
+    promotion re-verification goes through ModelRegistry._ml_walk_forward_failure
+    (registry.py), and persist/attach call verify_ml_walk_forward_payload
+    directly before any digest/persisted-run check — so the NaN forgery is
+    rejected on every path."""
+    from backend.app.services.ml.registry import ModelRegistry
+
+    forged = _mutate(_valid_mlwf_payload(), ("aggregate", "roc_auc", "mean"), float("nan"))
+    failure = ModelRegistry._ml_walk_forward_failure("m_nan", forged)
+    assert failure is not None and "finite" in failure
+
+
+def test_inf_aggregate_was_already_rejected_and_stays_rejected():
+    """Pins the pre-existing ±inf rejection so the hardening cannot regress it."""
+    from backend.app.services.ml.walk_forward import verify_ml_walk_forward_payload
+
+    forged = _mutate(_valid_mlwf_payload(), ("aggregate", "roc_auc", "mean"), float("inf"))
+    failure = verify_ml_walk_forward_payload(forged)
+    assert failure is not None
