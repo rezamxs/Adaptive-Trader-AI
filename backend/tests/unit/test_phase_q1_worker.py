@@ -283,7 +283,11 @@ def test_worker_market_closed_detection(test_db_session):
     res = worker.run_single_cycle()
 
     # Stale market: NO analysis, NO bar reservation (item 23 fail-closed).
-    assert res["status_code"] == "MARKET_CLOSED_OR_STALE"
+    # Weekday-stable assertion: the 36h-old tick reads as MARKET_CLOSED when
+    # the evaluation time falls in the weekend window and as
+    # MARKET_CLOSED_OR_STALE otherwise — the item-23 invariant is that a
+    # non-fresh market state (either status) skips the analysis entirely.
+    assert res["status_code"] in ("MARKET_CLOSED", "MARKET_CLOSED_OR_STALE"), res["status_code"]
     assert res["analysis_executed"] is False
     assert "bar_key" not in res
     assert db.query(WorkerCycleRecord).count() == 0, (
@@ -291,7 +295,7 @@ def test_worker_market_closed_detection(test_db_session):
 
     # Subsequent cycles keep skipping while the market stays stale.
     res2 = worker.run_single_cycle()
-    assert res2["status_code"] == "MARKET_CLOSED_OR_STALE"
+    assert res2["status_code"] in ("MARKET_CLOSED", "MARKET_CLOSED_OR_STALE")
 
     # The feed recovers: the same closed bar is now processed normally.
     mock_provider.get_current_quote.return_value = Quote(
