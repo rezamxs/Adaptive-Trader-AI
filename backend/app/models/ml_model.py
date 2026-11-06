@@ -44,6 +44,13 @@ class MLModelRecord(Base):
     # executes pickle code, so byte integrity must be proven BEFORE the load,
     # not after. Legacy rows without a digest fail closed on load.
     artifact_sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Buglist item 33: the live-inference probability threshold recorded WITH
+    # the model (default 0.55; evidence payloads are evaluated at 0.5). The
+    # attested artifact payload carries the same value so the two cannot drift
+    # unnoticed.
+    live_prob_threshold: Mapped[float] = mapped_column(
+        Float, default=0.55, server_default="0.55", nullable=False
+    )
     
     trained_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, onupdate=utc_now_naive, nullable=False)

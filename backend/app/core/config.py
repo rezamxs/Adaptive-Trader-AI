@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     APP_NAME: str = "Adaptive Trader AI"
     APP_ENV: str = "development"
     DEBUG: bool = False
+    # Buglist item 43: SQL statement echo was tied to DEBUG — enabling debug
+    # mode logged EVERY query (with the data inside) to the log. SQL echo is
+    # now its own switch, default off.
+    SQL_ECHO: bool = False
     LOG_LEVEL: str = "INFO"
 
     # Execution Mode (Defaults strictly to SIGNAL_ONLY)
@@ -116,6 +120,14 @@ class Settings(BaseSettings):
     # the limiter (tests may rely on that).
     HEAVY_RATE_LIMIT_PER_MINUTE: int = 10
 
+    # Buglist item 33: the probability threshold live inference filters on.
+    # The ML walk-forward EVIDENCE is evaluated at the fixed default 0.5
+    # (MLWF_THRESHOLD); this live policy value is deliberately separate and
+    # is now RECORDED with every model (record column + attested artifact
+    # payload) instead of living only as a hidden function default. Changing
+    # it is a trading-policy decision, not a code fix.
+    LIVE_MODEL_PROB_THRESHOLD: float = 0.55
+
     # Buglist item 17: TTL cache (seconds) for the trading governance probe
     # behind the PUBLIC /health endpoint — every poll previously deserialized
     # the active model artifact from disk. 0 disables the cache.
@@ -182,6 +194,23 @@ class Settings(BaseSettings):
             raise InvalidExecutionModeError(
                 f"Invalid execution mode '{v}'. Allowed modes are: {[m.value for m in ExecutionMode]}"
             )
+
+    @field_validator("CORS_ORIGINS")
+    @classmethod
+    def validate_cors_origins(cls, v: List[str]) -> List[str]:
+        """Buglist item 42: the app always sends CORS with
+        allow_credentials=True, and a wildcard origin is INCOMPATIBLE with
+        credentials (browsers reject it; starlette mirrors the request origin
+        and would reflect ANY origin as allowed). Reject the combination at
+        configuration time instead of shipping a silently unsafe policy."""
+        cleaned = [str(origin).strip() for origin in v if str(origin).strip()]
+        if "*" in cleaned:
+            raise ValueError(
+                "CORS_ORIGINS must not contain '*': the app serves CORS with "
+                "allow_credentials=True, which a wildcard origin makes "
+                "meaningless and unsafe. List explicit origins."
+            )
+        return cleaned
 
     @field_validator("MT5_SERVER_TIME_OFFSET_HOURS")
     @classmethod

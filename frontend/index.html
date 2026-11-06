@@ -409,7 +409,9 @@
           <div class="card-title">بارگذاری سند جدید (PDF / TXT / CSV / XLSX)</div>
           <div class="form-group" style="margin-top: 1rem;">
             <label>انتخاب فایل استراتژی یا تجربیات معاملاتی:</label>
-            <input type="file" id="input-doc-file" accept=".pdf,.txt,.md,.csv,.xlsx">
+            <!-- Buglist item 44: the backend parses DOCX and ZIP too (DocumentParser) —
+             the picker previously hid them from the operator. -->
+<input type="file" id="input-doc-file" accept=".pdf,.txt,.md,.csv,.xlsx,.docx,.zip">
           </div>
           <div class="form-group">
             <label>توضیح کوتاه منبع:</label>

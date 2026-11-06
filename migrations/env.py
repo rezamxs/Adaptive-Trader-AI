@@ -64,7 +64,17 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            # Buglist item 45: autogenerate previously compared nothing but
+            # table/column existence — type changes, server-default changes
+            # and new unique constraints were silently NOT generated, and
+            # SQLite ALTERs failed without batch mode. Wire the standard
+            # comparison trio + render_as_batch for the SQLite rebuild path.
+            compare_type=True,
+            compare_server_default=True,
+            compare_user_options=True,
+            render_as_batch=True,
         )
 
         with context.begin_transaction():

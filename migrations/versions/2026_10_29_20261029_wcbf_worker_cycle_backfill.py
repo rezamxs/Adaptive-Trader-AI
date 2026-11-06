@@ -14,6 +14,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 revision: str = "20261029_wcbf"
 down_revision: Union[str, None] = "20261024_mdig"
@@ -40,6 +41,18 @@ def _rebuild_columns(nullable: bool) -> None:
 
 
 def upgrade() -> None:
+    # Buglist item 27: this revision was the ONLY one in the chain without an
+    # inspector guard — against a database where worker_cycle_records does not
+    # exist (or predates a column), the blind rebuild crashed the whole chain.
+    # Guard like the sibling revisions: skip what is not there.
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if "worker_cycle_records" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("worker_cycle_records")}
+    if "updated_at" not in columns:
+        return
+
     # Backfill first: legacy rows predate the column and their honest
     # last-update time IS their creation time.
     op.execute(
@@ -53,4 +66,11 @@ def downgrade() -> None:
     # are real row data (legacy rows' creation times, modern rows' real
     # update times) and MUST survive the downgrade — nulling them here would
     # destroy data the next upgrade cannot recover.
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if "worker_cycle_records" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("worker_cycle_records")}
+    if "updated_at" not in columns:
+        return
     _rebuild_columns(nullable=True)

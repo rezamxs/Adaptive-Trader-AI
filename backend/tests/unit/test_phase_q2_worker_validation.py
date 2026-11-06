@@ -25,7 +25,7 @@ from sqlalchemy.exc import IntegrityError
 from fastapi.testclient import TestClient
 
 from backend.app.core.config import settings, ExecutionMode
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 from backend.app.models.worker_cycle import WorkerCycleRecord
 from backend.app.models.emergency_stop import EmergencyStopState
 from backend.app.services.market_data.base import TimeFrame, Candle, Quote
@@ -348,7 +348,7 @@ def test_concurrent_duplicate_candle_reservation(test_db_session):
         status_code="PROCESSING",
         lifecycle_phase="PROCESSING",
         decision="PENDING",
-        created_at=datetime.utcnow()
+        created_at=utc_now_naive()
     )
     db.add(existing)
     db.commit()

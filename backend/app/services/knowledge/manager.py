@@ -296,14 +296,35 @@ class KnowledgeManager:
             except IntegrityError:
                 self.db.rollback()
                 logger.info(f"Concurrent ingestion collision detected for hash {content_sha256}. Returning existing document.")
+                # Buglist item 31: the winner lookup demanded
+                # processing_status == "completed" — a collision with a
+                # winner that is STILL processing (or failed) found nothing
+                # and re-raised, turning the race into a 500 and leaving the
+                # raw file written above without any record. The idempotency
+                # contract is content-hash based: return the deterministic
+                # winner WHATEVER its status (the caller sees the true state),
+                # and remove the orphan raw copy this attempt wrote.
                 concurrent_doc = self.db.query(Document).filter(
                     Document.content_sha256 == content_sha256,
-                    Document.processing_status == "completed"
-                ).first()
-                if concurrent_doc:
-                    concurrent_rules = self.db.query(TradingRule).filter(TradingRule.source_document == concurrent_doc.document_id).all()
-                    return concurrent_doc, concurrent_rules
-                raise
+                ).order_by(Document.id).first()
+                if concurrent_doc is None:
+                    # Keep the deterministic-winner contract even under the
+                    # rare "unique index violated but no visible row" race
+                    # (uncommitted writer on another connection).
+                    raise
+                try:
+                    if storage_path.exists() and not (
+                        concurrent_doc.document_id == document_id
+                        and storage_path.exists()
+                    ):
+                        # This attempt's raw copy (its own document_id prefix)
+                        # is an orphan when we return the other row.
+                        if str(concurrent_doc.document_id) not in str(storage_path):
+                            storage_path.unlink()
+                except OSError:
+                    pass
+                concurrent_rules = self.db.query(TradingRule).filter(TradingRule.source_document == concurrent_doc.document_id).all()
+                return concurrent_doc, concurrent_rules
         else:
             # Update existing record for recovery
             doc_record.file_name = safe_file_name

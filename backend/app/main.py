@@ -17,6 +17,20 @@ from backend.app.services.worker.market_worker import get_market_worker
 async def lifespan(app: FastAPI):
     """Controlled application lifespan managing DB initialization and background worker."""
     # Startup phase
+    # Buglist item 40: the rotated file sink attaches at REAL startup (not at
+    # import) — importing backend.app.main no longer creates logs/app.log.
+    from backend.app.core.logging import setup_logging
+
+    setup_logging()
+    # Buglist item 36: without METRIC_SIGNING_KEY the evidence digests degrade
+    # to plain SHA-256 (corruption detection only — a DB writer can re-sign a
+    # forged payload). Never silent; the operator decides, the log records it.
+    if not (settings.METRIC_SIGNING_KEY or "").strip():
+        logger.warning(
+            "METRIC_SIGNING_KEY is not set: metric/evidence digests are plain "
+            "SHA-256 (tamper-EVIDENT for corruption, NOT tamper-PROOF against "
+            "a database writer). Set it in .env for tamper-proof evidence."
+        )
     init_db()
     # Owner decision 2026-11-01: retention windows default to 30 days per
     # table (a monthly summary is archived before pruning; per-table 0 still

@@ -56,6 +56,26 @@ from backend.app.services.ml.models import (
 MLWF_EVALUATOR = "backend/app/services/ml/walk_forward.py::run_ml_walk_forward"
 MLWF_EVIDENCE_TYPE = "ml_walk_forward"
 MLWF_THRESHOLD = 0.5  # fixed model default; never tuned on OOS
+
+
+def _default_code_version() -> str:
+    """Buglist item 35: evaluations recorded code_version="unrecorded" when
+    the caller passed no value, making exact experiment reconstruction
+    impossible. The DEFAULT is now a real, resolvable version string (the
+    installed package version + the running Python), and only a total
+    resolution failure keeps an explicit unrecorded marker."""
+    try:
+        from importlib.metadata import version as _pkg_version
+
+        pkg = _pkg_version("adaptive-trader-ai")
+    except Exception:
+        pkg = None
+    import sys
+
+    py = f"py{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    if pkg:
+        return f"adaptive-trader-ai@{pkg};{py}"
+    return f"unknown-package;{py}"
 DEFAULT_HORIZON_BARS = 24
 
 
@@ -321,7 +341,9 @@ def run_ml_walk_forward(
             "point_value": float(point_value),
             "note": "labels are cost-aware (barrier labeler); backtest P&L evidence is the separate strategy walk-forward",
         },
-        "code_version": code_version or "unrecorded",
+        # Buglist item 35: the default is a RESOLVED version string, never
+        # a bare "unrecorded" — only an explicit caller override replaces it.
+        "code_version": code_version or _default_code_version(),
     }
     logger.info(
         f"ML walk-forward: {fold_count} folds, algorithm={algorithm}, "

@@ -254,7 +254,14 @@ def test_worker_emergency_stop_halts_pipeline(test_db_session):
 
 
 def test_worker_market_closed_detection(test_db_session):
-    """Verifies that Worker recognizes when the market is closed based on stale ticks."""
+    """Verifies that Worker recognizes when the market is closed based on stale ticks.
+
+    Buglist item 23 contract change: a STALE market no longer merely gets
+    DIAGNOSED while the cycle analyzes the old candle anyway — the analysis
+    now fails closed. The stale quote skips analysis entirely
+    (MARKET_CLOSED_OR_STALE, analysis_executed=False, no bar reservation);
+    once the quote is fresh again, the same closed bar is processed normally.
+    """
     db, session_factory = test_db_session
     candles = generate_mock_candles(60)
 
@@ -275,11 +282,29 @@ def test_worker_market_closed_detection(test_db_session):
     worker = MarketMonitoringWorker(data_provider=mock_provider, db_factory=session_factory)
     res = worker.run_single_cycle()
 
-    # Initial cycle processes the last historical candle
-    assert "bar_key" in res
-    # Subsequent cycle flags NO_NEW_CLOSED_BAR while market is closed
+    # Stale market: NO analysis, NO bar reservation (item 23 fail-closed).
+    assert res["status_code"] == "MARKET_CLOSED_OR_STALE"
+    assert res["analysis_executed"] is False
+    assert "bar_key" not in res
+    assert db.query(WorkerCycleRecord).count() == 0, (
+        "the skipped cycle must not consume the bar reservation")
+
+    # Subsequent cycles keep skipping while the market stays stale.
     res2 = worker.run_single_cycle()
-    assert res2["status_code"] == "NO_NEW_CLOSED_BAR"
+    assert res2["status_code"] == "MARKET_CLOSED_OR_STALE"
+
+    # The feed recovers: the same closed bar is now processed normally.
+    mock_provider.get_current_quote.return_value = Quote(
+        symbol="XAUUSD",
+        time=datetime.now(timezone.utc),
+        bid=4194.0,
+        ask=4194.34,
+        spread_points=34,
+        is_stale=False
+    )
+    res3 = worker.run_single_cycle()
+    assert "bar_key" in res3, "a fresh market processes the pending closed bar"
+    assert res3["analysis_executed"] is True
 
 
 def test_worker_status_and_cycles_api_endpoints(isolated_app_db):

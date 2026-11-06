@@ -51,7 +51,7 @@
 | گام ۳٫۳: پیشنهاد جهت + بازبینی دسته‌ای | `suggested_direction` (اطلاعاتی، هرگز قابل‌اجرا) + `POST /rules/batch-review` (cap ۲۰۰ آیتم) |
 | گام ۳٫۴: آموزش شبانه | `services/ml/training_scheduler.py` — روزانه ۲۱:۰۰ UTC، فقط XAUUSD M1، هرگز promote نمی‌کند |
 | گام ۳٫۵: پیش‌بینی promote | `GET /ml/models/{id}/promotion-check` + `_promotion_gate_failures` (پیام‌ها byte-identical با promote) |
-| تست‌ها/CI | ۴۵۶ passed محلی؛ CI روی `reveo` سبز (run 41327534136) |
+| تست‌ها/CI | ۵۳۴ passed / 1 skipped محلی (2026-11-06، شاخهٔ fix/buglist-1-20)؛ CI ویندوز+لینوکس روی lock (buglist آیتم ۹/۱۰) |
 
 **در انتظار تصمیم/مجوز مالک:**
 

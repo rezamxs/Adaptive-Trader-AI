@@ -103,8 +103,13 @@ class ModelTrainer:
         artifact_path = artifact_dir / f"{model_id}.joblib"
 
         # H1: attest the metric payload before it is persisted anywhere.
-        metrics_digest = metric_digest(model_id, validation_metrics, test_metrics, walk_forward_metrics={})
+        # Buglist item 34: train_metrics are part of the attested payload.
+        metrics_digest = metric_digest(
+            model_id, validation_metrics, test_metrics,
+            walk_forward_metrics={}, train_metrics=train_metrics,
+        )
 
+        live_threshold = float(settings.LIVE_MODEL_PROB_THRESHOLD)
         artifact_payload = {
             "model_id": model_id,
             "algorithm": algorithm,
@@ -116,6 +121,16 @@ class ModelTrainer:
             "validation_metrics": validation_metrics,
             "test_metrics": test_metrics,
             "metrics_digest": metrics_digest,
+            # Buglist item 33: the live-inference threshold travels INSIDE the
+            # attested artifact (byte-digest covered), so the value inference
+            # actually uses is provably the one this model was registered with.
+            # The evidence payloads (MLWF_THRESHOLD=0.5) are evaluated at the
+            # fixed default — this field is the separate LIVE policy value.
+            "live_prob_threshold": live_threshold,
+            "evidence_threshold_note": (
+                "promotion evidence (validation/test/ml_walk_forward) is "
+                "evaluated at the fixed 0.5 model default"
+            ),
         }
         joblib.dump(artifact_payload, artifact_path)
 
@@ -142,6 +157,7 @@ class ModelTrainer:
                 artifact_path=str(artifact_path),
                 metrics_digest=metrics_digest,
                 artifact_sha256=artifact_sha256,
+                live_prob_threshold=live_threshold,
             )
             self.db.add(record)
             self.db.commit()
