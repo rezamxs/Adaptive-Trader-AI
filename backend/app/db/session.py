@@ -22,7 +22,10 @@ engine = create_engine(
     database_url,
     connect_args=connect_args,
     pool_pre_ping=True,
-    echo=settings.DEBUG,
+    # Buglist item 43: echo is an explicit SQL_ECHO switch, not DEBUG — debug
+    # mode used to log every query's SQL AND bound parameters (data leak into
+    # the logs).
+    echo=settings.SQL_ECHO,
 )
 
 # Enable SQLite foreign key enforcement and WAL mode for reliability

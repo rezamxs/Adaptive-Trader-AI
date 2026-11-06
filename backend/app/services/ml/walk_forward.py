@@ -32,6 +32,7 @@ aggregate recomputation) plus an HMAC/SHA-256 digest
 numbers inside one payload alone prove nothing.
 """
 import hashlib
+import math
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -56,6 +57,26 @@ from backend.app.services.ml.models import (
 MLWF_EVALUATOR = "backend/app/services/ml/walk_forward.py::run_ml_walk_forward"
 MLWF_EVIDENCE_TYPE = "ml_walk_forward"
 MLWF_THRESHOLD = 0.5  # fixed model default; never tuned on OOS
+
+
+def _default_code_version() -> str:
+    """Buglist item 35: evaluations recorded code_version="unrecorded" when
+    the caller passed no value, making exact experiment reconstruction
+    impossible. The DEFAULT is now a real, resolvable version string (the
+    installed package version + the running Python), and only a total
+    resolution failure keeps an explicit unrecorded marker."""
+    try:
+        from importlib.metadata import version as _pkg_version
+
+        pkg = _pkg_version("adaptive-trader-ai")
+    except Exception:
+        pkg = None
+    import sys
+
+    py = f"py{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    if pkg:
+        return f"adaptive-trader-ai@{pkg};{py}"
+    return f"unknown-package;{py}"
 DEFAULT_HORIZON_BARS = 24
 
 
@@ -321,7 +342,9 @@ def run_ml_walk_forward(
             "point_value": float(point_value),
             "note": "labels are cost-aware (barrier labeler); backtest P&L evidence is the separate strategy walk-forward",
         },
-        "code_version": code_version or "unrecorded",
+        # Buglist item 35: the default is a RESOLVED version string, never
+        # a bare "unrecorded" — only an explicit caller override replaces it.
+        "code_version": code_version or _default_code_version(),
     }
     logger.info(
         f"ML walk-forward: {fold_count} folds, algorithm={algorithm}, "
@@ -398,6 +421,26 @@ def verify_ml_walk_forward_payload(payload: Any) -> Optional[str]:
         previous_test_end = test_end
         if not isinstance(fold.get("metrics"), dict) or not isinstance(fold.get("baseline_metrics"), dict):
             return f"fold {fold.get('fold_index')} lacks model/baseline metrics"
+        # Hardening (README limitation, closed 2026-11-06): every fold metric
+        # value that feeds the aggregate re-aggregation must be a FINITE
+        # number in [0, 1]. NaN previously propagated through _mean_std and
+        # matched a NaN claim (NaN - NaN has no ordering), and an out-of-range
+        # forgery (roc_auc=5.0) was consistent as long as the aggregate lied
+        # identically. Both are rejected here, before any comparison.
+        for block_name, block in (("metrics", fold["metrics"]),
+                                  ("baseline_metrics", fold["baseline_metrics"])):
+            for metric_key in ("roc_auc", "brier_score", "f1", "accuracy"):
+                value = block.get(metric_key)
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(float(value))
+                    or not 0.0 <= float(value) <= 1.0
+                ):
+                    return (
+                        f"fold {fold.get('fold_index')} {block_name}.{metric_key} must be "
+                        "a finite number in [0, 1] (forged or corrupt fold record)"
+                    )
 
     aggregate = payload.get("aggregate")
     if not isinstance(aggregate, dict):
@@ -422,6 +465,16 @@ def verify_ml_walk_forward_payload(payload: Any) -> Optional[str]:
             claimed_std = float(claimed.get("std", 0.0))
         except (TypeError, ValueError):
             return f"aggregate.{key}.mean/std must be numeric (forged or corrupt aggregate)"
+        # Hardening (README limitation, closed 2026-11-06): NaN compares False
+        # against EVERY threshold, so `abs(NaN - x) > 0.0011` was False and a
+        # NaN claimed mean/std silently PASSED the forged-aggregate check
+        # (json.dumps/loads round-trip NaN in Python). ±inf already failed the
+        # diff, but the finite check makes the contract explicit for both.
+        if not (math.isfinite(claimed_mean) and math.isfinite(claimed_std)):
+            return (
+                f"aggregate.{key}.mean/std must be finite "
+                "(NaN/±inf is a forged or corrupt aggregate)"
+            )
         if abs(claimed_mean - recomputed["mean"]) > 0.0011:
             return f"aggregate.{key}.mean does not match the per-fold records (forged aggregate)"
         if abs(claimed_std - recomputed["std"]) > 0.0011:

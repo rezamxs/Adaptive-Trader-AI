@@ -9,11 +9,16 @@
 
 | دسته‌بندی آزمون | مسیر فایل‌های آزمون | تعداد آزمون | وضعیت | زمان اجرا |
 | :--- | :--- | :---: | :---: | :---: |
-| **آزمون‌های واحد (Unit Tests)** | `backend/tests/unit/` | ۲۱ | ✅ PASSED | ~۵ ثانیه |
-| **آزمون‌های یکپارچه‌سازی (Integration Tests)** | `backend/tests/integration/` | ۱۰ | ✅ PASSED | ~۱۱ ثانیه |
-| **آزمون‌های امنیت و معاملات (Security & Trading)** | `backend/tests/security/` | ۱۳ | ✅ PASSED | ~۳ ثانیه |
-| **آزمون‌های داده و یادگیری ماشین (Data & ML)** | `backend/tests/data_ml/` | ۶ | ✅ PASSED | ~۲ ثانیه |
-| **مجموع کل (Total)** | `backend/tests/` | **۵۰** | **✅ ۱۰۰٪ موفق** | **۲۱.۰۰ ثانیه** |
+| **آزمون‌های واحد (Unit Tests)** | `backend/tests/unit/` | ۴۹۴ | ✅ PASSED | ~۶۰ ثانیه |
+| **آزمون‌های یکپارچه‌سازی (Integration Tests)** | `backend/tests/integration/` | ۱۳ | ✅ PASSED* | ~۵ ثانیه |
+| **آزمون‌های امنیت و معاملات (Security & Trading)** | `backend/tests/security/` | ۱۵ | ✅ PASSED | ~۲ ثانیه |
+| **آزمون‌های داده و یادگیری ماشین (Data & ML)** | `backend/tests/data_ml/` | ۱۳ | ✅ PASSED | ~۳ ثانیه |
+| **مجموع کل (Total)** | `backend/tests/` | **۵۳۵** | **✅ ۵۳۴ passed / 1 skipped** | **~۷۷ ثانیه** |
+
+> *Buglist item 46 (2026-11-06): اعداد این جدول از عدد ثابت ۵۰ به وضعیت واقعی
+> به‌روزرسانی شد. ملاکِ همیشه معتبر خروجی خودِ pytest است — این جدول یک snapshot
+> است؛ ارقام دقیق را از `python -m pytest backend/tests -q` بگیرید. یک skip
+> دائمی مربوط به تست MT5-provider است که فقط با ترمینال در حال اجرا green می‌شود.
 
 ---
 

@@ -20,7 +20,10 @@ class WorkerCycleRecord(Base):
     duration_ms = Column(Float, nullable=False, default=0.0)
     details = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
-    lifecycle_phase = Column(String(30), default="COMPLETED", nullable=False)  # DISCOVERED, PROCESSING, COMPLETED, FAILED
+    # Buglist item 26: server_default matches migration 20261029_wcbf so a
+    # fresh create_all schema equals the migrated one (the wcbf rebuild set
+    # the server-side default; the model previously declared only the ORM default).
+    lifecycle_phase = Column(String(30), default="COMPLETED", server_default="COMPLETED", nullable=False)  # DISCOVERED, PROCESSING, COMPLETED, FAILED
     created_at = Column(DateTime, default=utc_now_naive, nullable=False)
     updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive, nullable=False)
 

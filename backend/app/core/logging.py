@@ -33,7 +33,18 @@ def setup_logging(
     max_bytes: Optional[int] = None,
     backup_count: Optional[int] = None,
 ) -> logging.Logger:
-    """Configures application-wide structured logging with a rotated file sink."""
+    """Configures application-wide structured logging with a rotated file sink.
+
+    Buglist item 40: the module-level ``# Buglist item 40: importing this module used to create logs/app.log.
+# Import now wires the console sink only; main.py's lifespan calls
+# setup_logging() to attach the rotated file sink at real startup.
+logger = _console_only_logger()`` used to run
+    AT IMPORT TIME — merely importing the logging module created
+    <log_dir>/ and opened logs/app.log. The import path now installs the
+    console sink ONLY (no filesystem side effect); the file sink is attached
+    by an explicit setup_logging() call from the application entry point
+    (main.py lifespan), and the handler itself opens the file lazily
+    (delay=True) on the first record."""
     Path(log_dir).mkdir(parents=True, exist_ok=True)
 
     if max_bytes is None or backup_count is None:
@@ -62,6 +73,9 @@ def setup_logging(
             encoding="utf-8",
             maxBytes=max_bytes,
             backupCount=backup_count,
+            # Open on FIRST emit, not at configuration time: a configured-but
+            # -unused handler (tests, import-only paths) creates no file.
+            delay=True,
         )
         file_handler.setLevel(numeric_level)
         file_format = logging.Formatter(
@@ -72,6 +86,26 @@ def setup_logging(
         logger.addHandler(file_handler)
 
     return logger
+
+
+def _console_only_logger(
+    log_level: str = "INFO",
+    logger_name: str = "adaptive_trader",
+) -> logging.Logger:
+    """Import-time logger: stdout sink ONLY — no directory creation, no file
+    handles (buglist item 40). The file sink arrives with setup_logging()."""
+    numeric_level = getattr(logging, log_level.upper(), logging.INFO)
+    lg = logging.getLogger(logger_name)
+    if not lg.handlers:
+        lg.setLevel(numeric_level)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(numeric_level)
+        console_handler.setFormatter(logging.Formatter(
+            "[%(asctime)s] [%(levelname)s] [%(name)s:%(module)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        ))
+        lg.addHandler(console_handler)
+    return lg
 
 
 def log_security_event(event_type: str, details: Dict[str, Any], level: str = "WARNING") -> None:
@@ -88,4 +122,7 @@ def log_security_event(event_type: str, details: Dict[str, Any], level: str = "W
         audit_logger.info(msg)
 
 
-logger = setup_logging()
+# Buglist item 40: importing this module used to create logs/app.log.
+# Import now wires the console sink only; main.py's lifespan calls
+# setup_logging() to attach the rotated file sink at real startup.
+logger = _console_only_logger()

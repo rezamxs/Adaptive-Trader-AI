@@ -60,6 +60,9 @@ class BacktestMetrics:
                 "avg_loss": 0.0,
                 "win_loss_ratio": 0.0,
                 "avg_holding_bars": 0.0,
+                # Item 3: no trade ever moved equity, so peak == trough.
+                "equity_peak_abs": float(initial_balance),
+                "equity_trough_abs": float(initial_balance),
                 "equity_curve": [{"time": "START", "equity": initial_balance}],
             }
 
@@ -102,6 +105,7 @@ class BacktestMetrics:
         # closed-trades-only path.
         max_dd_amount = 0.0
         max_dd_pct = 0.0
+        trough_min = None
         if equity_timeline:
             equity_curve = [{"time": "START", "equity": round(initial_balance, 2)}]
             peak = initial_balance
@@ -113,6 +117,8 @@ class BacktestMetrics:
                 })
                 if eq > peak:
                     peak = eq
+                if trough_min is None or eq < trough_min:
+                    trough_min = eq
                 dd_amount = peak - eq
                 dd_pct = (dd_amount / peak) * 100.0 if peak > 0 else 0.0
                 if dd_amount > max_dd_amount:
@@ -132,6 +138,8 @@ class BacktestMetrics:
                 })
                 if equity > peak:
                     peak = equity
+                if trough_min is None or equity < trough_min:
+                    trough_min = equity
                 dd_amount = peak - equity
                 dd_pct = (dd_amount / peak) * 100.0 if peak > 0 else 0.0
                 if dd_amount > max_dd_amount:
@@ -141,7 +149,13 @@ class BacktestMetrics:
 
         original_curve_points = len(equity_curve)
         equity_curve = downsample_equity_curve(equity_curve)
+        # Item 3 (buglist): walk-forward drawdown aggregation needs the fold's
+        # ABSOLUTE equity extremes from the FULL (pre-downsample) timeline.
+        # Folds restart from initial_balance, so their own MDD% cannot express
+        # how deep a trough reaches once prior folds' losses are carried over.
         return {
+            "equity_peak_abs": float(peak),
+            "equity_trough_abs": float(trough_min) if trough_min is not None else float(peak),
             "initial_balance": round(initial_balance, 2),
             "final_balance": round(final_balance, 2),
             "net_profit": round(net_profit, 2),

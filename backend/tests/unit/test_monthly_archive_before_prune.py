@@ -16,7 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 import backend.app.models  # noqa: F401 - register all ORM tables on Base
 from backend.app.core.config import settings
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 from backend.app.models.audit_log import AuditLog
 from backend.app.models.worker_cycle import WorkerCycleRecord
 from backend.app.services.worker import market_worker
@@ -40,7 +40,7 @@ def _add_cycle(session, cycle_id: str, age_days: int, status: str = "COMPLETED")
     session.add(WorkerCycleRecord(
         cycle_id=cycle_id, symbol="XAUUSD", timeframe="M1",
         status_code=status,
-        created_at=datetime.utcnow() - timedelta(days=age_days),
+        created_at=utc_now_naive() - timedelta(days=age_days),
     ))
 
 
@@ -61,7 +61,7 @@ def test_archive_written_before_rows_deleted(db_session):
     files = sorted(p.name for p in archive_dir.glob("*.json"))
     assert len(files) >= 1, "at least one monthly summary must exist after pruning"
     # The fresh row's month must NOT appear (nothing about it was deleted).
-    fresh_month = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m")
+    fresh_month = (utc_now_naive() - timedelta(days=1)).strftime("%Y-%m")
     assert f"{fresh_month}.json" not in files
     # Counts and statuses recorded.
     total_archived = sum(json.loads((archive_dir / f).read_text(encoding="utf-8"))["archived_count"] for f in files)

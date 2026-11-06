@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any, Dict
 
 from backend.app.models.backtest import BacktestRun
+from backend.app.services.backtest.walk_forward import _continuous_drawdown_from_folds
 
 # Numbers shared by the governance fixtures (fold_count divides trade_count
 # and net_profit exactly so the aggregates match the historical claims).
@@ -19,7 +20,7 @@ WF_NUMBERS = {
     "net_profit": 150.0,
     "trade_count": 50,
     "profit_factor": 1.25,
-    "max_drawdown_percent": 4.0,
+    "max_drawdown_percent": 4.0,   # fold-LOCAL drawdown each fold books
     "fold_count": 5,
 }
 
@@ -49,7 +50,17 @@ def build_walk_forward_payload(run_id: str = "bt_wf_fixture") -> Dict[str, Any]:
         "gross_profit": per_gp,
         "gross_loss": per_gl,
         "max_drawdown_percent": dd,
+        # Buglist item 3: absolute equity extremes a real fold timeline would
+        # carry (fold-local start 10000, peak = the fold's end balance — a
+        # monotone recovery — and trough 4% below the start).
+        "equity_peak_abs": 10000.0 + per_net,
+        "equity_trough_abs": 10000.0 * (1.0 - dd / 100.0),
     } for i in range(fold_count)]
+
+    # The aggregate drawdown is the CONTINUOUS stitched-account figure from
+    # the same recurrence the real producer uses — max-of-folds would
+    # contradict the verifier.
+    continuous_dd = _continuous_drawdown_from_folds(folds, 10000.0)
 
     agg_net = round(sum(f["net_profit"] for f in folds), 6)
     agg_trades = int(sum(f["total_trades"] for f in folds))
@@ -67,7 +78,7 @@ def build_walk_forward_payload(run_id: str = "bt_wf_fixture") -> Dict[str, Any]:
         "trade_count": agg_trades,
         "net_profit": agg_net,
         "profit_factor": round(agg_gp / abs(agg_gl), 6),
-        "max_drawdown_percent": dd,
+        "max_drawdown_percent": continuous_dd["max_drawdown_percent"],
         "spread_costs_included": True,
         "slippage_costs_included": True,
         "commission_costs_included": True,
@@ -85,6 +96,7 @@ def seed_walk_forward_run(session, run_id: str = "bt_wf_fixture") -> BacktestRun
     """Persists the aggregate BacktestRun for `build_walk_forward_payload` —
     strategy_name='walk_forward' with the provenance block in assumptions."""
     payload = build_walk_forward_payload(run_id)
+    continuous_dd = _continuous_drawdown_from_folds(payload["folds"], 10000.0)
     session.add(BacktestRun(
         run_id=run_id,
         strategy_name="walk_forward",
@@ -99,7 +111,7 @@ def seed_walk_forward_run(session, run_id: str = "bt_wf_fixture") -> BacktestRun
         gross_profit=round(sum(f["gross_profit"] for f in payload["folds"]), 6),
         gross_loss=round(sum(f["gross_loss"] for f in payload["folds"]), 6),
         max_drawdown_percent=payload["max_drawdown_percent"],
-        max_drawdown_amount=0.0,
+        max_drawdown_amount=continuous_dd["max_drawdown_amount"],
         total_trades=payload["trade_count"],
         winning_trades=0,
         losing_trades=0,
@@ -121,6 +133,7 @@ def seed_walk_forward_run(session, run_id: str = "bt_wf_fixture") -> BacktestRun
                     "spread": True, "slippage": True, "commission": True,
                 },
                 "fold_scheme": "chronological contiguous out-of-sample windows",
+                "continuous_drawdown": continuous_dd,
             },
         },
         limitations=[],

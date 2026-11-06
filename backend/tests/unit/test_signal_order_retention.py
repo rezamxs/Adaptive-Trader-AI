@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import backend.app.models  # noqa: F401 - register all ORM tables on Base
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 from backend.app.models.order import DemoOrder
 from backend.app.models.signal import TradeSignal
 from backend.app.services.worker.market_worker import prune_operational_records
@@ -36,8 +36,8 @@ def _add_old_signal(session, signal_id: str, age_days: int):
         idempotency_key=f"idem_{signal_id}",
         symbol="XAUUSD", timeframe="M1", direction="HOLD",
         entry_price=1.0, stop_loss=0.9, take_profit=1.2,
-        bar_time=datetime.utcnow() - timedelta(days=age_days),
-        created_at=datetime.utcnow() - timedelta(days=age_days),
+        bar_time=utc_now_naive() - timedelta(days=age_days),
+        created_at=utc_now_naive() - timedelta(days=age_days),
     ))
 
 
@@ -49,7 +49,7 @@ def _add_old_order(session, order_id: str, age_days: int):
         symbol="XAUUSD", order_type="BUY",
         volume=0.01, requested_price=1.0, stop_loss=0.9, take_profit=1.2,
         status="FILLED",
-        created_at=datetime.utcnow() - timedelta(days=age_days),
+        created_at=utc_now_naive() - timedelta(days=age_days),
     ))
 
 
@@ -67,7 +67,7 @@ def test_default_windows_delete_nothing(db_session):
 
 
 def test_signals_and_orders_pruned_only_older_than_window(db_session):
-    now = datetime.utcnow()
+    now = utc_now_naive()
     _add_old_signal(db_session, "sig_old", 40)
     _add_old_order(db_session, "ord_old", 40)
     fresh_signal = TradeSignal(

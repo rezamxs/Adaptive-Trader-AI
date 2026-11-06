@@ -54,11 +54,18 @@ def metric_digest(
     validation_metrics: Optional[Dict[str, Any]],
     test_metrics: Optional[Dict[str, Any]],
     walk_forward_metrics: Optional[Dict[str, Any]] = None,
+    train_metrics: Optional[Dict[str, Any]] = None,
 ) -> str:
+    """Buglist item 34: the attestation now covers train_metrics too — the
+    training-partition numbers were the only evaluation block outside the
+    digest, leaving the integrity chain incomplete for a writer who edits
+    them. Legacy rows whose stored digest was computed WITHOUT train_metrics
+    fail the promotion digest gate fail-closed and must be re-attested."""
     message = _canonical(
         model_id,
         {
             "test_metrics": test_metrics or {},
+            "train_metrics": train_metrics or {},
             "validation_metrics": validation_metrics or {},
             "walk_forward_metrics": walk_forward_metrics or {},
         },
@@ -75,11 +82,15 @@ def verify_metric_digest(
     test_metrics: Optional[Dict[str, Any]],
     walk_forward_metrics: Optional[Dict[str, Any]],
     digest: Optional[str],
+    train_metrics: Optional[Dict[str, Any]] = None,
 ) -> bool:
     if not digest:
         return False
     return hmac.compare_digest(
-        metric_digest(model_id, validation_metrics, test_metrics, walk_forward_metrics),
+        metric_digest(
+            model_id, validation_metrics, test_metrics, walk_forward_metrics,
+            train_metrics=train_metrics,
+        ),
         digest,
     )
 

@@ -1,7 +1,7 @@
 """TradingRule Model with mandatory human approval workflow and source tracing."""
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from sqlalchemy import String, Integer, Float, DateTime, Text, JSON
+from sqlalchemy import String, Integer, Float, DateTime, Text, JSON, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.app.db.base import Base, utc_now_naive
 
@@ -29,7 +29,11 @@ class TradingRule(Base):
     invalidation_conditions: Mapped[List[str]] = mapped_column(JSON, default=list, nullable=False)
     
     # Source provenance
-    source_document: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Buglist item 13: DB-enforced reference to the source document. SET NULL
+    # keeps an approved rule alive even if its source document row vanishes.
+    source_document: Mapped[Optional[str]] = mapped_column(
+        String(64), ForeignKey("documents.document_id", ondelete="SET NULL"),
+        nullable=True)
     source_pages: Mapped[List[int]] = mapped_column(JSON, default=list, nullable=False)
     
     # Subjective / Ambiguous terms tracking

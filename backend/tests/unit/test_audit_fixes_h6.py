@@ -13,7 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.core.config import settings, ExecutionMode
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 from backend.app.models.order import DemoOrder
 from backend.app.models.signal import TradeSignal
 from backend.app.services.market_data.base import AccountDetails, Quote, SymbolInfo
@@ -59,7 +59,7 @@ def sample_approved_signal(db_session):
         calculated_volume=0.10,
         execution_mode="DEMO_TRADING",
         status="GENERATED",
-        bar_time=datetime.utcnow(),
+        bar_time=utc_now_naive(),
     )
     db_session.add(sig)
     db_session.commit()
@@ -691,7 +691,7 @@ def test_sweeper_also_recovers_execution_unknown_rows(db_session, sample_approve
         stop_loss=1895.0,
         take_profit=1910.0,
         status="EXECUTION_UNKNOWN",
-        created_at=datetime.utcnow() - timedelta(minutes=120),
+        created_at=utc_now_naive() - timedelta(minutes=120),
     )
     db_session.add(stale_unknown)
     db_session.commit()
@@ -746,7 +746,7 @@ def test_stale_pending_sweeper_recovers_fill(db_session, sample_approved_signal,
         stop_loss=1895.0,
         take_profit=1910.0,
         status="PENDING",
-        created_at=datetime.utcnow() - timedelta(minutes=60),
+        created_at=utc_now_naive() - timedelta(minutes=60),
     )
     db_session.add(stale_order)
     fresh_order = DemoOrder(
@@ -760,7 +760,7 @@ def test_stale_pending_sweeper_recovers_fill(db_session, sample_approved_signal,
         stop_loss=1895.0,
         take_profit=1910.0,
         status="PENDING",
-        created_at=datetime.utcnow(),
+        created_at=utc_now_naive(),
     )
     db_session.add(fresh_order)
     db_session.commit()
@@ -823,7 +823,7 @@ def _stale_row(db_session, sample_approved_signal, order_id, idem_suffix, status
         stop_loss=1895.0,
         take_profit=1910.0,
         status=status,
-        created_at=datetime.utcnow() - timedelta(minutes=120),
+        created_at=utc_now_naive() - timedelta(minutes=120),
     )
     db_session.add(row)
     db_session.commit()

@@ -2,6 +2,7 @@
 import io
 import csv
 import re
+import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 import pymupdf  # PyMuPDF
@@ -14,6 +15,12 @@ from backend.app.core.logging import logger
 # DECOMPRESSED bytes of every member before they reach decode/fromstring.
 # Real strategy/text members are orders of magnitude below this.
 _MAX_MEMBER_BYTES = 64 * 1024 * 1024
+
+# Buglist item 22: ZIP member names land in KnowledgeChunk.location_reference
+# (String(128)); the title column is String(255). Bounded here so the stored
+# value fits every dialect (SQLite ignores varchar lengths; PostgreSQL does
+# not) — with an explicit "..." truncation marker instead of a silent cut.
+_MAX_MEMBER_NAME_CHARS = 120
 
 # Strict session-heading pattern (Order Flow جزوه، جلسات 11-25): a heading
 # must START with "جلسه" + a 1-2 digit (Persian or ASCII) number, an optional
@@ -188,15 +195,51 @@ class DocumentParser:
         return full_text, 1, page_chunks
 
     @staticmethod
+    def _bounded_xlsx_zipfile(source) -> zipfile.ZipFile:
+        """Opens an XLSX container and bounds every OOXML member's DECOMPRESSED
+        size (buglist item 6).
+
+        An XLSX is a ZIP of XML members; openpyxl decompresses sharedStrings.xml
+        and the sheet parts fully into memory, so a crafted workbook can expand
+        ~1000x from a tiny compressed archive (the same decompression-bomb shape
+        the DOCX/ZIP parsers already guard against). This pre-pass reads at most
+        cap+1 bytes from every member and refuses the file before openpyxl ever
+        touches it.
+        """
+
+        zf = zipfile.ZipFile(source)
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            with zf.open(info) as member:
+                probe = member.read(_MAX_MEMBER_BYTES + 1)
+            if len(probe) > _MAX_MEMBER_BYTES:
+                zf.close()
+                raise ValueError(
+                    f"XLSX member '{info.filename}' exceeds the "
+                    f"{_MAX_MEMBER_BYTES}-byte per-member limit; refusing "
+                    "possible decompression bomb."
+                )
+        return zf
+
+    @staticmethod
     def parse_excel(file_bytes: bytes) -> Tuple[str, int, List[Dict[str, int]]]:
-        """Parses Excel (.xlsx) workbooks across all sheets."""
-        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+        """Parses Excel (.xlsx) workbooks across all sheets (bounded)."""
+        # Bounded pre-pass over every OOXML member; openpyxl then re-opens the
+        # (already-verified) container itself — it cannot consume a ZipFile.
+        zf = DocumentParser._bounded_xlsx_zipfile(io.BytesIO(file_bytes))
+        zf.close()
+        # read_only=True streams rows instead of materializing a full cell DOM
+        # per sheet; the decompressed-size cap bounds shared strings too.
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
         return DocumentParser._excel_from_workbook(wb)
 
     @staticmethod
     def parse_excel_path(path: Path) -> Tuple[str, int, List[Dict[str, int]]]:
-        """Parses an Excel workbook from disk without materializing its bytes."""
-        wb = openpyxl.load_workbook(str(path), data_only=True)
+        """Parses an Excel workbook from disk without materializing its bytes (bounded)."""
+        zf = DocumentParser._bounded_xlsx_zipfile(str(path))
+        zf.close()
+        wb = openpyxl.load_workbook(str(path), data_only=True, read_only=True)
         return DocumentParser._excel_from_workbook(wb)
 
     @staticmethod
@@ -223,14 +266,12 @@ class DocumentParser:
     @staticmethod
     def parse_docx(file_bytes: bytes) -> Tuple[str, int, List[Dict[str, Any]]]:
         """Parses DOCX documents using zipfile and hardened XML parsing (no DOCTYPE/ENTITY)."""
-        import zipfile
         with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
             return DocumentParser.parse_docx_from_zip(z)
 
     @staticmethod
     def parse_docx_path(path: Path) -> Tuple[str, int, List[Dict[str, Any]]]:
         """Parses a DOCX file from disk without materializing its bytes."""
-        import zipfile
         with zipfile.ZipFile(str(path)) as z:
             return DocumentParser.parse_docx_from_zip(z)
 
@@ -354,14 +395,12 @@ class DocumentParser:
     @staticmethod
     def parse_zip(file_bytes: bytes, max_chunk_chars: int = 8000) -> Tuple[str, int, List[Dict[str, Any]]]:
         """Parses ZIP archives into bounded structured member chunks without silent truncation."""
-        import zipfile
         with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
             return DocumentParser.parse_zip_from_zip(z, max_chunk_chars)
 
     @staticmethod
     def parse_zip_path(path: Path, max_chunk_chars: int = 8000) -> Tuple[str, int, List[Dict[str, Any]]]:
         """Parses a ZIP archive from disk without materializing its bytes."""
-        import zipfile
         with zipfile.ZipFile(str(path)) as z:
             return DocumentParser.parse_zip_from_zip(z, max_chunk_chars)
 
@@ -381,6 +420,17 @@ class DocumentParser:
                     ext = Path(fn).suffix.lower()
                     if ext not in valid_exts:
                         continue
+
+                    # Buglist item 22: the member NAME flows into indexed
+                    # columns bounded as String(128)/String(255). SQLite
+                    # ignores varchar lengths, but PostgreSQL enforces them —
+                    # a crafted 500-char member name would fail the chunk
+                    # insert there. Truncate at the parser boundary so every
+                    # dialect stores the same bounded value (with an explicit
+                    # truncation marker, never a silent cut).
+                    display_name = fn if len(fn) <= _MAX_MEMBER_NAME_CHARS else (
+                        fn[:_MAX_MEMBER_NAME_CHARS - 3] + "..."
+                    )
 
                     try:
                         # Bounded per-member read (decompression-bomb guard):
@@ -409,8 +459,8 @@ class DocumentParser:
                         page_chunks.append({
                             "page": 1,
                             "location_type": "archive_member",
-                            "location_reference": fn,
-                            "title": f"Archive Member: {fn}",
+                            "location_reference": display_name,
+                            "title": f"Archive Member: {display_name}",
                             "text": text,
                         })
                     else:
@@ -424,8 +474,8 @@ class DocumentParser:
                             page_chunks.append({
                                 "page": part_num,
                                 "location_type": "archive_member",
-                                "location_reference": f"{fn} [Part {part_num}/{total_parts}]",
-                                "title": f"Archive Member: {fn} (Part {part_num}/{total_parts})",
+                                "location_reference": f"{display_name} [Part {part_num}/{total_parts}]"[:_MAX_MEMBER_NAME_CHARS],
+                                "title": f"Archive Member: {display_name} (Part {part_num}/{total_parts})"[:255],
                                 "text": f"[Part {part_num}/{total_parts}, chars {start}-{end} of {total_chars}]\n{chunk_subtext}",
                             })
                             start = end
