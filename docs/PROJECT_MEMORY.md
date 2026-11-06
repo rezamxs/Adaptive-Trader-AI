@@ -1020,3 +1020,25 @@ All MT5 paths tested with stubs; no real MT5 dispatch, no orders, `EXECUTION_MOD
 **Constraints unchanged:** `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, zero orders, zero approvals, zero activations; production DB untouched; everything UNCOMMITTED awaiting the owner's commit/push authorization (given this session — see the commit made right after §33).
 
 **Next action:** owner runs Phase P (direction assignment + batch approval of the 52 pending rules); then roadmap phase 2 leftovers (ML-WF operator attach endpoint design, Windows CI runner decision, FK-constraint migration decision).
+
+
+---
+
+## 34. Buglist 2026-11-05 closed end-to-end (46 items) + NaN/inf evidence hardening + CI dual-platform on lock — 2026-11-06/07
+
+**Branch `fix/buglist-1-20` (base 09f5f1f = remote main), pushed to origin (`rezamxs/Adaptive-Trader-AI`). Commits: `6771d5c` (restore docs/PROJECT_MEMORY.md + AGENTS.md + .specify + .agents — item 15), `7a96163` (items 1-20), `20e13d4` (items 21-46), plus the 2026-11-07 hardening commits (NaN/inf gate, Ruff F811/F821, lint gate in CI, push trigger, doc sync). All 46 audit items verified REAL against code before fixing; every fix carries regression tests.**
+
+**Evidence:**
+- Tests: **571 total — 570 passed / 1 skipped** locally on Windows (Python 3.14.4, 2026-11-07). New suites: `test_buglist_1_20_ml.py` (10), `test_buglist_1_20_knowledge.py` (8), `test_buglist_1_20_api_db.py` (14), `test_buglist_21_46.py` (36, incl. 10 parametrized NaN/±inf/out-of-range forgeries).
+- CI: run 42264694565 (`workflow_dispatch`) — `core-regression` (ubuntu) SUCCESS + `windows-regression` (windows-latest) SUCCESS, both installing `requirements-lock.txt` + `-e . --no-deps` on Python 3.14. After the push-trigger fix, every push to `fix/buglist-1-20` runs both platforms + the Ruff lint gate (`--select F821,F811,E9`, currently clean).
+- Production DB was inspected READ-ONLY (`file:...?mode=ro`) and never modified: at `20261029_wcbf`, **8 pending revisions** (20261031_mlwfm → dshq → auidx → 20261101_rdir → sdir → 20261104_mlwfr → 20261106_fkif → 20261106_bthr); pre-migration cleanup no-ops verified (0 orphans, 0 duplicate content_sha256, 0 NULL updated_at). Migrations were rehearsal-tested on COPIES of the prod DB only.
+- NaN/±inf hardening: `verify_ml_walk_forward_payload` (the choke point for persist/attach/promotion re-verification) now requires every fold metric (roc_auc/brier_score/f1/accuracy, model AND baseline blocks) to be a finite number in [0,1] and every claimed aggregate mean/std to be finite — NaN previously passed `abs(nan - x) > 0.0011` (False). README "known limitations" item 4 is CLOSED; the stale items 5 (ML-WF run binding — closed by 20261104_mlwfr) and 7 (Windows CI) were removed/synced.
+
+**Safety state unchanged (verified):** `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, zero orders, zero rule approvals, zero model activations; production DB untouched; no merge to main (owner authorization pending).
+
+**Remaining owner decisions / open work:**
+1. Run `alembic upgrade head` against prod (8 revisions; pre-checks green, rehearsal on a copy green) during a maintenance window.
+2. Generate `METRIC_SIGNING_KEY` locally (digests are corruption-evident, not tamper-proof, until then).
+3. Live threshold policy: recorded `live_prob_threshold=0.55` vs evidence evaluated at 0.5 (buglist item 33) — aligning the values is a trading-policy decision.
+4. News-pause rule source (ForexFactory feed proposal), batch approval of the 52 UNAPPROVED rules, merge of `fix/buglist-1-20` into main, PR review.
+5. P3 backlog: F841 unused locals in retriever/tests, PLW1510 in tests, archive JSON size for very large months, `FUTURE_TICK_TIMESTAMP` stall monitoring under a wrong broker offset.
