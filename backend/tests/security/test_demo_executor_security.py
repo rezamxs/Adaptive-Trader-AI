@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.core.config import settings, ExecutionMode
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 from backend.app.models.signal import TradeSignal
 from backend.app.models.order import DemoOrder
 from backend.app.services.market_data.mock_provider import MockMarketDataProvider
@@ -51,7 +51,7 @@ def sample_approved_signal(db_session):
         calculated_volume=0.10,
         execution_mode="DEMO_TRADING",
         status="GENERATED",
-        bar_time=datetime.utcnow(),
+        bar_time=utc_now_naive(),
     )
     db_session.add(sig)
     db_session.commit()

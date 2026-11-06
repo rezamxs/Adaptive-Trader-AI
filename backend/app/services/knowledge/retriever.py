@@ -124,6 +124,8 @@ class KnowledgeRetriever:
         self._norm_concepts: Dict[str, str] = {}
         self._norm_loc: Dict[str, str] = {}
         self._norm_src: Dict[str, str] = {}
+        # Buglist item 21: per-field word sets for exact (non-substring) match.
+        self._field_words: Dict[str, Dict[str, set]] = {}
         self._token_counts: Dict[str, Dict[str, int]] = {}
         self._passages: Dict[str, List[tuple]] = {}
         # Item 8: the corpus index is built on FIRST SEARCH, not in __init__ —
@@ -150,6 +152,7 @@ class KnowledgeRetriever:
         self._norm_concepts = {}
         self._norm_loc = {}
         self._norm_src = {}
+        self._field_words = {}
         self._token_counts = {}
         self._passages = {}
         self._build_corpus_index()
@@ -185,11 +188,23 @@ class KnowledgeRetriever:
             for t in tokens:
                 token_counts[t] = token_counts.get(t, 0) + 1
             self._token_counts[chunk.chunk_id] = token_counts
-            self._norm_content[chunk.chunk_id] = normalize_persian_text(chunk.content)
+            norm_content = normalize_persian_text(chunk.content)
+            self._norm_content[chunk.chunk_id] = norm_content
             self._norm_title[chunk.chunk_id] = normalize_persian_text(chunk.title or "")
             self._norm_concepts[chunk.chunk_id] = normalize_persian_text(" ".join(chunk.key_concepts or []))
             self._norm_loc[chunk.chunk_id] = normalize_persian_text(chunk.location_reference or "")
             self._norm_src[chunk.chunk_id] = normalize_persian_text(chunk.source_file)
+            # Buglist item 21: field matching is WORD-exact, not a substring
+            # probe — a short query token like "لات" must not match inside
+            # "لاتین" and inflate the BM25 score. The normalized fields are
+            # space-separated, so their word sets are the exact-match oracle.
+            self._field_words[chunk.chunk_id] = {
+                "content": set(norm_content.split()),
+                "title": set(self._norm_title[chunk.chunk_id].split()),
+                "concepts": set(self._norm_concepts[chunk.chunk_id].split()),
+                "loc": set(self._norm_loc[chunk.chunk_id].split()),
+                "src": set(self._norm_src[chunk.chunk_id].split()),
+            }
 
             # Passage extraction + per-passage normalization/tokenization are
             # deterministic per chunk — cache them for the scoring loop.
@@ -326,6 +341,16 @@ class KnowledgeRetriever:
             norm_src = self._norm_src[chunk_id]
 
             token_counts = self._token_counts.get(chunk_id) or {}
+            # Buglist item 21: exact word sets (never substring probes).
+            field_words = self._field_words.get(chunk_id) or {
+                "content": set(), "title": set(), "concepts": set(),
+                "loc": set(), "src": set(),
+            }
+            content_words = field_words["content"]
+            title_words = field_words["title"]
+            concept_words = field_words["concepts"]
+            loc_words = field_words["loc"]
+            src_words = field_words["src"]
 
             bm25_score = 0.0
             matched_terms = []
@@ -338,11 +363,11 @@ class KnowledgeRetriever:
                 t_idf = self.get_idf(t)
                 variants = token_expansion.get(t, [t])
                 
-                in_content = any((v in token_counts or v in norm_content) for v in variants)
-                in_title = any(v in norm_title for v in variants)
-                in_concepts = any(v in norm_concepts for v in variants)
-                in_loc = any(v in norm_loc for v in variants)
-                in_src = any(v in norm_src for v in variants)
+                in_content = any((v in token_counts or v in content_words) for v in variants)
+                in_title = any(v in title_words for v in variants)
+                in_concepts = any(v in concept_words for v in variants)
+                in_loc = any(v in loc_words for v in variants)
+                in_src = any(v in src_words for v in variants)
 
                 if in_content or in_title or in_concepts or in_loc or in_src:
                     informative_hits += 1
@@ -353,8 +378,10 @@ class KnowledgeRetriever:
                         param_hits += 1
 
                 tf = sum(token_counts.get(v, 0) for v in variants)
-                if tf == 0 and (in_content or in_title or in_loc or in_src):
-                    tf = 1
+                # Buglist item 21: the old `tf = 1` fallback fabricated a term
+                # score from a mere substring hit; the field bonuses above
+                # already credit real (word-exact) hits, and BM25's tf stays
+                # honest here.
 
                 if tf > 0:
                     tf_norm = (tf * (k1 + 1.0)) / (tf + k1 * (1.0 - b + b * (doc_len / self._avg_dl)))

@@ -152,7 +152,19 @@ class DemoTradingExecutor:
         if not MT5_AVAILABLE or mt5 is None:
             return
         try:
-            from_date = datetime(2020, 1, 1, tzinfo=timezone.utc)
+            # Buglist item 25: the sweep used to read broker history from
+            # 2020-01-01 while holding the process-global _mt5_lock — one
+            # reconciliation pass could stall every concurrent MT5 caller
+            # (order_send, provider reads, the worker) for seconds while the
+            # C extension walked six years of orders. The window is bounded
+            # to the order's own lifetime (created_at minus a margin) — the
+            # broker entry of THIS order cannot precede the order record.
+            base = order_rec.created_at
+            if base is None:
+                base = datetime.now(timezone.utc) - timedelta(days=7)
+            if base.tzinfo is None:
+                base = base.replace(tzinfo=timezone.utc)
+            from_date = base - timedelta(days=1)
             to_date = datetime.now(timezone.utc) + timedelta(days=1)
             # H-1 (2026-10-31 audit): every MetaTrader5 C-extension call must
             # hold the process-global _mt5_lock — the reconciliation sweep runs

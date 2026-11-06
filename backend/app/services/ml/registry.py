@@ -536,6 +536,7 @@ class ModelRegistry:
             record.validation_metrics,
             record.test_metrics,
             record.walk_forward_metrics,
+            train_metrics=record.train_metrics,
         )
 
         # Same containment contract as promote/load: attach rewrites the
@@ -753,6 +754,7 @@ class ModelRegistry:
             record.validation_metrics,
             record.test_metrics,
             record.walk_forward_metrics,
+            train_metrics=record.train_metrics,
         )
 
         # Same containment contract as the other attach path.
@@ -792,9 +794,23 @@ class ModelRegistry:
 
     @classmethod
     def _ml_walk_forward_failure(cls, model_id: str, payload: Any) -> Optional[str]:
-        """Independent re-verification of attached ML walk-forward evidence."""
-        if not isinstance(payload, dict) or not payload:
+        """Independent re-verification of attached ML walk-forward evidence.
+
+        Buglist item 32: a NON-dict payload (e.g. a corrupted string or list)
+        used to fall through the absence check and be treated as ABSENT
+        evidence — a gate-passing outcome. Absence means None or an empty
+        dict (the trainer's default); anything else that is not a dict is
+        CORRUPT evidence and fails closed here."""
+        if payload is None:
             return None  # absent evidence is handled by the strategy WF gate
+        if isinstance(payload, dict) and not payload:
+            return None  # the trainer's empty default is still absence
+        if not isinstance(payload, dict):
+            return (
+                "ml_walk_forward evidence is corrupt (expected a dict payload, "
+                f"got {type(payload).__name__}); corrupt evidence is rejected, "
+                "not treated as absent"
+            )
         structural_failure = verify_ml_walk_forward_payload(payload)
         if structural_failure:
             return structural_failure
@@ -879,6 +895,7 @@ class ModelRegistry:
             candidate.test_metrics,
             candidate.walk_forward_metrics,
             candidate.metrics_digest,
+            train_metrics=candidate.train_metrics,
         ):
             if _gate("digest_attestation", True, (
                 f"Cannot promote model {candidate_id}: stored metrics failed integrity "

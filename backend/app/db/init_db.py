@@ -61,12 +61,36 @@ def init_db(db: Optional[Session] = None) -> None:
 
     head = _alembic_chain_head()
     version: Optional[str] = None
+    versions_in_db: list = []
     with engine.connect() as conn:
         existing = sqlalchemy.inspect(conn)
-        if "alembic_version" in existing.get_table_names():
-            version = conn.execute(
-                sqlalchemy.select(_AlembicVersion.c.version_num)
-            ).scalar()
+        table_names = set(existing.get_table_names())
+        if "alembic_version" in table_names:
+            # Buglist item 29: .scalar() read only the FIRST alembic_version
+            # row. A database with multiple heads (an un-merged migration
+            # branch) silently compared one arbitrary version and could boot
+            # in a broken state. Read EVERY row: multiple distinct versions
+            # fail loudly below and name the fix. (All reads stay inside the
+            # connection context.)
+            versions_in_db = sorted({
+                row[0]
+                for row in conn.execute(
+                    sqlalchemy.select(_AlembicVersion.c.version_num)
+                ).fetchall()
+                if row[0]
+            })
+            if len(versions_in_db) == 1:
+                version = versions_in_db[0]
+            elif versions_in_db:
+                version = ",".join(versions_in_db)
+
+    if head is not None and len(versions_in_db) > 1:
+        raise RuntimeError(
+            "Database has MULTIPLE alembic_version rows "
+            f"({', '.join(versions_in_db)}); the migration chain is branched. "
+            "Run `alembic heads` and `alembic merge` (or `alembic upgrade head` "
+            "against the correct lineage) before starting the app."
+        )
 
     if head is not None and version is not None and version != head:
         raise RuntimeError(

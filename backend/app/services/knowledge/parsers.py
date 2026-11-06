@@ -15,6 +15,12 @@ from backend.app.core.logging import logger
 # Real strategy/text members are orders of magnitude below this.
 _MAX_MEMBER_BYTES = 64 * 1024 * 1024
 
+# Buglist item 22: ZIP member names land in KnowledgeChunk.location_reference
+# (String(128)); the title column is String(255). Bounded here so the stored
+# value fits every dialect (SQLite ignores varchar lengths; PostgreSQL does
+# not) — with an explicit "..." truncation marker instead of a silent cut.
+_MAX_MEMBER_NAME_CHARS = 120
+
 # Strict session-heading pattern (Order Flow جزوه، جلسات 11-25): a heading
 # must START with "جلسه" + a 1-2 digit (Persian or ASCII) number, an optional
 # separator, and a title. Anchored with bounded quantifiers, so body-text
@@ -419,6 +425,17 @@ class DocumentParser:
                     if ext not in valid_exts:
                         continue
 
+                    # Buglist item 22: the member NAME flows into indexed
+                    # columns bounded as String(128)/String(255). SQLite
+                    # ignores varchar lengths, but PostgreSQL enforces them —
+                    # a crafted 500-char member name would fail the chunk
+                    # insert there. Truncate at the parser boundary so every
+                    # dialect stores the same bounded value (with an explicit
+                    # truncation marker, never a silent cut).
+                    display_name = fn if len(fn) <= _MAX_MEMBER_NAME_CHARS else (
+                        fn[:_MAX_MEMBER_NAME_CHARS - 3] + "..."
+                    )
+
                     try:
                         # Bounded per-member read (decompression-bomb guard):
                         # read at most cap+1 bytes, then verify.
@@ -446,8 +463,8 @@ class DocumentParser:
                         page_chunks.append({
                             "page": 1,
                             "location_type": "archive_member",
-                            "location_reference": fn,
-                            "title": f"Archive Member: {fn}",
+                            "location_reference": display_name,
+                            "title": f"Archive Member: {display_name}",
                             "text": text,
                         })
                     else:
@@ -461,8 +478,8 @@ class DocumentParser:
                             page_chunks.append({
                                 "page": part_num,
                                 "location_type": "archive_member",
-                                "location_reference": f"{fn} [Part {part_num}/{total_parts}]",
-                                "title": f"Archive Member: {fn} (Part {part_num}/{total_parts})",
+                                "location_reference": f"{display_name} [Part {part_num}/{total_parts}]"[:_MAX_MEMBER_NAME_CHARS],
+                                "title": f"Archive Member: {display_name} (Part {part_num}/{total_parts})"[:255],
                                 "text": f"[Part {part_num}/{total_parts}, chars {start}-{end} of {total_chars}]\n{chunk_subtext}",
                             })
                             start = end

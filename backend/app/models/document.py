@@ -18,7 +18,10 @@ class Document(Base):
     pages_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     raw_text: Mapped[str] = mapped_column(Text, nullable=True)
     error_message: Mapped[str] = mapped_column(Text, nullable=True)
-    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Buglist item 26: the UNIQUE index in __table_args__ is the single index
+    # on this column (migration dshq drops the redundant non-unique one on
+    # migrated DBs, so no index=True here keeps fresh == migrated parity).
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Integrity: the unique index below (enforced by migration 20261031_dshq)
     # is what makes concurrent-ingestion dedup real — KnowledgeManager's
     # IntegrityError recovery path can only fire when the DB itself refuses a

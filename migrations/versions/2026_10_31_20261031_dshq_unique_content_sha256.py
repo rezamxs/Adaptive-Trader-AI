@@ -18,7 +18,9 @@ Create Date: 2026-10-31
 from typing import Sequence, Union
 
 from alembic import op
-from sqlalchemy import inspect, text
+import hashlib
+
+from sqlalchemy import inspect, text, text
 
 revision: str = "20261031_dshq"
 down_revision: Union[str, None] = "20261031_mlwfm"
@@ -69,3 +71,48 @@ def downgrade() -> None:
         op.create_index(
             "ix_documents_content_sha256", "documents", ["content_sha256"], unique=False
         )
+    # Buglist item 30: the UPGRADE neutralized duplicate hashes by NULLing the
+    # later twins, and the old downgrade left them NULL forever — the idempotency
+    # key those documents need was destroyed. The hash of each NULLed twin is
+    # recoverable CRYPTOGRAPHICALLY: the raw file is stored under
+    # DATA_RAW_DIR/<document_id>_<file_name>, so recompute it chunk-wise and
+    # backfill the column. Rows whose raw file is missing keep NULL (never
+    # guessed) and are logged for the operator.
+    columns = {column["name"] for column in inspector.get_columns("documents")}
+    if "content_sha256" not in columns:
+        return
+    try:
+        from pathlib import Path
+
+        from backend.app.core.config import settings as _settings
+
+        raw_dir = Path(_settings.DATA_RAW_DIR)
+    except Exception:
+        return
+    rows = bind.execute(text(
+        "SELECT document_id, file_name FROM documents WHERE content_sha256 IS NULL"
+    )).fetchall()
+    restored = 0
+    for document_id, file_name in rows:
+        if not document_id or not file_name:
+            continue
+        raw_path = raw_dir / f"{document_id}_{file_name}"
+        if not raw_path.is_file():
+            continue
+        try:
+            digest = hashlib.sha256()
+            with open(raw_path, "rb") as fh:
+                while True:
+                    block = fh.read(1024 * 1024)
+                    if not block:
+                        break
+                    digest.update(block)
+            bind.execute(
+                text("UPDATE documents SET content_sha256 = :h WHERE document_id = :d"),
+                {"h": digest.hexdigest(), "d": document_id},
+            )
+            restored += 1
+        except OSError:
+            continue
+    if restored:
+        print(f"dshq downgrade: restored {restored} NULLed content_sha256 value(s) from stored raw files")

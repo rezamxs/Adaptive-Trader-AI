@@ -40,7 +40,9 @@
           message = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
         }
       } catch (_) { /* non-JSON error body */ }
-      throw new Error(message);
+      const err = new Error(message);
+      err.status = res.status;  // item 44: 401 is NOT "backend down"
+      throw err;
     }
 
     // Numeric formatter that never throws on missing/invalid values (M17).
@@ -193,8 +195,16 @@
         console.error("Status load failed", e);
         const badgeBackend = document.getElementById("badge-backend");
         if (badgeBackend) {
-          badgeBackend.innerText = "Backend: قطع ارتباط";
-          badgeBackend.className = "badge badge-danger";
+          // Buglist item 44: a 401 means authentication failed (wrong/missing
+          // token) — the backend is REACHABLE; showing "قطع ارتباط" sent the
+          // operator debugging the wrong layer.
+          if (e && e.status === 401) {
+            badgeBackend.innerText = "Backend: دسترسی رد شد (توکن نامعتبر)";
+            badgeBackend.className = "badge badge-warning";
+          } else {
+            badgeBackend.innerText = "Backend: قطع ارتباط";
+            badgeBackend.className = "badge badge-danger";
+          }
         }
         const badgeWorker = document.getElementById("badge-worker");
         if (badgeWorker) {
@@ -348,8 +358,13 @@
     }
 
     async function rejectRule(ruleId, btn) {
-      const reason = prompt("علت رد این قانون را وارد کنید:", "قانون مبهم است یا با سیستم ناسازگار است.");
-      if (!reason) return;
+      // Buglist item 44: an empty/whitespace rejection reason must never
+      // reach the API (it is required evidence for the audit trail).
+      const reason = (prompt("علت رد این قانون را وارد کنید:", "قانون مبهم است یا با سیستم ناسازگار است.") || "").trim();
+      if (!reason) {
+        alert("علت رد نمی‌تواند خالی باشد؛ یک دلیل بنویسید.");
+        return;
+      }
       if (btn && btn.disabled) return;  // double-submit guard (M18)
       if (btn) btn.disabled = true;
       try {

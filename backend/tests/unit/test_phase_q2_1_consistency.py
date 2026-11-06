@@ -20,7 +20,7 @@ from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 
 from backend.app.core.config import settings, ExecutionMode
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 from backend.app.models.worker_cycle import WorkerCycleRecord
 
 
@@ -208,8 +208,8 @@ def test_test_d_worker_restart_idempotency(test_db_session):
         decision="HOLD",
         duration_ms=45.2,
         details="Pre-existing canonical record before restart",
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=utc_now_naive(),
+        updated_at=utc_now_naive(),
     )
     db.add(prior_record)
     db.commit()
@@ -243,7 +243,7 @@ def test_test_e_recovery_from_abandoned_processing_record(test_db_session):
     db, session_factory = test_db_session
     bar_time = datetime(2026, 10, 9, 23, 50, 0, tzinfo=timezone.utc)
     bar_key = "XAUUSD_M1_202610092350"
-    stale_created = datetime.utcnow() - timedelta(minutes=5)
+    stale_created = utc_now_naive() - timedelta(minutes=5)
 
     orphaned_record = WorkerCycleRecord(
         cycle_id="cyc_orphaned_attempt",
