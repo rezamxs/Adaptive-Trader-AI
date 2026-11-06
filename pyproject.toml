@@ -35,6 +35,16 @@ dev = [
     # Minor 19: measured coverage (`python -m pytest tests --cov=backend/app`).
     "pytest-cov>=5.0.0",
 ]
+# Buglist item 12: the app genuinely imports MetaTrader5 (market-data
+# provider, worker, executor) but it was never declared in the packaging
+# metadata — only requirements-lock.txt carried it, so a plain `pip install .`
+# produced a broken environment. It is an OPTIONAL extra, not a core
+# dependency, because the distribution ships Windows wheels only; elsewhere
+# the provider import degrades to MT5_AVAILABLE=False and the
+# terminal-dependent tests skip themselves.
+mt5 = [
+    "MetaTrader5>=5.0.6231; sys_platform == 'win32'",
+]
 
 # Only the backend is an installable Python package. The other top-level
 # directories contain datasets, logs, static frontend files, or artifacts.

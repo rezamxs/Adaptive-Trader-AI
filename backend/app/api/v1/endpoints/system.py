@@ -1,14 +1,17 @@
 """System Status, Worker Telemetry, and Emergency Stop Endpoints."""
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
 from backend.app.core.auth import require_api_token
 from backend.app.db.session import get_db
-from backend.app.services.market_data.provider_manager import acquire_shared_provider
+from backend.app.services.market_data.provider_manager import (
+    acquire_shared_provider,
+    release_shared_provider,
+)
 from backend.app.services.risk.circuit_breaker import EmergencyStopManager
 from backend.app.services.worker.market_worker import get_market_worker
 from backend.app.models.audit_log import AuditLog
@@ -18,13 +21,14 @@ router = APIRouter()
 
 
 class EmergencyStopRequest(BaseModel):
-    reason: str
-    actor: str = "USER"
+    # Buglist item 19: bound the free-text reason persisted to audit state.
+    reason: str = Field(min_length=1, max_length=500)
+    actor: str = Field(default="USER", max_length=100)
 
 
 class EmergencyStopDeactivateRequest(BaseModel):
-    notes: str = "Manual resumption"
-    actor: str = "USER"
+    notes: str = Field(default="Manual resumption", max_length=1000)
+    actor: str = Field(default="USER", max_length=100)
 
 
 @router.get("/status")
@@ -44,13 +48,22 @@ def get_system_status(db: Session = Depends(get_db), _token: str = Depends(requi
     # Query MT5 connection status. M12: reuse the worker's shared terminal
     # when it is live; otherwise acquire (and connect) the shared provider —
     # a throwaway unconnected instance can never report account context.
+    # Buglist item 16: a provider acquired HERE must be released here — the
+    # shared-provider usage counter leaked +1 on every status call that took
+    # the acquire path, growing without bound over the process lifetime.
+    acquired_here: Optional[Any] = None
     if worker and worker.data_provider.is_connected():
         active_provider = worker.data_provider
     else:
-        active_provider = acquire_shared_provider()
+        acquired_here = acquire_shared_provider()
+        active_provider = acquired_here
         active_provider.connect()
-    is_mt5_connected = active_provider.is_connected()
-    account_info = active_provider.get_account_info() if is_mt5_connected else None
+    try:
+        is_mt5_connected = active_provider.is_connected()
+        account_info = active_provider.get_account_info() if is_mt5_connected else None
+    finally:
+        if acquired_here is not None:
+            release_shared_provider(acquired_here)
 
     return {
         "app_name": settings.APP_NAME,

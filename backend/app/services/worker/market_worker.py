@@ -60,6 +60,12 @@ class MarketMonitoringWorker:
         self.is_running = False
         self._task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
+        # Buglist item 17: TTL cache for the trading governance probe so a
+        # public /health poller cannot force a joblib artifact load per poll.
+        import threading as _threading
+
+        self._probe_cache_lock = _threading.Lock()
+        self._gov_probe_cache: Optional[Tuple[float, bool, str]] = None
 
         # Telemetry & Diagnostics State
         self.started_at: Optional[datetime] = None
@@ -162,12 +168,33 @@ class MarketMonitoringWorker:
         artifact twice from disk (O(artifact size) per poll); this method
         keeps the two views consistent from one shared evaluation.
 
+        Buglist item 17: the probe result is TTL-cached — the PUBLIC /health
+        endpoint deserialized the joblib artifact on EVERY unauthenticated
+        poll, so a repeated external poller could burn CPU/memory for free.
+        The cache window is HEALTH_PROBE_CACHE_SECONDS (0 disables it); the
+        worker's own cycle path calls the probe too and benefits equally, and
+        the probe still re-evaluates immediately after the window so a stale
+        readiness verdict cannot outlive the operator's model/rule changes by
+        more than one cache window.
+
         The rules query mirrors KnowledgeManager.get_active_strategy_rules,
         including its CRITICAL invariant: approval_status == 'approved' ONLY.
         Constructing KnowledgeManager here would eagerly build the whole BM25
         corpus index, which a probe evaluated around every worker cycle must
         not pay for (item 8) — hence the direct query.
         """
+        cache_ttl = float(getattr(settings, "HEALTH_PROBE_CACHE_SECONDS", 20.0) or 0.0)
+        now = time.monotonic()
+        with self._probe_cache_lock:
+            cached = self._gov_probe_cache
+            if cached is not None and cache_ttl > 0 and (now - cached[0]) < cache_ttl:
+                return cached[1], cached[2]
+        result = self._trading_governance_probe_uncached()
+        with self._probe_cache_lock:
+            self._gov_probe_cache = (now, result[0], result[1])
+        return result
+
+    def _trading_governance_probe_uncached(self) -> Tuple[bool, str]:
         if not self.service_ready:
             return False, f"SERVICE_NOT_READY ({self.service_ready_reason})"
         if not self.market_data_ready:
@@ -384,6 +411,33 @@ class MarketMonitoringWorker:
             except asyncio.CancelledError:
                 break
 
+    def _cycle_heartbeat_timeout_seconds(self) -> float:
+        """Recovery window for an un-hearted PROCESSING record (item 24)."""
+        return float(getattr(settings, "WORKER_CYCLE_HEARTBEAT_TIMEOUT_SECONDS", 120.0) or 0.0)
+
+    def _touch_processing_record(self, db: Session, rec_id: Optional[int]) -> None:
+        """Refreshes the PROCESSING record's heartbeat (item 24).
+
+        Called at pipeline stage boundaries while the cycle is alive; the
+        orphan-recovery gate keys on this heartbeat instead of the reservation
+        age, so a slow-but-progressing cycle is never recovered underneath
+        itself. Best-effort: a heartbeat failure must not break the cycle.
+        """
+        if rec_id is None:
+            return
+        try:
+            from sqlalchemy import update as _sa_update
+
+            db.execute(
+                _sa_update(WorkerCycleRecord)
+                .where(WorkerCycleRecord.id == rec_id)
+                .values(updated_at=utc_now_naive())
+            )
+            db.commit()
+        except Exception as hb_err:
+            db.rollback()
+            logger.debug("Cycle heartbeat refresh failed for record %s: %s", rec_id, hb_err)
+
     def run_single_cycle(self) -> Dict[str, Any]:
         """Executes a single synchronous market monitoring pass.
         Strictly Read-Only and Idempotent.
@@ -430,6 +484,26 @@ class MarketMonitoringWorker:
             if quote:
                 self.last_tick_time = quote.time
 
+            # 4b. Buglist item 23: staleness was DIAGNOSED here but the cycle
+            # kept analyzing anyway — a frozen/stale feed let the worker
+            # analyze an old closed bar and record a signal from it. The
+            # analysis now fails closed on any non-fresh market state; the
+            # state/reason are still published for diagnostics, and the same
+            # bar is re-evaluated on the next poll once the feed is fresh
+            # (the bar reservation is not consumed by this skip).
+            if m_status != "MARKET_OPEN_DATA_FRESH":
+                self.last_status_code = m_status
+                self.last_reason = f"Market data not fresh ({m_status}): {m_reason}; analysis skipped (item 23)."
+                self.last_decision = "NONE"
+                self.last_lifecycle_phase = "SKIPPED_STALE_MARKET"
+                return {
+                    "cycle_id": cycle_id,
+                    "status_code": self.last_status_code,
+                    "reason": self.last_reason,
+                    "decision": "NONE",
+                    "analysis_executed": False,
+                }
+
             # 5. Retrieve Historical Completed Candles (start_pos=1 guarantees closed bars only)
             candles = self.data_provider.get_historical_candles(
                 symbol=self.symbol,
@@ -473,9 +547,21 @@ class MarketMonitoringWorker:
                         "analysis_executed": False,
                     }
                 elif existing_record.lifecycle_phase == "PROCESSING":
-                    # Check age of processing record
-                    age_proc = (utc_now_naive() - (existing_record.created_at or utc_now_naive())).total_seconds()
-                    if age_proc < 120.0:
+                    # Check liveness of the processing record. Buglist item 24:
+                    # recovery used to key on the record's created_at ALONE —
+                    # a slow-but-alive cycle (big artifact, slow MT5) was
+                    # treated as orphaned after 120s. The record now carries a
+                    # heartbeat (updated_at is refreshed at every pipeline
+                    # stage boundary while the cycle runs), so recovery fires
+                    # only when the LAST HEARTBEAT is older than the window —
+                    # i.e. the processing really stopped making progress.
+                    last_alive = (
+                        existing_record.updated_at
+                        or existing_record.created_at
+                        or utc_now_naive()
+                    )
+                    age_proc = (utc_now_naive() - last_alive).total_seconds()
+                    if age_proc < self._cycle_heartbeat_timeout_seconds():
                         self.last_status_code = "BAR_UNDER_PROCESSING"
                         self.last_reason = f"Bar {bar_key} is currently being processed by cycle {existing_record.cycle_id}."
                         return {
@@ -590,6 +676,7 @@ class MarketMonitoringWorker:
                         db.rollback()
                 return {"cycle_id": cycle_id, "status_code": self.last_status_code, "reason": self.last_reason}
 
+            self._touch_processing_record(db, rec.id if rec else None)
             latest_feat_series = df_feats.iloc[-1]
 
             # 8. Check Governance: Approved Rules and Active ML Model
@@ -597,6 +684,10 @@ class MarketMonitoringWorker:
             approved_rules = knowledge_mgr.get_active_strategy_rules()
             model_reg = ModelRegistry(db)
             active_model_artifact = model_reg.load_active_model_artifact()
+            # Buglist item 24: heartbeat AFTER the (potentially slow) artifact
+            # deserialization — the record stays provably alive through every
+            # heavy stage of the pipeline.
+            self._touch_processing_record(db, rec.id if rec else None)
 
             # Evaluate rules & model
             rule_dir, rule_str, triggered_rules = SignalGenerator.evaluate_rules(
@@ -714,12 +805,19 @@ def get_market_worker() -> MarketMonitoringWorker:
 
 # Retention table specs: per-table created/status attributes for the
 # monthly archive + pruning pass (owner decision 2026-11-01: 30-day windows).
+# demo_orders additionally excludes NON-FINAL statuses from pruning
+# (buglist item 2): an order still awaiting broker reconciliation (PENDING,
+# EXECUTION_UNKNOWN) must never be aged out of the table — deleting it would
+# destroy the only record needed to reconcile the broker response later.
 _OPERATIONAL_TABLES = (
     ("worker_cycle_records", WorkerCycleRecord, "created_at", "status_code"),
     ("audit_logs", AuditLog, "created_at", "severity"),
     ("trade_signals", TradeSignal, "created_at", "status"),
     ("demo_orders", None, "created_at", "status"),  # DemoOrder resolved lazily (import order)
 )
+
+# DemoOrder statuses that still carry an open reconciliation obligation.
+_UNFINAL_ORDER_STATUSES = ("PENDING", "EXECUTION_UNKNOWN")
 
 
 def _archive_monthly_summary(
@@ -735,28 +833,36 @@ def _archive_monthly_summary(
     Owner decision 2026-11-01 (step 3.7): before retention deletes rows older
     than the window, a per-month summary (total + per-status counts) is
     archived to <ARTIFACTS_REPORTS_DIR>/archive/<table>/<YYYY-MM>.json. If a
-    summary file already exists the counts are MERGED, so repeated pruning
-    passes accumulate instead of losing history. Raises on IO failure so the
-    caller can skip pruning instead of deleting unarchived rows.
+    summary file already exists the passes are MERGED. Raises on IO failure so
+    the caller can skip pruning instead of deleting unarchived rows.
+
+    Buglist item 28: the merge used to be a BLIND COUNT SUM — a pass whose
+    subsequent DB commit failed (the rows survive) re-archived the SAME rows
+    on the retry pass and inflated the monthly totals. The summary now tracks
+    the archived ROW IDS and their statuses, so totals and the per-status
+    distribution are derived from the merged id->status map and are IDEMPOTENT
+    under repeated passes. Legacy summaries (pre-row_ids) keep their recorded
+    totals as a preserved base and only the newly tracked ids are added.
     """
     if model is None:
         from backend.app.models.order import DemoOrder
 
         model = DemoOrder
     rows = (
-        db.query(getattr(model, created_attr), getattr(model, status_attr))
+        db.query(getattr(model, "id"), getattr(model, created_attr),
+                 getattr(model, status_attr))
         .filter(getattr(model, created_attr) < cutoff)
         .all()
     )
     if not rows:
         return {}
     months: Dict[str, Dict[str, Any]] = {}
-    for ts, status_value in rows:
+    for row_id, ts, status_value in rows:
         month = ts.strftime("%Y-%m") if ts is not None else "unknown"
-        bucket = months.setdefault(month, {"count": 0, "by_status": {}})
-        bucket["count"] += 1
+        bucket = months.setdefault(month, {"row_status": {}})
+        row_key = str(int(row_id))
         status_key = str(status_value) if status_value is not None else "NONE"
-        bucket["by_status"][status_key] = bucket["by_status"].get(status_key, 0) + 1
+        bucket["row_status"][row_key] = status_key
 
     archive_root = Path(settings.ARTIFACTS_REPORTS_DIR) / "archive" / table_name
     archive_root.mkdir(parents=True, exist_ok=True)
@@ -767,20 +873,44 @@ def _archive_monthly_summary(
                 existing = json.loads(target.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 existing = {}
-            bucket["count"] += int(existing.get("archived_count") or 0)
-            merged_status = dict(existing.get("by_status") or {})
-            for status_key, n in bucket["by_status"].items():
-                merged_status[status_key] = merged_status.get(status_key, 0) + int(n)
-            bucket["by_status"] = merged_status
-        payload = {
-            "table": table_name,
-            "month": month,
-            "archived_count": bucket["count"],
-            "by_status": bucket["by_status"],
-            "generated_at": utc_now_naive().isoformat(),
-        }
+            # Legacy base (summaries written before row tracking): preserved
+            # verbatim; their rows can no longer be re-attributed per status.
+            legacy_count = int(existing.get("legacy_rows_without_ids")
+                               or (0 if existing.get("row_ids")
+                                   else existing.get("archived_count") or 0))
+            merged_status: Dict[str, Any] = dict(existing.get("row_status") or {})
+            for row_key, status_key in bucket["row_status"].items():
+                merged_status[row_key] = status_key
+            by_status: Dict[str, int] = {}
+            for status_key in merged_status.values():
+                by_status[status_key] = by_status.get(status_key, 0) + 1
+            payload = {
+                "table": table_name,
+                "month": month,
+                "archived_count": legacy_count + len(merged_status),
+                "by_status": by_status,
+                "row_ids": sorted(int(k) for k in merged_status),
+                "row_status": merged_status,
+                "legacy_rows_without_ids": legacy_count,
+                "generated_at": utc_now_naive().isoformat(),
+            }
+        else:
+            by_status: Dict[str, int] = {}
+            for status_key in bucket["row_status"].values():
+                by_status[status_key] = by_status.get(status_key, 0) + 1
+            payload = {
+                "table": table_name,
+                "month": month,
+                "archived_count": len(bucket["row_status"]),
+                "by_status": by_status,
+                "row_ids": sorted(int(k) for k in bucket["row_status"]),
+                "row_status": bucket["row_status"],
+                "legacy_rows_without_ids": 0,
+                "generated_at": utc_now_naive().isoformat(),
+            }
         target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info("Monthly archive written for %s: %s", table_name, ", ".join(sorted(months)))
+    return {month: len(b["row_status"]) for month, b in months.items()}
     return {month: bucket["count"] for month, bucket in months.items()}
 
 
@@ -799,6 +929,11 @@ def prune_operational_records(
     archived (owner decision 2026-11-01); if the archive write fails, pruning
     for that table is SKIPPED this pass — rows are never deleted without a
     surviving summary. Returns the per-table delete counts.
+
+    Buglist item 2: demo_orders in a NON-FINAL status (PENDING,
+    EXECUTION_UNKNOWN) are NEVER pruned regardless of age — they are the only
+    record available to reconcile the broker outcome; they are aged out once
+    they reach a final status (FILLED/REJECTED/CANCELLED/CLOSED).
     """
     windows = {
         "worker_cycle_records": int(worker_cycle_days or 0),
@@ -825,11 +960,12 @@ def prune_operational_records(
                 table_name, e,
             )
             continue
-        removed = (
-            db.query(model)
-            .filter(getattr(model, created_attr) < cutoff)
-            .delete(synchronize_session=False)
-        )
+        prune_query = db.query(model).filter(getattr(model, created_attr) < cutoff)
+        if table_name == "demo_orders":
+            prune_query = prune_query.filter(
+                getattr(model, status_attr).notin_(_UNFINAL_ORDER_STATUSES)
+            )
+        removed = prune_query.delete(synchronize_session=False)
         deleted[table_name] = int(removed)
     if any(deleted.values()):
         db.commit()

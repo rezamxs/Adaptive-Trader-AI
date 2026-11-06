@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.db.session import get_db
 from backend.app.core.auth import require_api_token
+from backend.app.core.rate_limit import heavy_rate_limiter
 from backend.app.core.errors import ModelGovernanceError
 from backend.app.core.logging import logger
 from backend.app.services.market_data.mt5_provider import MT5MarketDataProvider
@@ -28,8 +29,9 @@ class TrainModelRequest(BaseModel):
 
 
 class PromoteModelRequest(BaseModel):
-    notes: Optional[str] = "Promoted by user"
-    actor: str = "USER"
+    # Buglist item 19: bound the free-text notes persisted with the promotion.
+    notes: Optional[str] = Field(default="Promoted by user", max_length=1000)
+    actor: str = Field(default="USER", max_length=100)
 
 
 @router.get("/models")
@@ -54,7 +56,12 @@ def list_models(
 
 
 @router.post("/train")
-def train_model(req: TrainModelRequest, db: Session = Depends(get_db), _token: str = Depends(require_api_token)):
+def train_model(
+    req: TrainModelRequest,
+    db: Session = Depends(get_db),
+    _token: str = Depends(require_api_token),
+    _rate: None = Depends(heavy_rate_limiter),  # buglist item 18
+):
     """Trains a new candidate model on historical data with strict temporal splitting."""
     from backend.app.services.ml.training import (
         TrainingDataError,
@@ -89,6 +96,10 @@ def train_model(req: TrainModelRequest, db: Session = Depends(get_db), _token: s
         "validation_metrics": train_res["validation_metrics"],
         "test_metrics": train_res["test_metrics"],
         "features_count": len(train_res["features_used"]),
+        # Buglist item 4: the producer outcome is reported explicitly —
+        # "evidence_recorded" (with run_id), "skipped" (with reason), or
+        # "disabled" — so a missing-evidence candidate is never silent.
+        "ml_walk_forward_evidence": train_res.get("ml_walk_forward_evidence"),
     }
 
 

@@ -122,7 +122,7 @@ def test_mlwf_attach_refuses_tampered_artifact_bytes(db_session, tmp_path):
     import hashlib
     from backend.tests.unit.test_mlwf_run_binding import _model  # reuse builder
 
-    candidate = _model("m-tamper", tmp_path / "t.joblib")
+    candidate = _model("m-tamper", tmp_path / "t.joblib", features_used=list(payload["feature_names"]))
     db_session.add(candidate)
     db_session.commit()
     # Tamper AFTER registration: bytes no longer match the attested digest.
@@ -146,7 +146,7 @@ def test_attach_refreshes_the_byte_digest_after_rewrite(db_session, tmp_path):
     from backend.tests.unit.test_mlwf_run_binding import _model
 
     before_sha = None
-    candidate = _model("m-rewrite", tmp_path / "r.joblib")
+    candidate = _model("m-rewrite", tmp_path / "r.joblib", features_used=list(payload["feature_names"]))
     before_sha = candidate.artifact_sha256
     db_session.add(candidate)
     db_session.commit()

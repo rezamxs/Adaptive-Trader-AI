@@ -104,9 +104,12 @@ def test_sensitive_reads_require_token_and_public_reads_stay_open():
     """M15 policy: every data-bearing GET (documents with raw_text, account
     status, audit logs, orders, signals, models, model comparison, rules,
     backtest runs, worker telemetry) requires the token — 127.0.0.1 binding
-    alone is not protection. Only /health (liveness probe) and /market-data/*
-    (public market data, no account context) stay open, and the dashboard
-    sends authHeaders on every GET fetch."""
+    alone is not protection. Buglist item 17 tightens this further: the
+    /market-data/* reads are token-gated TOO (each call acquires and probes
+    the shared MT5 terminal, so an unauthenticated poller could pressure the
+    worker's terminal connection for free). Only /health (liveness probe,
+    probe-cache-backed) stays public, and the dashboard sends authHeaders on
+    every GET fetch."""
     client = _client()
     sensitive_gets = [
         f"{V1}/documents/",
@@ -126,10 +129,15 @@ def test_sensitive_reads_require_token_and_public_reads_stay_open():
         resp = client.get(url)
         assert resp.status_code == 401, f"GET {url} must be token-gated, got {resp.status_code}"
 
-    # Public surfaces stay open (documented policy).
+    # Buglist item 17: market-data reads joined the token-gated surface.
+    for url in (f"{V1}/market-data/symbols", f"{V1}/market-data/quote/XAUUSD",
+                f"{V1}/market-data/candles/XAUUSD"):
+        resp = client.get(url)
+        assert resp.status_code == 401, f"GET {url} must be token-gated (item 17), got {resp.status_code}"
+
+    # The only public surface left is the /health liveness probe (documented
+    # policy; its governance probe is TTL-cached so polling stays cheap).
     assert client.get("/health").status_code == 200
-    assert client.get(f"{V1}/market-data/symbols").status_code in (200, 503), (
-        "market data stays public (may 503 when MT5 is down)")
 
     # Valid token passes authentication on every gated read (may still 5xx on
     # MT5/worker state, but never 401).
@@ -215,7 +223,7 @@ def test_market_quote_returns_503_without_mt5(monkeypatch):
         lambda self: False,
     )
     client = _client()
-    resp = client.get(f"{V1}/market-data/quote/XAUUSD")
+    resp = client.get(f"{V1}/market-data/quote/XAUUSD", headers=api_headers())
     assert resp.status_code == 503, f"expected 503 when MT5 down, got {resp.status_code}"
     assert "unavailable" in resp.text.lower()
 
@@ -226,7 +234,7 @@ def test_market_candles_returns_503_without_mt5(monkeypatch):
         lambda self: False,
     )
     client = _client()
-    resp = client.get(f"{V1}/market-data/candles/XAUUSD")
+    resp = client.get(f"{V1}/market-data/candles/XAUUSD", headers=api_headers())
     assert resp.status_code == 503
 
 

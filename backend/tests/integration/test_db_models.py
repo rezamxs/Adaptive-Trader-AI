@@ -3,7 +3,7 @@ import pytest
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 from backend.app.models import (
     Document,
     TradingRule,
@@ -100,7 +100,7 @@ def test_trade_signal_idempotency_constraint(in_memory_db):
         take_profit=1.0910,
         rules_triggered=["rule_rsi_oversold_01"],
         features_snapshot={"rsi": 28.5},
-        bar_time=datetime.utcnow(),
+        bar_time=utc_now_naive(),
     )
     in_memory_db.add(sig1)
     in_memory_db.commit()
@@ -117,7 +117,7 @@ def test_trade_signal_idempotency_constraint(in_memory_db):
         take_profit=1.0910,
         rules_triggered=["rule_rsi_oversold_01"],
         features_snapshot={"rsi": 28.5},
-        bar_time=datetime.utcnow(),
+        bar_time=utc_now_naive(),
     )
     in_memory_db.add(sig2)
     with pytest.raises(Exception):  # IntegrityError

@@ -32,7 +32,7 @@ from sqlalchemy.pool import StaticPool
 import backend.app.models  # noqa: F401 - register all ORM tables
 from backend.app.core.config import settings, ExecutionMode
 from backend.app.core.errors import ModelGovernanceError
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 from backend.app.main import app
 from backend.app.models.backtest import BacktestRun
 from backend.app.models.ml_model import MLModelRecord
@@ -93,7 +93,7 @@ def _approved_signal(db_session, signal_id="sig_r3_001", idem_key="XAUUSD_M15_20
         calculated_volume=0.10,
         execution_mode="DEMO_TRADING",
         status="GENERATED",
-        bar_time=datetime.utcnow(),
+        bar_time=utc_now_naive(),
     )
     db_session.add(sig)
     db_session.commit()
@@ -263,7 +263,7 @@ def test_placed_retcode_resolves_via_reconciliation_not_rejected(db_session, mon
 def test_reconciliation_sweep_isolates_a_failing_order(db_session):
     """One order whose reconciliation raises (e.g. SQLite lock) must not abort
     the sweep: the session is rolled back and later stale orders still resolve."""
-    now = datetime.utcnow()
+    now = utc_now_naive()
     order_common = dict(symbol="XAUUSD", order_type="BUY", volume=0.01,
                         requested_price=1900.0, stop_loss=1895.0, take_profit=1910.0)
     o1 = DemoOrder(order_id="ord_bad", signal_id="s1", idempotency_key="k1",

@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.core.config import settings
-from backend.app.db.base import Base
+from backend.app.db.base import Base, utc_now_naive
 import backend.app.models  # noqa: F401 - register all tables
 from backend.app.models.rule import TradingRule
 from backend.app.models.worker_cycle import WorkerCycleRecord
@@ -190,11 +190,11 @@ def test_retention_disabled_by_default_deletes_nothing(db_session):
         db_session.add(WorkerCycleRecord(
             cycle_id=f"cyc_ret_{i}", symbol="XAUUSD", timeframe="M1",
             status_code="PROCESSED",
-            created_at=datetime.utcnow() - timedelta(days=400),
+            created_at=utc_now_naive() - timedelta(days=400),
         ))
         db_session.add(AuditLog(
             event_type="RETENTION_TEST", severity="INFO", actor="TEST",
-            details={}, created_at=datetime.utcnow() - timedelta(days=400),
+            details={}, created_at=utc_now_naive() - timedelta(days=400),
         ))
     db_session.commit()
 
@@ -206,7 +206,7 @@ def test_retention_disabled_by_default_deletes_nothing(db_session):
 
 
 def test_retention_prunes_only_records_older_than_window(db_session):
-    now = datetime.utcnow()
+    now = utc_now_naive()
     for i in range(3):
         db_session.add(WorkerCycleRecord(
             cycle_id=f"cyc_old_{i}", symbol="XAUUSD", timeframe="M1",

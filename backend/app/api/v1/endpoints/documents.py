@@ -4,13 +4,13 @@ import os
 import tempfile
 from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from backend.app.core.logging import logger
 from backend.app.db.session import get_db
 from backend.app.core.auth import require_api_token
 from backend.app.models.document import Document
-from backend.app.schemas.document_schema import DocumentResponse
+from backend.app.schemas.document_schema import DocumentListResponse, DocumentResponse
 from backend.app.services.knowledge.manager import KnowledgeManager
 
 router = APIRouter()
@@ -18,15 +18,25 @@ router = APIRouter()
 _MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
 
-@router.get("/", response_model=List[DocumentResponse])
+@router.get("/", response_model=List[DocumentListResponse])
 def list_documents(
     limit: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
     _token: str = Depends(require_api_token),
 ):
-    """Lists uploaded trading knowledge documents (M15: rows carry raw_text —
-    the user's full source material — so this read is token-gated)."""
-    return db.query(Document).order_by(Document.id.desc()).limit(limit).all()
+    """Lists uploaded trading knowledge documents (M15: token-gated).
+
+    Buglist item 20: the listing deliberately does NOT carry raw_text —
+    up to 500 documents' full source text per page inflated both the response
+    body and the memory needed to build it. The column is deferred at the ORM
+    level so it is never even fetched for this query."""
+    return (
+        db.query(Document)
+        .options(defer(Document.raw_text))
+        .order_by(Document.id.desc())
+        .limit(limit)
+        .all()
+    )
 
 
 async def _write_upload_to_temp(file: UploadFile) -> tuple[str, int]:
@@ -62,7 +72,8 @@ async def _write_upload_to_temp(file: UploadFile) -> tuple[str, int]:
 @router.post("/upload")
 async def upload_document(
     file: UploadFile = File(...),
-    description: Optional[str] = Form("Uploaded manual strategy"),
+    # Buglist item 19: bound the free-text description (persisted as-is).
+    description: Optional[str] = Form("Uploaded manual strategy", max_length=500),
     db: Session = Depends(get_db),
     _token: str = Depends(require_api_token),
 ):

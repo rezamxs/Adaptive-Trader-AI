@@ -70,7 +70,7 @@ def _fresh_payload():
     return payload, hashlib
 
 
-def _model(model_id, artifact_path, *, auc=0.56, brier=0.19, wf=None):
+def _model(model_id, artifact_path, *, auc=0.56, brier=0.19, wf=None, features_used=None):
     import hashlib
     import joblib
 
@@ -84,9 +84,11 @@ def _model(model_id, artifact_path, *, auc=0.56, brier=0.19, wf=None):
         "model_id": model_id, "validation_metrics": validation_metrics,
         "test_metrics": test_metrics, "metrics_digest": digest,
     }, artifact_path)
+    # Buglist item 5: attached evidence must match the record's training
+    # configuration, so callers pass the payload's own feature list.
     return MLModelRecord(
         model_id=model_id, dataset_version_tag="mlwfr-dv", algorithm="logistic_regression",
-        hyperparameters={}, features_used=["rsi_14"], target_name="target_tp_before_sl",
+        hyperparameters={}, features_used=features_used or ["rsi_14"], target_name="target_tp_before_sl",
         train_metrics={}, validation_metrics=validation_metrics, test_metrics=test_metrics,
         calibration_metrics={}, walk_forward_metrics=wf, status="candidate",
         artifact_path=str(artifact_path), metrics_digest=digest,
@@ -130,7 +132,7 @@ def test_attach_requires_a_run_id(db_session, tmp_path):
 
 def test_attach_rejects_a_run_that_was_never_persisted(db_session, tmp_path):
     payload, _ = _fresh_payload()
-    db_session.add(_model("m1", tmp_path / "m1.joblib"))
+    db_session.add(_model("m1", tmp_path / "m1.joblib", features_used=list(payload["feature_names"])))
     db_session.commit()
     with pytest.raises(ModelGovernanceError, match="does not exist"):
         ModelRegistry(db_session).attach_ml_walk_forward_metrics(
@@ -142,7 +144,7 @@ def test_attach_rejects_payload_that_differs_from_the_persisted_run(db_session, 
     registry = ModelRegistry(db_session)
     run_id = registry.persist_ml_walk_forward_evaluation(copy.deepcopy(payload))
 
-    db_session.add(_model("m1", tmp_path / "m1.joblib"))
+    db_session.add(_model("m1", tmp_path / "m1.joblib", features_used=list(payload["feature_names"])))
     db_session.commit()
     # Structurally VALID but different from what was persisted (an extra
     # claim the verifier ignores) — the row equality gate must refuse it.
@@ -205,7 +207,7 @@ def test_promotion_requires_persisted_run_binding(db_session, tmp_path):
 def test_promotion_succeeds_for_the_full_persisted_chain(db_session, tmp_path):
     _seed_strategy_wf(db_session)
     payload, _ = _fresh_payload()
-    db_session.add(_model("m-good", tmp_path / "good.joblib", wf=_strategy_wf_payload()))
+    db_session.add(_model("m-good", tmp_path / "good.joblib", wf=_strategy_wf_payload(), features_used=list(payload["feature_names"])))
     db_session.commit()
 
     registry = ModelRegistry(db_session)
@@ -221,7 +223,7 @@ def test_promotion_succeeds_for_the_full_persisted_chain(db_session, tmp_path):
 def test_promotion_fails_when_the_bound_run_row_is_deleted(db_session, tmp_path):
     _seed_strategy_wf(db_session)
     payload, _ = _fresh_payload()
-    db_session.add(_model("m-del", tmp_path / "del.joblib", wf=_strategy_wf_payload()))
+    db_session.add(_model("m-del", tmp_path / "del.joblib", wf=_strategy_wf_payload(), features_used=list(payload["feature_names"])))
     db_session.commit()
 
     registry = ModelRegistry(db_session)

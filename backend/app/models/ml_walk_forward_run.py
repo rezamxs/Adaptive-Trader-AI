@@ -12,7 +12,7 @@ afterwards.
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from sqlalchemy import String, Integer, DateTime, JSON
+from sqlalchemy import String, Integer, DateTime, JSON, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.db.base import Base, utc_now_naive
@@ -32,5 +32,9 @@ class MLWalkForwardRun(Base):
     dataset_fingerprint: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     fold_count: Mapped[int] = mapped_column(Integer, nullable=False)
     # Set once at attach time; immutable afterwards.
-    model_id: Mapped[Optional[str]] = mapped_column(String(64), index=True, nullable=True)
+    # Buglist item 13: DB-enforced evidence binding to exactly one model
+    # (the M8 attach contract); SET NULL when the model row is removed.
+    model_id: Mapped[Optional[str]] = mapped_column(
+        String(64), ForeignKey("ml_models.model_id", ondelete="SET NULL"),
+        index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)

@@ -371,13 +371,41 @@ class ModelRegistry:
         if any(not s for s in starts) or starts != sorted(starts):
             return "fold test windows are missing or not chronological"
 
+        # engine_config/costs provenance is needed BOTH by the continuous
+        # drawdown re-aggregation below (initial_balance_per_fold) and by the
+        # cost-flag cross-check further down.
+        costs_block = provenance.get("costs_included")
+        engine_cfg = provenance.get("engine_config")
+        if not isinstance(costs_block, dict) or not isinstance(engine_cfg, dict):
+            return "walk-forward provenance lacks the costs_included/engine_config blocks"
+
         # Re-aggregate from the PERSISTED fold records and compare against
         # BOTH the stored run fields and the payload claims.
         agg_net = sum(float(f.get("net_profit", 0.0) or 0.0) for f in folds)
         agg_trades = sum(int(f.get("total_trades", 0) or 0) for f in folds)
         agg_gross_p = sum(float(f.get("gross_profit", 0.0) or 0.0) for f in folds)
         agg_gross_l = sum(float(f.get("gross_loss", 0.0) or 0.0) for f in folds)
-        agg_dd = max(float(f.get("max_drawdown_percent", 0.0) or 0.0) for f in folds)
+        # Item 3: the stored run's max_drawdown_percent is the CONTINUOUS
+        # stitched-account figure. Re-derive it from the persisted fold
+        # records with the SAME recurrence the producing evaluation used
+        # (imported, never re-implemented, so the two cannot drift).
+        from backend.app.services.backtest.walk_forward import (
+            _continuous_drawdown_from_folds as _cont_dd,
+        )
+
+        try:
+            wf_initial_balance = float(engine_cfg["initial_balance_per_fold"])
+        except (KeyError, TypeError, ValueError):
+            return (
+                "walk-forward provenance engine_config lacks a numeric "
+                "'initial_balance_per_fold'; continuous drawdown re-aggregation "
+                "is impossible (evidence predates the continuous-drawdown fix)"
+            )
+        try:
+            continuous_dd = _cont_dd(folds, wf_initial_balance)
+        except ValueError as exc:
+            return f"continuous drawdown re-aggregation failed: {exc}"
+        agg_dd = continuous_dd["max_drawdown_percent"]
 
         def _close(a: float, b: float) -> bool:
             return math.isclose(a, b, rel_tol=1e-9, abs_tol=1e-9)
@@ -422,10 +450,7 @@ class ModelRegistry:
         # promotion, so a fabricated True on a zero-cost run would satisfy
         # the costs gate — the persisted provenance (engine_config values and
         # the evaluator's own costs_included block) is the ground truth.
-        costs_block = provenance.get("costs_included")
-        engine_cfg = provenance.get("engine_config")
-        if not isinstance(costs_block, dict) or not isinstance(engine_cfg, dict):
-            return "walk-forward provenance lacks the costs_included/engine_config blocks"
+        # (costs_block/engine_cfg are parsed and shape-checked earlier.)
         try:
             spread_points = float(engine_cfg["spread_points"])
             slippage_points = float(engine_cfg["slippage_points"])
@@ -511,6 +536,7 @@ class ModelRegistry:
             record.validation_metrics,
             record.test_metrics,
             record.walk_forward_metrics,
+            train_metrics=record.train_metrics,
         )
 
         # Same containment contract as promote/load: attach rewrites the
@@ -637,6 +663,32 @@ class ModelRegistry:
                 "ml_walk_forward payload must carry evidence_type "
                 f"'{MLWF_EVIDENCE_TYPE}'."
             )
+        # Buglist item 5: the evidence must describe THIS model's own training
+        # configuration, not merely be a valid payload for some model. An
+        # evaluation produced with a different algorithm, different
+        # hyperparameters, or a different feature set (e.g. another training
+        # horizon's feature selection) must not be attachable here.
+        config_mismatches = []
+        if payload.get("algorithm") != record.algorithm:
+            config_mismatches.append(
+                f"algorithm (payload={payload.get('algorithm')!r}, "
+                f"model={record.algorithm!r})"
+            )
+        if payload.get("hyperparameters") != record.hyperparameters:
+            config_mismatches.append(
+                f"hyperparameters (payload={payload.get('hyperparameters')!r}, "
+                f"model={record.hyperparameters!r})"
+            )
+        if list(payload.get("feature_names") or []) != list(record.features_used or []):
+            config_mismatches.append(
+                f"feature_names ({len(payload.get('feature_names') or [])} in payload, "
+                f"{len(record.features_used or [])} on the model record)"
+            )
+        if config_mismatches:
+            raise ModelGovernanceError(
+                "ml_walk_forward evidence does not match the model's training "
+                f"configuration: {'; '.join(config_mismatches)}."
+            )
         if "digest" in payload and not isinstance(payload["digest"], str):
             raise ModelGovernanceError(
                 "ml_walk_forward payload digest must be a hex string "
@@ -702,6 +754,7 @@ class ModelRegistry:
             record.validation_metrics,
             record.test_metrics,
             record.walk_forward_metrics,
+            train_metrics=record.train_metrics,
         )
 
         # Same containment contract as the other attach path.
@@ -741,9 +794,23 @@ class ModelRegistry:
 
     @classmethod
     def _ml_walk_forward_failure(cls, model_id: str, payload: Any) -> Optional[str]:
-        """Independent re-verification of attached ML walk-forward evidence."""
-        if not isinstance(payload, dict) or not payload:
+        """Independent re-verification of attached ML walk-forward evidence.
+
+        Buglist item 32: a NON-dict payload (e.g. a corrupted string or list)
+        used to fall through the absence check and be treated as ABSENT
+        evidence — a gate-passing outcome. Absence means None or an empty
+        dict (the trainer's default); anything else that is not a dict is
+        CORRUPT evidence and fails closed here."""
+        if payload is None:
             return None  # absent evidence is handled by the strategy WF gate
+        if isinstance(payload, dict) and not payload:
+            return None  # the trainer's empty default is still absence
+        if not isinstance(payload, dict):
+            return (
+                "ml_walk_forward evidence is corrupt (expected a dict payload, "
+                f"got {type(payload).__name__}); corrupt evidence is rejected, "
+                "not treated as absent"
+            )
         structural_failure = verify_ml_walk_forward_payload(payload)
         if structural_failure:
             return structural_failure
@@ -828,6 +895,7 @@ class ModelRegistry:
             candidate.test_metrics,
             candidate.walk_forward_metrics,
             candidate.metrics_digest,
+            train_metrics=candidate.train_metrics,
         ):
             if _gate("digest_attestation", True, (
                 f"Cannot promote model {candidate_id}: stored metrics failed integrity "

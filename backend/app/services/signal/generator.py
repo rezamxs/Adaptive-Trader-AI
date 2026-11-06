@@ -179,9 +179,19 @@ class SignalGenerator:
         model_artifact: Optional[Dict[str, Any]],
         prob_threshold: float = 0.55
     ) -> Tuple[Optional[str], float]:
-        """Runs inference using active ML model on scaled feature vector."""
+        """Runs inference using active ML model on scaled feature vector.
+
+        Buglist item 33: the live threshold is the value RECORDED with the
+        model (artifact payload field live_prob_threshold, attested by the
+        artifact byte digest); the function default is only a fallback for
+        legacy artifacts registered before the threshold was recorded. The
+        recorded value can never exceed [0, 1] — invalid values fail closed
+        through the guard below."""
         if not model_artifact:
             return None, 0.0
+        recorded_threshold = model_artifact.get("live_prob_threshold")
+        if isinstance(recorded_threshold, (int, float)):
+            prob_threshold = float(recorded_threshold)
 
         model = model_artifact.get("model")
         scaler = model_artifact.get("scaler")
