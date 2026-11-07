@@ -344,6 +344,10 @@ class KnowledgeManager:
         # KnowledgeChunk, so saving only Document.raw_text would make uploads invisible.
         created_chunks: List[KnowledgeChunk] = []
         created_rules: List[TradingRule] = []
+        # Classification defaults so the FAILED-parse path (no chunks at all)
+        # still produces a complete audit record.
+        class_summary: Dict[str, int] = {}
+        ambiguous_samples: List[Dict[str, Any]] = []
 
         if status == "processing":
             try:
@@ -384,6 +388,17 @@ class KnowledgeManager:
                         first_line = next((line.strip() for line in chunk_text.splitlines() if line.strip()), "")
                         title = part.get("title") or (first_line[:255] if first_line else safe_file_name)
                         chunk_params = dict(part.get("parameters") or {})
+                        # Knowledge classification label (observability): the
+                        # class + reasons explain WHY a chunk did or did not
+                        # become a rule candidate.
+                        try:
+                            _cls, _reasons = __import__(
+                                "backend.app.services.knowledge.classifier",
+                                fromlist=["classify_chunk"]).classify_chunk(chunk_text)
+                            chunk_params["knowledge_class"] = _cls.value
+                            chunk_params["classification_reasons"] = _reasons[:4]
+                        except Exception:
+                            pass
                         if "page_type" in part and "page_type" not in chunk_params:
                             chunk_params["page_type"] = part["page_type"]
                         if "is_semantic_content" in part and "is_semantic_content" not in chunk_params:
@@ -411,8 +426,43 @@ class KnowledgeManager:
 
                     self.db.commit()
                     self.retriever.refresh()
+                    # Hybrid RAG (mission 2026-11-07): index the fresh chunks
+                    # into the LOCAL vector store. Strictly best-effort — a
+                    # semantic-layer failure never breaks ingestion, and the
+                    # full index is rebuildable from SQL at any time.
+                    try:
+                        from backend.app.services.knowledge.semantic import SemanticRetriever
 
-                    rule_creates = RuleExtractor.extract_from_pages(document_id, page_chunks)
+                        sem = SemanticRetriever(self.db)
+                        if sem.available:
+                            stats = sem.index_chunks(created_chunks)
+                            logger.info(
+                                "Semantic index for %s: %d indexed, %d already present",
+                                document_id, stats["indexed"], stats["skipped"],
+                            )
+                        else:
+                            logger.warning(
+                                "Semantic indexing skipped for %s: %s",
+                                document_id, sem.unavailable_reason,
+                            )
+                    except Exception as sem_exc:
+                        logger.warning(
+                            "Semantic indexing failed for %s (BM25 unaffected): %s",
+                            document_id, sem_exc,
+                        )
+
+                    # Knowledge classification (2026-11-07): ONLY explicitly
+                    # actionable chunks become rule candidates; the summary and
+                    # ambiguous samples go to the audit trail for the human.
+                    rule_creates, class_summary, ambiguous_samples = (
+                        RuleExtractor.extract_with_classification(document_id, page_chunks)
+                    )
+                    if ambiguous_samples:
+                        logger.info(
+                            "Knowledge classification kept %d ambiguous rule-intent chunk(s) "
+                            "out of the registry for document %s (human review required)",
+                            len(ambiguous_samples), document_id,
+                        )
                     for rc in rule_creates:
                         # Recovery only: a fresh PENDING clone of a rule the
                         # user already APPROVED (same name+category on the
@@ -477,6 +527,8 @@ class KnowledgeManager:
                 "document_id": document_id,
                 "file_name": safe_file_name,
                 "rules_extracted": len(created_rules),
+                "knowledge_classification": class_summary,
+                "ambiguous_kept_out": len(ambiguous_samples),
             }
         )
         self.db.add(audit)

@@ -45,6 +45,17 @@ dev = [
 mt5 = [
     "MetaTrader5>=5.0.6231; sys_platform == 'win32'",
 ]
+# Mission 2026-11-07 (Hybrid RAG): verified on Python 3.14.4 / Windows.
+# pymupdf4llm is PINNED to 0.0.27 because 2.x would force the pymupdf 2.x
+# major upgrade on the existing parsers; the vector store is qdrant-client
+# LOCAL mode (embedded, no server); fastembed ships its own ONNX runtime
+# (no onnxruntime dependency needed on 3.14).
+knowledge = [
+    "pymupdf4llm==0.0.27",
+    "python-docx==1.2.0",
+    "qdrant-client==1.20.0",
+    "fastembed==0.9.1",
+]
 
 # Only the backend is an installable Python package. The other top-level
 # directories contain datasets, logs, static frontend files, or artifacts.

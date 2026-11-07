@@ -71,3 +71,22 @@ typing-extensions==4.16.0
 typing-inspection==0.4.2
 tzdata==2026.5
 uvicorn==0.54.0
+
+# --- Hybrid RAG closure (mission 2026-11-07, verified py3.14.4/win) ---
+# pymupdf4llm pinned to the 0.0.x line: the 2.x line forces a pymupdf major
+# upgrade; the existing parser suite runs on pymupdf 1.28.2.
+pymupdf4llm==0.0.27
+python-docx==1.2.0
+qdrant-client==1.20.0
+grpcio==1.85.1
+portalocker==4.4.2
+fastembed==0.9.1
+filelock==4.2.9
+fsspec==2026.9.0
+hf-xet==1.8.0
+huggingface-hub==1.33.0
+loguru==0.7.3
+mmh3==5.3.1
+py-rust-stemmers==0.1.8
+tokenizers==0.23.3
+win32-setctime==1.2.1

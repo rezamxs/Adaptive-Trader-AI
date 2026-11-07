@@ -174,6 +174,13 @@ class Settings(BaseSettings):
     # are ingested automatically at application startup (same transactional
     # pipeline as the upload endpoint; processed/failed files are moved aside).
     DOCUMENT_INBOX_DIR: Path = BASE_DIR / "data" / "document_inbox"
+
+    # Hybrid RAG (mission 2026-11-07): semantic vectors live in a LOCAL
+    # embedded Qdrant store — no separate server. BM25 stays authoritative;
+    # the semantic leg degrades gracefully (RAG works without it).
+    VECTOR_STORE_DIR: Path = BASE_DIR / "data" / "vector_store"
+    SEMANTIC_RETRIEVAL_ENABLED: bool = True
+    EMBEDDING_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     DATABASE_URL: str = f"sqlite:///{BASE_DIR / 'adaptive_trader.db'}"
 
     @field_validator("EXECUTION_MODE", mode="before")

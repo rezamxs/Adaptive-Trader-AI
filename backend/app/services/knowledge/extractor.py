@@ -1,10 +1,23 @@
 """Rule Extractor for trading knowledge text with explicit ambiguity tracking.
 Strictly separates objective algorithmic conditions from subjective trader terms.
+
+Knowledge classification (2026-11-07): every chunk is classified BEFORE rule
+extraction (backend.app.services.knowledge.classifier). ONLY explicitly
+actionable, documented rules (EXPLICIT_RULE) become rule candidates — glossary
+definitions and analytical concepts stay knowledge chunks, and ambiguous
+rule-intent text is surfaced in the classification summary instead of being
+seeded into the registry. Nothing is ever auto-approved: candidates are
+created PENDING.
 """
 import re
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from backend.app.schemas.rule_schema import RuleCategory, TradingRuleCreate
+from backend.app.services.knowledge.classifier import (
+    KnowledgeClass,
+    classify_chunks,
+    summarize,
+)
 
 # Ambiguous keywords that must never be converted to arbitrary conditions without user verification
 SUBJECTIVE_PATTERNS = {
@@ -30,10 +43,43 @@ class RuleExtractor:
         document_id: str,
         page_chunks: List[Dict[str, Any]]
     ) -> List[TradingRuleCreate]:
-        """Extracts structured rules from document text chunks with source page tracing."""
-        extracted_rules: List[TradingRuleCreate] = []
+        """Extracts structured rules from classified document chunks.
 
-        for chunk in page_chunks:
+        ONLY chunks classified EXPLICIT_RULE are parsed into rule candidates;
+        educational/analytical chunks are knowledge content, and AMBIGUOUS
+        chunks are reported by extract_with_classification instead of being
+        seeded into the registry."""
+        rules, _summary, _ambiguous = cls.extract_with_classification(document_id, page_chunks)
+        return rules
+
+    @classmethod
+    def extract_with_classification(
+        cls,
+        document_id: str,
+        page_chunks: List[Dict[str, Any]]
+    ) -> Tuple[List[TradingRuleCreate], Dict[str, int], List[Dict[str, Any]]]:
+        """Classifies chunks first, then extracts rules from EXPLICIT chunks only.
+
+        Returns (rule_creates, class_summary, ambiguous_samples) — the summary
+        and ambiguous samples go to the audit trail so the human reviewer sees
+        WHAT the document contained and WHAT was deliberately kept out of the
+        registry."""
+        extracted_rules: List[TradingRuleCreate] = []
+        classified = classify_chunks(page_chunks)
+        explicit_chunks: List[Dict[str, Any]] = []
+        ambiguous: List[Dict[str, Any]] = []
+        for chunk, klass, reasons in classified:
+            if klass is KnowledgeClass.EXPLICIT_RULE:
+                explicit_chunks.append(chunk)
+            elif klass is KnowledgeClass.AMBIGUOUS_RULE:
+                ambiguous.append({
+                    "page": chunk.get("page"),
+                    "location_reference": chunk.get("location_reference"),
+                    "title": (chunk.get("title") or "")[:120],
+                    "reasons": reasons,
+                })
+
+        for chunk in explicit_chunks:
             page_num = chunk.get("page", 1)
             text = chunk.get("text", "")
             if not text:
@@ -41,7 +87,7 @@ class RuleExtractor:
 
             lines = text.split("\n")
             current_rule_lines = []
-            
+
             for line in lines:
                 clean_line = line.strip()
                 if not clean_line:
@@ -59,7 +105,7 @@ class RuleExtractor:
                         if rule:
                             extracted_rules.append(rule)
                         current_rule_lines = []
-                
+
                 current_rule_lines.append(clean_line)
 
             if current_rule_lines:
@@ -67,15 +113,18 @@ class RuleExtractor:
                 if rule:
                     extracted_rules.append(rule)
 
-        # If no granular rules were isolated by blocks, attempt holistic extraction
-        if not extracted_rules:
-            full_text = "\n".join([c.get("text", "") for c in page_chunks])
-            pages_list = [c.get("page", 1) for c in page_chunks]
+        # Holistic fallback — ONLY when at least one chunk was classified as
+        # an explicit rule context but no granular block produced a rule. A
+        # document with ZERO explicit chunks (e.g. a pure glossary) produces
+        # ZERO fabricated rules.
+        if not extracted_rules and explicit_chunks:
+            full_text = "\n".join([c.get("text", "") for c in explicit_chunks])
+            pages_list = [c.get("page", 1) for c in explicit_chunks]
             fallback_rule = cls._parse_block(full_text[:2000], document_id, pages_list)
             if fallback_rule:
                 extracted_rules.append(fallback_rule)
 
-        return extracted_rules
+        return extracted_rules, summarize([k for _, k, _ in classified]), ambiguous
 
     @classmethod
     def _suggest_direction(cls, lower_text: str) -> Optional[str]:
