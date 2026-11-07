@@ -562,7 +562,11 @@ def test_incomplete_ingestion_failure_reproduction_and_recovery(isolated_db):
     without creating duplicate Document, KnowledgeChunk, or TradingRule rows.
     """
     km = KnowledgeManager(isolated_db)
-    content = b"Strategic golden entry rule when price rejects support level."
+    # 2026-11-07 classification contract: vague rule-intent ("when price
+    # rejects support level" — no quantified condition) is AMBIGUOUS and
+    # stays OUT of the registry, so this recovery test uses an explicitly
+    # documented, quantified rule sentence.
+    content = b"Rule 1: Buy when RSI < 30 on XAUUSD M15 with stop loss below the swing low."
 
     # 1. Simulate failure during chunk persistence
     original_commit = isolated_db.commit
@@ -603,7 +607,7 @@ def test_incomplete_ingestion_failure_reproduction_and_recovery(isolated_db):
 
     chunks_after_retry = isolated_db.query(KnowledgeChunk).filter(KnowledgeChunk.document_id == recovered_doc.document_id).all()
     assert len(chunks_after_retry) == 1, "Chunk must be successfully created and persisted on retry"
-    assert "Strategic golden entry rule" in chunks_after_retry[0].content
+    assert "Rule 1: Buy when RSI < 30" in chunks_after_retry[0].content
 
     # Total counts in DB: exactly 1 document, 1 chunk
     assert isolated_db.query(Document).count() == 1
@@ -713,7 +717,11 @@ def test_incomplete_ingestion_rule_stage_failure_and_recovery(isolated_db):
     rebuild exactly once — no duplicate chunks, no duplicate rules, and never
     a 'completed' state without both outputs persisted."""
     km = KnowledgeManager(isolated_db)
-    content = b"Strategic golden entry rule when price rejects support level."
+    # 2026-11-07 classification contract: vague rule-intent ("when price
+    # rejects support level" — no quantified condition) is AMBIGUOUS and
+    # stays OUT of the registry, so this recovery test uses an explicitly
+    # documented, quantified rule sentence.
+    content = b"Rule 1: Buy when RSI < 30 on XAUUSD M15 with stop loss below the swing low."
 
     original_commit = isolated_db.commit
     call_count = [0]
@@ -770,7 +778,11 @@ def test_incomplete_ingestion_status_commit_failure_and_recovery(isolated_db):
     clearly recoverable non-completed state whose retry repairs exactly once,
     with no duplicate rows and no fabricated completion."""
     km = KnowledgeManager(isolated_db)
-    content = b"Strategic golden entry rule when price rejects support level."
+    # 2026-11-07 classification contract: vague rule-intent ("when price
+    # rejects support level" — no quantified condition) is AMBIGUOUS and
+    # stays OUT of the registry, so this recovery test uses an explicitly
+    # documented, quantified rule sentence.
+    content = b"Rule 1: Buy when RSI < 30 on XAUUSD M15 with stop loss below the swing low."
 
     original_commit = isolated_db.commit
     call_count = [0]
@@ -819,7 +831,11 @@ def test_incomplete_ingestion_audit_commit_failure_keeps_document_complete(isola
     rule, or document row (post-completion audit loss must not corrupt
     dedup)."""
     km = KnowledgeManager(isolated_db)
-    content = b"Strategic golden entry rule when price rejects support level."
+    # 2026-11-07 classification contract: vague rule-intent ("when price
+    # rejects support level" — no quantified condition) is AMBIGUOUS and
+    # stays OUT of the registry, so this recovery test uses an explicitly
+    # documented, quantified rule sentence.
+    content = b"Rule 1: Buy when RSI < 30 on XAUUSD M15 with stop loss below the swing low."
 
     original_commit = isolated_db.commit
     call_count = [0]
@@ -867,7 +883,11 @@ def test_recovery_preserves_human_approved_rules_and_their_identity(isolated_db)
     status, and the fresh extraction must not clone it as a PENDING
     duplicate."""
     km = KnowledgeManager(isolated_db)
-    content = b"Strategic golden entry rule when price rejects support level."
+    # 2026-11-07 classification contract: vague rule-intent ("when price
+    # rejects support level" — no quantified condition) is AMBIGUOUS and
+    # stays OUT of the registry, so this recovery test uses an explicitly
+    # documented, quantified rule sentence.
+    content = b"Rule 1: Buy when RSI < 30 on XAUUSD M15 with stop loss below the swing low."
 
     # Attempt 1 fails at boundary 4 (completion commit): the document ends up
     # 'failed' while its chunks (boundary 2) and PENDING rules (boundary 3)
