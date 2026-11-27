@@ -18,11 +18,11 @@
 
 ماژول‌های زیر به عنوان مبنای حسابرسی در این فاز ممیزی شدند:
 
-1. **برچسب‌گذاری هدف:** کلاس [BarrierLabeler](file:///g:/mash/backend/app/services/dataset/labeling.py) جهت تولید برچسب‌های سه‌گانه حد سود، حد ضرر و برخورد همزمان.
-2. **مهندسی ویژگی‌ها:** کلاس [FeatureEngineer](file:///g:/mash/backend/app/services/dataset/features.py) شامل ۲۴ ویژگی تکنیکال گذشته‌نگر.
-3. **مدل‌های آماری و یادگیری ماشین:** کلاس‌های [LogisticRegressionStrategyModel](file:///g:/mash/backend/app/services/ml/models.py#L52) و [RandomForestStrategyModel](file:///g:/mash/backend/app/services/ml/models.py#L85).
-4. **موتور بکتست واقعی:** کلاس [RealisticBacktestEngine](file:///g:/mash/backend/app/services/backtest/engine.py) با پشتیبانی از اسپرد، لغزش قیمت، کمیسیون و گام حجم.
-5. **اتصال به MetaTrader 5:** کلاس [MT5MarketDataProvider](file:///g:/mash/backend/app/services/market_data/mt5_provider.py) با استخراج کندل‌های بسته‌شده (`start_pos=1`).
+1. **برچسب‌گذاری هدف:** کلاس [BarrierLabeler](/backend/app/services/dataset/labeling.py) جهت تولید برچسب‌های سه‌گانه حد سود، حد ضرر و برخورد همزمان.
+2. **مهندسی ویژگی‌ها:** کلاس [FeatureEngineer](/backend/app/services/dataset/features.py) شامل ۲۴ ویژگی تکنیکال گذشته‌نگر.
+3. **مدل‌های آماری و یادگیری ماشین:** کلاس‌های [LogisticRegressionStrategyModel](/backend/app/services/ml/models.py#L52) و [RandomForestStrategyModel](/backend/app/services/ml/models.py#L85).
+4. **موتور بکتست واقعی:** کلاس [RealisticBacktestEngine](/backend/app/services/backtest/engine.py) با پشتیبانی از اسپرد، لغزش قیمت، کمیسیون و گام حجم.
+5. **اتصال به MetaTrader 5:** کلاس [MT5MarketDataProvider](/backend/app/services/market_data/mt5_provider.py) با استخراج کندل‌های بسته‌شده (`start_pos=1`).
 
 ---
 

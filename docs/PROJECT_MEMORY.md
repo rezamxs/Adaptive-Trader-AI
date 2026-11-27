@@ -10,7 +10,7 @@
 
 Last consolidated: 2026-10-13  
 Repository: https://github.com/rezamxs/Adaptive-Trader-AI  
-Local workspace: `G:\mash`  
+Local workspace: `<project-root>`  
 Working branch referenced by recent work: `fix/core-correctness-audit`  
 Related PR: https://github.com/rezamxs/Adaptive-Trader-AI/pull/1  
 Memory file path: `docs/PROJECT_MEMORY.md`
@@ -53,7 +53,7 @@ A model or strategy is not considered successful merely because code runs or a t
 
 ### Environment reported in project history
 
-- Windows machine; local project at `G:\mash`.
+- Windows machine; local project at `<project-root>`.
 - MT5 terminal connected to broker/provider reported as YourBroker-MT5.
 - Primary instrument: XAUUSD; primary timeframe: M1.
 - Hardware reported: Intel i7-2630QM and 12 GB RAM.
@@ -471,7 +471,7 @@ This section records direct GitHub evidence gathered after the chat-history cons
 - Branch `fix/core-correctness-audit` exists. Its current HEAD at this check was `cce107f016ff630d74960e2b8c7f593032b87852`, commit message `docs: consolidate machine project chat history`. The commit tree was `5b9f9c2cdc0a0bf2e47464b1d81e5a5ca6d7e556`.
 - Pull request #1 targets `main` and is `OPEN`, `DRAFT`, not merged; its head matched the branch SHA above.
 - GitHub returned two completed `core-regression` check runs with conclusion `success` for this SHA, and two successful `Core Regression Tests` workflow run records. The combined commit-status endpoint had no status entries. This verifies those reported CI checks only; it does not establish that the missing Phase O test module ran or that every repository test ran.
-- The Remote Desktop Commander device `<OWNER_WORKSTATION>` was offline (last seen 15 hours earlier). Local `G:\mash` branch/HEAD/working-tree state and the reported local unstaged changes therefore remain unknown. No local files were changed and no local tests were run in this audit.
+- The Remote Desktop Commander device `<workstation>` was offline (last seen 15 hours earlier). Local `<project-root>` branch/HEAD/working-tree state and the reported local unstaged changes therefore remain unknown. No local files were changed and no local tests were run in this audit.
 
 ### Strategy registry — verified now
 
@@ -507,7 +507,7 @@ Therefore, the Phase O fixes and the 193-test report remain **reported local wor
 
 - **Verified:** GitHub branch/HEAD, open draft PR #1, CI check conclusions, committed Phase O documentation, and a 52-entry all-`UNAPPROVED` registry with no duplicate IDs.
 - **Not verified:** source binaries/hashes, local dirty state, the reported Phase O code fixes, their migration/tests, and the reported 193-test local run.
-- Reconnect the desktop and inspect `G:\mash` status and diffs before making any code changes. Preserve the five reported modified files and two reported untracked paths if they still exist.
+- Reconnect the desktop and inspect `<project-root>` status and diffs before making any code changes. Preserve the five reported modified files and two reported untracked paths if they still exist.
 - Recover the six source files and compare their actual size/hash with `docs/strategy/source_inventory.md`; inspect the 52 rule citations against source pages.
 - If the local Phase O changes are valid, add the missing migration, model/service/parser changes, and focused tests to the intended branch; then run the focused suite and full requested suite. Keep the PR draft and all rules unapproved pending the user's Phase P decisions.
 - Continue enforcing `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=False`, and no order placement.
@@ -522,13 +522,13 @@ Use one project-scoped Hindsight memory bank across ChatGPT, Antigravity, and th
 
 ### Verified local/repository state on 2026-10-16
 
-- Local workspace: `G:\\mash`.
+- Local workspace: `<project-root>`.
 - Local branch: `fix/core-correctness-audit`; local HEAD observed as `5aedb1a3c95728ddab67beeed03aac3cd1ac6489`; local branch reports `ahead 1` of `origin/fix/core-correctness-audit`.
 - GitHub branch head observed separately as `9510c764ae89e63d559d3fc6ba214eaa30ff039f`. The divergence must be reconciled deliberately; do not reset, rebase, push, or overwrite local work as part of memory setup.
 - Existing memory file confirmed locally and on the working GitHub branch: `docs/PROJECT_MEMORY.md`. Do not create a parallel master-memory file.
 - Existing local working-tree changes before this section was appended: five modified tracked files (`backend/app/core/config.py`, `backend/app/models/document.py`, `backend/app/services/knowledge/manager.py`, `backend/app/services/knowledge/parsers.py`, `backend/app/services/knowledge/retriever.py`) and two untracked files (`backend/tests/unit/test_phase_o_three_defects.py`, `migrations/versions/2026_10_15_add_content_sha256_to_documents.py`). Treat these as user-owned; do not discard or stage them.
 - Antigravity 2.23.1 is installed and running. Cursor 3.18.25 and VS Code are installed.
-- A process named `ZCode.exe` is running from `G:\\Projects\\ZCode\\ZCode.exe`; it has not yet been verified as the Zed editor. Do not modify its configuration until its identity/config format is confirmed.
+- A process named `ZCode.exe` is running from `<tools-dir>\\ZCode\\ZCode.exe`; it has not yet been verified as the Zed editor. Do not modify its configuration until its identity/config format is confirmed.
 - Hindsight CLI/server, `uv`/`uvx`, Docker, and Ollama were not found on PATH during the initial inspection. This does not prove they cannot exist elsewhere, but no working local Hindsight deployment has been verified.
 - No Hindsight account token/API key was available through the inspected tool results. Never search for, print, or store secret values in this file.
 
@@ -562,7 +562,7 @@ Use one project-scoped Hindsight memory bank across ChatGPT, Antigravity, and th
 
 ### Progress update — 2026-10-16 (setup attempt)
 
-- Created the previously absent Antigravity global MCP config at `<OWNER_HOME>\\.gemini\\config\\mcp_config.json` with one entry, `hindsight-adaptive-trader-ai`, pointing to `https://api.hindsight.vectorize.io/mcp/adaptive-trader-ai/`. No token or secret is stored in the file.
+- Created the previously absent Antigravity global MCP config at `<user-home>\\.gemini\\config\\mcp_config.json` with one entry, `hindsight-adaptive-trader-ai`, pointing to `https://api.hindsight.vectorize.io/mcp/adaptive-trader-ai/`. No token or secret is stored in the file.
 - Parsed the new config successfully as JSON and confirmed the endpoint is reachable over HTTPS (GET returned HTTP 200). This is only a network reachability check; it does **not** prove MCP initialization, OAuth authorization, bank creation, or successful memory read/write.
 - Antigravity was already running when the config was created. Its MCP server list has not yet been reloaded and no authenticated Hindsight connection has been verified. Use Antigravity's MCP Servers / Manage MCP Servers UI to reload and complete authentication if prompted.
 - Hindsight Cloud account/bank ownership and OAuth authorization remain pending user authentication. Do not attempt to bypass login, invent credentials, or claim the service is connected.
@@ -573,7 +573,7 @@ Use one project-scoped Hindsight memory bank across ChatGPT, Antigravity, and th
 ### Progress update — 2026-10-16 (ZCode MCP)
 
 - Identified the running editor correctly as **ZCode Desktop 3.15.3.8237** (not Zed).
-- ZCode's user config `<OWNER_HOME>\\.zcode\\cli\\config.json` existed and had valid JSON with `plugins` and `skills`, but no MCP servers. Created a backup at `<OWNER_HOME>\\.zcode\\cli\\config.json.pre-hindsight-20261016.bak`, then added the Hindsight HTTP endpoint under `mcp.servers.hindsight-adaptive-trader-ai`. The existing top-level settings were preserved and post-write JSON validation passed.
+- ZCode's user config `<user-home>\\.zcode\\cli\\config.json` existed and had valid JSON with `plugins` and `skills`, but no MCP servers. Created a backup at `<user-home>\\.zcode\\cli\\config.json.pre-hindsight-20261016.bak`, then added the Hindsight HTTP endpoint under `mcp.servers.hindsight-adaptive-trader-ai`. The existing top-level settings were preserved and post-write JSON validation passed.
 - Tested the Hindsight MCP endpoint using an unauthenticated JSON-RPC `tools/list` request: it returned HTTP 401 with a WWW-Authenticate challenge. This confirms the endpoint requires authentication; it does not confirm successful OAuth or tool access.
 - The ZCode config was written while the app was running. Its MCP server list has not yet been refreshed/restarted, and the user-facing authorization flow has not been completed. No memory write/read smoke test has passed yet.
 - Antigravity's global config was created separately and points to the same project bank. It likewise needs reload and authentication.
@@ -598,38 +598,38 @@ Use one project-scoped Hindsight memory bank across ChatGPT, Antigravity, and th
 ### Progress update — 2026-10-16 (ZCode CLI MCP config fix and independent verification)
 
 **What was done:**
-- Independently audited the ZCode MCP configuration at `<OWNER_HOME>\.zcode\cli\config.json`. Found one schema defect: the field `"enable": true` was not the canonical name; corrected to `"enabled": true` per the official ZCode MCP schema (legacy `enable` may be migrated by CLI but not by the Desktop app session manager). Also increased `timeoutMs` from `30000` to `60000` because OAuth handshake adds latency.
+- Independently audited the ZCode MCP configuration at `<user-home>\.zcode\cli\config.json`. Found one schema defect: the field `"enable": true` was not the canonical name; corrected to `"enabled": true` per the official ZCode MCP schema (legacy `enable` may be migrated by CLI but not by the Desktop app session manager). Also increased `timeoutMs` from `30000` to `60000` because OAuth handshake adds latency.
 - Validated the corrected JSON: `type: "http"`, `url`, `enabled`, `timeoutMs` — zero unknown keys. The schema is strict; an unknown key silently drops the server entry.
-- Confirmed no workspace-level MCP config exists (`G:\mash\.zcode/` absent; no `.agents/mcp.json` at user or workspace scope). The user-level config is the only active source.
+- Confirmed no workspace-level MCP config exists (`<project-root>\.zcode/` absent; no `.agents/mcp.json` at user or workspace scope). The user-level config is the only active source.
 - All existing `plugins` and `skills` settings in the config were preserved unchanged.
 
 **What is proven (verified now):**
 - The Hindsight OAuth discovery is functional: `GET /.well-known/oauth-protected-resource` and `GET /.well-known/oauth-authorization-server` both return valid JSON. The server supports `authorization_code` grant with PKCE (`S256`), dynamic client registration at `/oauth/register`, and scopes `openid profile email offline_access`.
 - An unauthenticated `POST` to the MCP endpoint returns HTTP 401 with `WWW-Authenticate: Bearer resource_metadata=...`. This confirms the endpoint is reachable and authentication-gated.
-- ZCode Desktop logs (`<OWNER_HOME>\.zcode\v2\logs\2026-10-16.log`) show MCP initialization only for official plugin servers (`image_search`). No `hindsight` entry appeared in any log line. The config was written while ZCode was running; the server list was not reloaded.
+- ZCode Desktop logs (`<user-home>\.zcode\v2\logs\2026-10-16.log`) show MCP initialization only for official plugin servers (`image_search`). No `hindsight` entry appeared in any log line. The config was written while ZCode was running; the server list was not reloaded.
 - No `mcp__hindsight*` tools are registered in this CLI session's tool namespace.
 
 **What remains unresolved:**
 1. **ZCode Desktop must reload the MCP server list.** The config file is correct, but the running process hasn't picked it up. Action: open **Settings → MCP** in ZCode Desktop, verify `hindsight-adaptive-trader-ai` appears, and click to reconnect/enable it. If OAuth is prompted, complete the browser-based authorization. Do not paste tokens into chat.
 2. **No authenticated smoke test has passed.** Until a ZCode session can list the server's tools (e.g., `retain`, `recall`, `forget`) and execute a harmless recall, the connection is not confirmed.
-3. **This CLI session started before the config fix.** A new `kiro-cli chat` session in `G:\mash` will read the corrected config and attempt MCP server connection at startup, including the OAuth flow.
+3. **This CLI session started before the config fix.** A new `kiro-cli chat` session in `<project-root>` will read the corrected config and attempt MCP server connection at startup, including the OAuth flow.
 
 **Files changed:**
-- `<OWNER_HOME>\.zcode\cli\config.json` — field `enable` → `enabled`, `timeoutMs` 30000 → 60000 in the `hindsight-adaptive-trader-ai` server entry. All other settings preserved.
-- `G:\mash\docs\PROJECT_MEMORY.md` — this update appended.
+- `<user-home>\.zcode\cli\config.json` — field `enable` → `enabled`, `timeoutMs` 30000 → 60000 in the `hindsight-adaptive-trader-ai` server entry. All other settings preserved.
+- `<project-root>\docs\PROJECT_MEMORY.md` — this update appended.
 
 **Safety:** No Git commit/push, database migration, trading config change, order submission, or strategy rule activation was performed.
 
 ### Progress update — 2026-10-16 (Antigravity MCP verification and status)
 
 **What was done:**
-- Audited Antigravity global MCP configuration at `<OWNER_HOME>\.gemini\config\mcp_config.json`.
+- Audited Antigravity global MCP configuration at `<user-home>\.gemini\config\mcp_config.json`.
 - Connected directly to Antigravity's running Language Server on `127.0.0.1:49235` (HTTPS) using internal CSRF token authentication (`x-codeium-csrf-token`).
 - Executed `RefreshMcpServers` RPC to force the running Language Server to reload configuration live without killing the process.
 - Inspected the live server state via `GetMcpServerStates` RPC.
 
 **What is proven (verified now):**
-- Antigravity successfully loaded the server definition `hindsight-adaptive-trader-ai` from `<OWNER_HOME>\.gemini\config\mcp_config.json`.
+- Antigravity successfully loaded the server definition `hindsight-adaptive-trader-ai` from `<user-home>\.gemini\config\mcp_config.json`.
 - Live connection state is `status: MCP_SERVER_STATUS_ERROR` with exact error: `calling "initialize": sending "initialize": Unauthorized`.
 - Hindsight Cloud endpoint `https://api.hindsight.vectorize.io/mcp/adaptive-trader-ai/` challenges the connection with HTTP 401 and `WWW-Authenticate: Bearer resource_metadata="https://api.hindsight.vectorize.io/.well-known/oauth-protected-resource"`.
 - Antigravity's Language Server binary contains the full OAuth pipeline (`discoverProtectedResourceMetadata`, `discoverAuthServerMetadata`, `registerClient`, PKCE `S256`, `CompleteMcpOAuth`), but the OAuth handshake has not been triggered or completed for this server instance.
@@ -694,15 +694,15 @@ Use one project-scoped Hindsight memory bank across ChatGPT, Antigravity, and th
 ## 18. ECC toolchain installed for OpenCode — 2026-10-22
 
 **VERIFIED (this session):**
-- ECC (github.com/affaan-m/ECC) v2.2.3, source clone at `<OWNER_HOME>\ECC` (commit `90606c8`), installed for the OpenCode harness per the repo's documented OpenCode path (`npm install && npm run build:opencode`; installer `node scripts/ecc.js install --profile full --target opencode --enable-hooks`).
-- Install root: `<OWNER_HOME>\.config\opencode\` — 311 skill directories, 103 command files, `hooks\hooks.json` present. Install-state: `ecc-install-state.json`; `ecc doctor --target opencode` returned OK (1/1, no issues).
+- ECC (github.com/affaan-m/ECC) v2.2.3, source clone at `<user-home>\ECC` (commit `90606c8`), installed for the OpenCode harness per the repo's documented OpenCode path (`npm install && npm run build:opencode`; installer `node scripts/ecc.js install --profile full --target opencode --enable-hooks`).
+- Install root: `<user-home>\.config\opencode\` — 311 skill directories, 103 command files, `hooks\hooks.json` present. Install-state: `ecc-install-state.json`; `ecc doctor --target opencode` returned OK (1/1, no issues).
 - The user-owned `opencode.json` was preserved (installer skipped it: not ECC-owned). Node v24.15.0, Git 2.54.0 (Windows).
-- All files are OUTSIDE `G:\mash`; no repository changes were made for this install. No commit/push of the memory update.
+- All files are OUTSIDE `<project-root>`; no repository changes were made for this install. No commit/push of the memory update.
 - New skills/commands appear in the OpenCode session skill list only after the session reloads the config directory (new session or reload).
 
 **REPORTED / not yet observed:** hook runtime behavior inside OpenCode sessions (hooks copied but no live session observed firing them yet in this session).
 
-**Next action:** start a fresh OpenCode session and verify ECC commands/skills are discoverable; remove nothing; optional cleanup later via `node scripts/ecc.js uninstall --target opencode --dry-run` from `<OWNER_HOME>\ECC`.
+**Next action:** start a fresh OpenCode session and verify ECC commands/skills are discoverable; remove nothing; optional cleanup later via `node scripts/ecc.js uninstall --target opencode --dry-run` from `<user-home>\ECC`.
 
 ---
 
@@ -852,7 +852,7 @@ All MT5 paths tested with stubs; no real MT5 dispatch, no orders, `EXECUTION_MOD
 19. Dead code: `ConditionItem` schema (zero refs), unused imports (backtest/ml/market/rules endpoints), stale defensive `getattr` on declared attrs (system.py), `init_db` Optional annotation.
 20. README badges corrected (Python 3.11+ per `requires-python`, dehardcoded test count; FastAPI badge shows the real floor).
 
-**TEST-SUITE integrity fixes:** `test_knowledge_retrieval.py` (real-DB dependency — the 2026-10-27 CRITICAL residual) now opens the real corpus via SQLite `mode=ro` URI + corpus-presence probe + explicit skip when absent (real-corpus validation preserved; can never write; fresh-clone/CI-safe). C1 sentinel (`test_api_endpoints.py`) skips when `adaptive_trader.db` is absent (was a hard OperationalError). `test_document_parser_docx` re-anchored from `<OWNER_HOME>\Downloads\...` (silent no-op counting as pass on every other machine) to repo-anchored `فایل ها/` with explicit skip. Session-heading regex extracted to module-level `parsers.SESSION_HEADING_PATTERN` — `test_phase_o_three_defects.py` imports the production object (copy-pasted lookalikes cannot detect drift). `documents_module.get_db` module-attr leaks in corr1/final_safety fixtures → monkeypatch (restored after yield).
+**TEST-SUITE integrity fixes:** `test_knowledge_retrieval.py` (real-DB dependency — the 2026-10-27 CRITICAL residual) now opens the real corpus via SQLite `mode=ro` URI + corpus-presence probe + explicit skip when absent (real-corpus validation preserved; can never write; fresh-clone/CI-safe). C1 sentinel (`test_api_endpoints.py`) skips when `adaptive_trader.db` is absent (was a hard OperationalError). `test_document_parser_docx` re-anchored from `<local-sources>\...` (silent no-op counting as pass on every other machine) to repo-anchored `فایل ها/` with explicit skip. Session-heading regex extracted to module-level `parsers.SESSION_HEADING_PATTERN` — `test_phase_o_three_defects.py` imports the production object (copy-pasted lookalikes cannot detect drift). `documents_module.get_db` module-attr leaks in corr1/final_safety fixtures → monkeypatch (restored after yield).
 
 **Test contracts deliberately updated to new documented behavior:** `test_docx_entity_expansion_rejected` (now expects EntitiesForbidden propagation — fail-loud contract), `test_database_failure_resilience_and_rollback` (RESERVATION_FAILED fail-closed instead of unreserved analysis + guaranteed DATABASE_WRITE_FAILED churn). Contract updates to deliberate production fixes, not green-washing; both docstrings state the new contract.
 

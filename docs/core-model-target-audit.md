@@ -1,7 +1,7 @@
 # ممیزی تعریف هدف یادگیری و سازگاری با استراتژی
 ## سامانه Adaptive Trader AI
 
-این سند تحلیل ساختاری و موشکافانه نحوه تعریف هدف، مکانیزم برچسب‌گذاری و هم‌راستایی آن با نیازهای واقعی معاملاتی را بر پایه کد پیاده‌سازی‌شده در [labeling.py](file:///g:/mash/backend/app/services/dataset/labeling.py) تشریح می‌کند.
+این سند تحلیل ساختاری و موشکافانه نحوه تعریف هدف، مکانیزم برچسب‌گذاری و هم‌راستایی آن با نیازهای واقعی معاملاتی را بر پایه کد پیاده‌سازی‌شده در [labeling.py](/backend/app/services/dataset/labeling.py) تشریح می‌کند.
 
 ---
 
@@ -19,7 +19,7 @@
 
 ### ۲. تعریف دقیق کلاس‌های هدف
 
-تولید برچسب در متد `label_buy_barrier` از کلاس [BarrierLabeler](file:///g:/mash/backend/app/services/dataset/labeling.py) انجام می‌گیرد:
+تولید برچسب در متد `label_buy_barrier` از کلاس [BarrierLabeler](/backend/app/services/dataset/labeling.py) انجام می‌گیرد:
 
 - **کلاس مثبت ($\text{Target} = 1$):**
   قیمت بیشینه در یکی از کندل‌های آینده درون افق زمانی، سطح حد سود را لمس کند، مشروط بر اینکه تا قبل از آن کندل، قیمت کمینه به سطح حد ضرر نرسیده باشد:
@@ -36,7 +36,7 @@
 
 ### ۳. ممیزی احتساب هزینه‌های معاملاتی در برچسب‌گذاری
 
-در خطوط ۳۳ تا ۳۶ فایل [labeling.py](file:///g:/mash/backend/app/services/dataset/labeling.py) فرمول ورود چنین آمده است:
+در خطوط ۳۳ تا ۳۶ فایل [labeling.py](/backend/app/services/dataset/labeling.py) فرمول ورود چنین آمده است:
 ```python
 spread_cost = spread_points * point_value
 entry_price = close_prices[i] + spread_cost

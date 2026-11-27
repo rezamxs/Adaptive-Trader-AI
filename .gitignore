@@ -47,6 +47,9 @@ artifacts/models/*
 !artifacts/models/.gitkeep
 artifacts/reports/*
 !artifacts/reports/.gitkeep
+# Phase P2.1 evidence CSVs are committed on purpose (linked from
+# docs/phase-p2.1-ledger-reconciliation.md); keep the ignore rules truthful.
+!artifacts/reports/phase-p2.1-*.csv
 
 # IDEs & OS
 .vscode/
@@ -80,3 +83,6 @@ data/document_inbox/*
 
 # DB-stray archive (owner disposition 2026-11-04)
 backups/
+
+# Archives under .agents/ (e.g. vendored third-party/course source packs) must not be committed
+.agents/**/*.zip

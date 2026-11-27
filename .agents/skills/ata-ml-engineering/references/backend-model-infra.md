@@ -85,7 +85,7 @@ Fixed trading-safety constraints (never change without explicit user authorizati
 - **Anti-patterns / common mistakes:** CWD-relative `script_location` silently finds zero revisions ("upgrade head" succeeds doing nothing); falling back to an app-settings URL lets a stray migration hit a wrong database; offline (`--sql`) mode cannot run per-row SELECT logic and assumes transactional DDL; mixing `create_all` ALTERs with the migration chain.
 - **Minimal example (project-consistent):**
   ```bash
-  export ALEMBIC_DATABASE_URL='sqlite:///G:/mash/adaptive_trader.db'
+  export ALEMBIC_DATABASE_URL='sqlite:///<project-root>/adaptive_trader.db'
   alembic upgrade head   # fails closed if the env var is unset
   ```
 - **Official docs:** https://alembic.sqlalchemy.org/en/latest/tutorial.html and https://alembic.sqlalchemy.org/en/latest/offline.html (latest ≈ 1.20, reviewed 2026-10-31)
@@ -181,7 +181,7 @@ Files: `backend/app/services/ml/registry.py` (806 lines), `backend/app/services/
 ## Provenance
 
 - All project facts read directly from source files at HEAD 48d7d43, branch `reveo`, on 2026-10-31: `config.py`, `registry.py`, `trainer.py`, `base.py`, `session.py`, `init_db.py`, `main.py`, `ml.py`, `mt5_provider.py`, `metrics_integrity.py`, `ml_model.py`, `alembic.ini`, `migrations/env.py`, migration filenames in `migrations/versions/`.
-- The `sessionmaker(autocommit=False)` legacy-kwarg finding verified against the installed source: `<OWNER_HOME>\AppData\Local\Programs\Python\Python314\Lib\site-packages\sqlalchemy\orm\session.py` (line ~1706 docstring, ~1803-1809 logic).
+- The `sessionmaker(autocommit=False)` legacy-kwarg finding verified against the installed source: `<user-home>\AppData\Local\Programs\Python\Python314\Lib\site-packages\sqlalchemy\orm\session.py` (line ~1706 docstring, ~1803-1809 logic).
 - Sibling-agent facts reused without re-verification (flagged as REPORTED): RLock + `copy_rates_from_pos(start_pos=1)` + `MT5_SERVER_TIME_OFFSET_HOURS=3.0` fail-closed ambiguity rejection (independently visible in this file's reads); walk-forward purge 24 / embargo 12 with per-fold retraining in `backend/app/services/ml/walk_forward.py` (`MLWF_EVIDENCE_TYPE = "ml_walk_forward"`, `MLWF_THRESHOLD = 0.5` confirmed by grep); calibration measured (Brier/LogLoss) but no calibrator fitted.
 - Docs fetched 2026-10-31 via WebFetch (https, official domains): fastapi.tiangolo.com (events, dependencies), docs.sqlalchemy.org/en/21 (session_basics, quickstart), alembic.sqlalchemy.org/en/latest (tutorial, offline), docs.pydantic.dev → pydantic.dev (pydantic_settings, validators), mql5.com python_metatrader5. No doc text copied verbatim; summaries are original. Context7 MCP was NOT available in this session — no claim of its usage is made.
 

@@ -2,7 +2,7 @@
 
 **پروژه:** Adaptive Trader AI  
 **تاریخ گزارش:** ۲۱ مهر ۱۴۰۵ (۱۰ اکتبر ۲۰۲۶)  
-**مسیر سامانه:** `G:\mash`  
+**مسیر سامانه:** `<project-root>`  
 **وضعیت اعتبارسنجی:** مبتنی بر شواهد مستقیم کدهای پروژه، مخازن رسمی گیت‌هاب و اجرای زنده آزمون‌ها  
 
 ---
@@ -116,14 +116,14 @@ flowchart TD
 ۱. **استقرار Skill بکتستینگ:**  
    فایل‌های `SKILL.md` و `references/details.md` بدون فایل‌های زائد در مسیر زیر کپی و سازماندهی شدند:  
    `.agents/skills/backtesting-frameworks/`
-۲. **پیاده‌سازی بومی ماژول Volume Profile ([`volume_profile.py`](file:///g:/mash/backend/app/services/dataset/volume_profile.py)):**  
+۲. **پیاده‌سازی بومی ماژول Volume Profile ([`volume_profile.py`](/backend/app/services/dataset/volume_profile.py)):**  
    طراحی کلاس `VolumeProfileCalculator` با ویژگی‌های زیر:  
    - توزیع بازه‌ای پیوسته حجم در محدوده `[Low, High]` به جای انتساب ناقص به `Close`.  
    - محاسبه POC، VAH و VAL بر مبنای گسترش دوطرفه ۷۰ درصدی.  
    - متد `compute_rolling_profile_features` با تضمین ۱۰۰٪ عدم نشت اطلاعات آینده (محاسبه صرفاً بر کندل‌های گذشته).  
    - مدیریت خطاهای کندل‌های تخت، ورودی خالی و حجم صفر بدون پرتاب Exception.  
    - مستندسازی صریح این نکته که برای نمادهای MT5 از Tick Volume استفاده می‌شود و نباید با Order Flow واقعی اشتباه گرفته شود.
-۳. **توسعه آزمون‌های اختصاصی ([`test_volume_profile.py`](file:///g:/mash/backend/tests/unit/test_volume_profile.py)):**  
+۳. **توسعه آزمون‌های اختصاصی ([`test_volume_profile.py`](/backend/tests/unit/test_volume_profile.py)):**  
    ایجاد ۵ آزمون واحد جامع برای تست ساختار ریاضی، رفتار در ورودی خالی، کندل تخت، تضمین عدم نشت به آینده و مقایسه مستقیم با روش گسسته.
 
 ---
@@ -133,7 +133,7 @@ flowchart TD
 ```text
 ============================= test session starts =============================
 platform win32 -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
-rootdir: G:\mash
+rootdir: <project-root>
 configfile: pyproject.toml
 plugins: anyio-4.14.2
 collected 60 items

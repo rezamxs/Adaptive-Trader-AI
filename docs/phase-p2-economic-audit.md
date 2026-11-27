@@ -7,7 +7,7 @@
 
 ### بخش A: خط پایه و قابلیت بازتولید
 
-۱. **کد و نسخه:** آزمایش‌ها بر پایه آخرین کدهای مخزن در شاخه `master` (کامیت [`e68277e`](file:///g:/mash)) و با اجرای اسکریپت بازسازی مستقل صورت گرفت.
+۱. **کد و نسخه:** آزمایش‌ها بر پایه آخرین کدهای مخزن در شاخه `master` (کامیت [`e68277e`](/)) و با اجرای اسکریپت بازسازی مستقل صورت گرفت.
 ۲. **داده‌ها:** نماد طلا (`XAUUSD`) تایم‌فریم M1 استخراج‌شده از سرور `YourBroker-MT5` شامل ۲۰,۰۰۰ کندل اخیر (دوره ۲۱ سپتامبر تا ۹ اکتبر ۲۰۲۶).
 ۳. **مدل:** رگرسیون لجستیک استاندارد آموزش‌دیده روی ۱۱,۹۵۶ کندل اولیه، اعتبارسنجی روی ۳,۹۸۵ کندل میانی و ارزیابی نهایی روی ۳,۹۳۸ کندل خارج از نمونه (OOS) با حائل تطهیر ۲۴ کندلی.
 ۴. **حالت عملیاتی:** کلیه بررسی‌ها در وضعیت `SIGNAL_ONLY` اجرا شدند و هیچ معامله واقعی یا دمو ارسال نگردید.
@@ -35,7 +35,7 @@
 در تمامی معاملات ثبت‌شده در دفتر معاملات، خروجی روش اول و روش دوم تا رقم اعشار آخر **کاملاً یکسان** بود ($\text{Net PnL}_A = \text{Net PnL}_B$). این برابری اثبات می‌کند که هیچ‌گونه دوباره‌شماری در اسپرد یا لغزش رخ نداده است.
 
 #### ۳. تطبیق با گزارش اولیه فاز P
-در گزارش اولیه فاز P، سود ناخالص به صورت دلاری در مقیاس ۱ اونس قیمت گزارش شده بود (زیان ۵۳.۸۲- دلار در مجموع معاملات). با مقیاس‌گذاری این ارقام به ۱ لات استاندارد (ضریب ۱۰۰ اونس) و اعمال تفکیک‌شده اسپرد، لغزش و کمیسیون، دفتر معاملات رسمی در فایل [phase-p2-trade-ledger.csv](file:///g:/mash/artifacts/reports/phase-p2-trade-ledger.csv) و جدول تطبیق در [phase-p2-pnl-reconciliation.csv](file:///g:/mash/artifacts/reports/phase-p2-pnl-reconciliation.csv) ثبت گردید و ارقام کاملاً همگرا شدند.
+در گزارش اولیه فاز P، سود ناخالص به صورت دلاری در مقیاس ۱ اونس قیمت گزارش شده بود (زیان ۵۳.۸۲- دلار در مجموع معاملات). با مقیاس‌گذاری این ارقام به ۱ لات استاندارد (ضریب ۱۰۰ اونس) و اعمال تفکیک‌شده اسپرد، لغزش و کمیسیون، دفتر معاملات رسمی در فایل [phase-p2-trade-ledger.csv](/artifacts/reports/phase-p2-trade-ledger.csv) و جدول تطبیق در [phase-p2-pnl-reconciliation.csv](/artifacts/reports/phase-p2-pnl-reconciliation.csv) ثبت گردید و ارقام کاملاً همگرا شدند.
 
 ---
 
@@ -106,11 +106,11 @@
 
 - **آزمون‌های خودکار:** مجموعاً **۷۲ آزمون واحد و یکپارچه‌سازی** در پروژه تعریف شده و همگی با موفقیت ۱۰۰٪ پاس شدند (`72 passed, 0 failed`).
 - **فایل‌های ایجادشده در این مأموریت:**
-  - [`docs/phase-p2-baseline.md`](file:///g:/mash/docs/phase-p2-baseline.md)
-  - [`artifacts/reports/phase-p2-trade-ledger.csv`](file:///g:/mash/artifacts/reports/phase-p2-trade-ledger.csv)
-  - [`artifacts/reports/phase-p2-pnl-reconciliation.csv`](file:///g:/mash/artifacts/reports/phase-p2-pnl-reconciliation.csv)
-  - [`backend/tests/unit/test_phase_p2_accounting_and_alignment.py`](file:///g:/mash/backend/tests/unit/test_phase_p2_accounting_and_alignment.py)
-  - [`docs/phase-p2-economic-audit.md`](file:///g:/mash/docs/phase-p2-economic-audit.md)
+  - [`docs/phase-p2-baseline.md`](/docs/phase-p2-baseline.md)
+  - [`artifacts/reports/phase-p2-trade-ledger.csv`](/artifacts/reports/phase-p2-trade-ledger.csv)
+  - [`artifacts/reports/phase-p2-pnl-reconciliation.csv`](/artifacts/reports/phase-p2-pnl-reconciliation.csv)
+  - [`backend/tests/unit/test_phase_p2_accounting_and_alignment.py`](/backend/tests/unit/test_phase_p2_accounting_and_alignment.py)
+  - [`docs/phase-p2-economic-audit.md`](/docs/phase-p2-economic-audit.md)
 
 ---
 

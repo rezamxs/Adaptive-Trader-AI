@@ -1,5 +1,5 @@
 # گزارش اعتبارسنجی فاز Q2: صحت پردازش کندل، پایداری Worker و تفکیک وضعیت بازار
-## سامانه Adaptive Trader AI | مسیر `G:\mash`
+## سامانه Adaptive Trader AI | مسیر `<project-root>`
 
 ---
 
@@ -10,7 +10,7 @@
 بررسی داده‌های زنده ترمینال MetaTrader 5 نشان داد که اتصال به ترمینال برقرار است (`MT5 Connected = True`، لاگین حساب دمو ۵۸۰۳۳۵۸۳ در کارگزار `YourBroker-MT5`)، اما به دلیل زمان اجرای آزمون در پایان هفته (یکشنبه، ۱۱ اکتبر ۲۰۲۶)، آخرین تیک ثبت‌شده در سرور متعلق به جمعه ۹ اکتبر ۲۰۲۶ ساعت ۲۳:۵۴:۵۹ UTC با کهنگی حدود ۳۹.۸ ساعت است. بازار طلا (`XAUUSD`) در تعطیلات آخر هفته قرار دارد و هیچ کندل بسته جدیدی در بازار زنده تولید نمی‌شود.
 
 بر اساس دستورالعمل فاز، اعتبارسنجی به دو بخش مستقل تفکیک شد:
-۱. **اعتبارسنجی نرم‌افزاری و یکپارچگی (Mock & Integration Validation):** با موفقیت ۱۰۰٪ کامل (۱۲ آزمون اختصاصی جدید در [backend/tests/unit/test_phase_q2_worker_validation.py](file:///g:/mash/backend/tests/unit/test_phase_q2_worker_validation.py) و در مجموع ۹۷ آزمون کل پروژه بدون شکست پاس شدند).
+۱. **اعتبارسنجی نرم‌افزاری و یکپارچگی (Mock & Integration Validation):** با موفقیت ۱۰۰٪ کامل (۱۲ آزمون اختصاصی جدید در [backend/tests/unit/test_phase_q2_worker_validation.py](/backend/tests/unit/test_phase_q2_worker_validation.py) و در مجموع ۹۷ آزمون کل پروژه بدون شکست پاس شدند).
 ۲. **اعتبارسنجی زنده بازار (Live Market Validation):** وضعیت ترمینال تأیید شد، اما دریافت کندل‌های بسته زنده به بازگشایی نشست معاملاتی موکول گردید و وضعیت کلی این بخش «اعتبارسنجی زنده نیازمند بازگشایی نشست بازار» ثبت شد.
 
 تعداد کل سفارش‌های معاملاتی ارسالی به بازار در تمام مراحل این فاز **اکیداً صفر** بوده است.
@@ -26,12 +26,12 @@
 - جدول پایگاه داده `worker_cycle_records` فاقد ستون ردیابی فاز چرخه عمر (`lifecycle_phase`) بود.
 
 ### تغییرات اعمال‌شده در فاز Q2
-1. **ارتقای مدل داده و پایگاه داده:** ستون‌های `lifecycle_phase` و `updated_at` به جدول [backend/app/models/worker_cycle.py](file:///g:/mash/backend/app/models/worker_cycle.py) اضافه شدند و سازوکار ارتقای خودکار ساختار در [backend/app/db/init_db.py](file:///g:/mash/backend/app/db/init_db.py) پیاده‌سازی شد.
-2. **قفل‌گذاری چندنخی MT5:** قفل سراسری بازگشتی `_mt5_lock = threading.RLock()` در [backend/app/services/market_data/mt5_provider.py](file:///g:/mash/backend/app/services/market_data/mt5_provider.py) اضافه شد تا تمام فراخوانی‌های C-extension متاتریدر ۵ سریالی و کاملاً ایمن شوند.
-3. **رزرو اتمیک دومرحله‌ای کندل:** چرخه حیات `DISCOVERED -> PROCESSING -> COMPLETED / FAILED` در [backend/app/services/worker/market_worker.py](file:///g:/mash/backend/app/services/worker/market_worker.py) اضافه شد. پیش از ورود به تحلیل سنگین، کندل با قید یکتایی `bar_key` در دیتابیس رزرو می‌شود تا حتی در صورت فراخوانی همزمان، اجرای محاسبات تکراری غیرممکن گردد.
+1. **ارتقای مدل داده و پایگاه داده:** ستون‌های `lifecycle_phase` و `updated_at` به جدول [backend/app/models/worker_cycle.py](/backend/app/models/worker_cycle.py) اضافه شدند و سازوکار ارتقای خودکار ساختار در [backend/app/db/init_db.py](/backend/app/db/init_db.py) پیاده‌سازی شد.
+2. **قفل‌گذاری چندنخی MT5:** قفل سراسری بازگشتی `_mt5_lock = threading.RLock()` در [backend/app/services/market_data/mt5_provider.py](/backend/app/services/market_data/mt5_provider.py) اضافه شد تا تمام فراخوانی‌های C-extension متاتریدر ۵ سریالی و کاملاً ایمن شوند.
+3. **رزرو اتمیک دومرحله‌ای کندل:** چرخه حیات `DISCOVERED -> PROCESSING -> COMPLETED / FAILED` در [backend/app/services/worker/market_worker.py](/backend/app/services/worker/market_worker.py) اضافه شد. پیش از ورود به تحلیل سنگین، کندل با قید یکتایی `bar_key` در دیتابیس رزرو می‌شود تا حتی در صورت فراخوانی همزمان، اجرای محاسبات تکراری غیرممکن گردد.
 4. **دسته‌بندی جامع وضعیت بازار:** متد مستقل `evaluate_market_freshness` برای تفکیک حالات `MT5_CONNECTED`، `MT5_DISCONNECTED`، `MARKET_OPEN_DATA_FRESH`، `NO_RECENT_TICK`، `MARKET_CLOSED`، `MARKET_CLOSED_OR_STALE` و `DATA_INVALID` طراحی شد.
-5. **ارتقای اندپوینت‌های API:** اطلاعات فاز چرخه عمر و تفکیک وضعیت اتصال و بازار در [backend/app/api/v1/endpoints/system.py](file:///g:/mash/backend/app/api/v1/endpoints/system.py) منعکس گردید.
-6. **مجموعه آزمون‌های تخصصی:** طراحی و پیاده‌سازی ۱۲ سناریوی آزمون جامع در [backend/tests/unit/test_phase_q2_worker_validation.py](file:///g:/mash/backend/tests/unit/test_phase_q2_worker_validation.py).
+5. **ارتقای اندپوینت‌های API:** اطلاعات فاز چرخه عمر و تفکیک وضعیت اتصال و بازار در [backend/app/api/v1/endpoints/system.py](/backend/app/api/v1/endpoints/system.py) منعکس گردید.
+6. **مجموعه آزمون‌های تخصصی:** طراحی و پیاده‌سازی ۱۲ سناریوی آزمون جامع در [backend/tests/unit/test_phase_q2_worker_validation.py](/backend/tests/unit/test_phase_q2_worker_validation.py).
 
 ---
 
@@ -97,7 +97,7 @@
 
 ## ۵. نتایج آزمون‌های مستقل Mock
 
-آزمون‌های شبیه‌سازی‌شده در بستر ایزوله [backend/tests/unit/test_phase_q2_worker_validation.py](file:///g:/mash/backend/tests/unit/test_phase_q2_worker_validation.py) با موتور دیتابیس SQLite در حافظه اجرا شدند:
+آزمون‌های شبیه‌سازی‌شده در بستر ایزوله [backend/tests/unit/test_phase_q2_worker_validation.py](/backend/tests/unit/test_phase_q2_worker_validation.py) با موتور دیتابیس SQLite در حافظه اجرا شدند:
 
 1. **انتقال فازهای چرخه حیات:** تست `test_process_new_closed_candle_lifecycle` اثبات کرد که کندل جدید ابتدا به فاز `PROCESSING` وارد شده و با موفقیت با فاز `COMPLETED` و وضعیت مشخص ذخیره می‌شود.
 2. **رد کندل تکراری:** تست `test_reject_duplicate_candle_without_reanalysis` با Mock کردن تابع `FeatureEngineer.transform` اثبات کرد که در چرخه دوم، تابع استخراج ویژگی‌ها دقیقاً صفر بار فراخوانی می‌شود (`call_count == 0`).

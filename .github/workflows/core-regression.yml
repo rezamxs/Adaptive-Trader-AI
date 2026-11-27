@@ -20,7 +20,10 @@ name: Core Regression Tests
 on:
   pull_request:
   push:
-    branches: [main, fix/core-correctness-audit, reveo, automation/news-pause, fix/buglist-1-20]
+    # 2026-11 review: fix/core-correctness-audit, reveo and automation/news-pause
+    # are fully merged into main (0 commits ahead) and were dropped here.
+    # fix/buglist-1-20 still has unmerged commits, so it stays for now.
+    branches: [main, fix/buglist-1-20]
   workflow_dispatch:
 
 jobs:

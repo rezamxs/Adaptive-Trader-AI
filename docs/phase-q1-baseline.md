@@ -19,19 +19,19 @@
 بررسی شواهد و لاگ‌های سیستم نشان داد:
 1. **علت توقف سرور:** پروژه فاقد یک مدیر فرآیند دائمی (نظیر Windows Service، NSSM یا Supervisor) است. سرور Backend تا کنون صرفاً به صورت دستی یا در جریان اجرای آزمون‌های خودکار (`pytest`) فراخوانی شده و پس از پایان کار متوقف شده است.
 2. **فقدان حلقه پایش خودکار:** در کدهای موجود هیچ کلاسی برای اجرای دوره‌ای پایش بازار (Worker، Background Task یا Scheduler) وجود ندارد. تمام فرآیندهای تولید سیگنال صرفاً به صورت اندپوینت‌های وب تعریف شده‌اند و بدون درخواست HTTP فعال نمی‌شوند.
-3. **معماری نقطه ورود [main.py](file:///g:/mash/backend/app/main.py):** سرور FastAPI در نسخه فعلی از سازوکار قدیمی رویدادها استفاده نکرده و فاقد مدیریت چرخه حیات (`lifespan`) است؛ بنابراین بستر لازم برای مدیریت امن شروع و توقف تسک‌های پس‌زمینه در زمان راه‌اندازی سرور فراهم است.
+3. **معماری نقطه ورود [main.py](/backend/app/main.py):** سرور FastAPI در نسخه فعلی از سازوکار قدیمی رویدادها استفاده نکرده و فاقد مدیریت چرخه حیات (`lifespan`) است؛ بنابراین بستر لازم برای مدیریت امن شروع و توقف تسک‌های پس‌زمینه در زمان راه‌اندازی سرور فراهم است.
 
 ---
 
 ### ۳. ممیزی زیرسیستم‌های آماده برای پایش بازار
 
 تمام قطعات خط لوله تحلیل بازار در لایه سرویس‌ها پیاده‌سازی شده و آماده یکپارچه‌سازی هستند:
-- **دریافت داده از متاتریدر ۵:** ماژول [mt5_provider.py](file:///g:/mash/backend/app/services/market_data/mt5_provider.py) با پشتیبانی از `start_pos=1` برای دریافت کندل‌های منحصراً بسته‌شده.
-- **مهندسی ویژگی‌ها:** ماژول [features.py](file:///g:/mash/backend/app/services/dataset/features.py) با تولید ۲۴ ویژگی تکنیکال گذشته‌نگر.
-- **حکمرانی قوانین استراتژی:** ماژول [knowledge/manager.py](file:///g:/mash/backend/app/services/knowledge/manager.py) با رعایت تفکیک قطعی قوانین تاییدشده از قوانین `pending`.
-- **حکمرانی مدل‌های آماری:** ماژول [ml/registry.py](file:///g:/mash/backend/app/services/ml/registry.py) با بارگذاری امن اشیاء مدل تاییدشده.
-- **ارزیابی و هماهنگی سیگنال:** ماژول‌های [generator.py](file:///g:/mash/backend/app/services/signal/generator.py) و [manager.py](file:///g:/mash/backend/app/services/signal/manager.py) با ثبت سیگنال در حالت `SIGNAL_ONLY`.
-- **کلید مدارشکن و توقف اضطراری:** ماژول [circuit_breaker.py](file:///g:/mash/backend/app/services/risk/circuit_breaker.py) برای بررسی فوری پرچم توقف سیستم.
+- **دریافت داده از متاتریدر ۵:** ماژول [mt5_provider.py](/backend/app/services/market_data/mt5_provider.py) با پشتیبانی از `start_pos=1` برای دریافت کندل‌های منحصراً بسته‌شده.
+- **مهندسی ویژگی‌ها:** ماژول [features.py](/backend/app/services/dataset/features.py) با تولید ۲۴ ویژگی تکنیکال گذشته‌نگر.
+- **حکمرانی قوانین استراتژی:** ماژول [knowledge/manager.py](/backend/app/services/knowledge/manager.py) با رعایت تفکیک قطعی قوانین تاییدشده از قوانین `pending`.
+- **حکمرانی مدل‌های آماری:** ماژول [ml/registry.py](/backend/app/services/ml/registry.py) با بارگذاری امن اشیاء مدل تاییدشده.
+- **ارزیابی و هماهنگی سیگنال:** ماژول‌های [generator.py](/backend/app/services/signal/generator.py) و [manager.py](/backend/app/services/signal/manager.py) با ثبت سیگنال در حالت `SIGNAL_ONLY`.
+- **کلید مدارشکن و توقف اضطراری:** ماژول [circuit_breaker.py](/backend/app/services/risk/circuit_breaker.py) برای بررسی فوری پرچم توقف سیستم.
 
 ---
 
