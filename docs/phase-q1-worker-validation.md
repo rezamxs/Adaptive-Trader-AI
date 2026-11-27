@@ -8,17 +8,17 @@
 ### ۱. بخش A: معماری و جزئیات پیاده‌سازی Worker
 
 #### ۱.۱. فایل‌ها و اجزای جدید
-- **سرویس پایش بازار:** ماژول [market_worker.py](file:///g:/mash/backend/app/services/worker/market_worker.py) شامل کلاس `MarketMonitoringWorker` و متد Singleton به نام `get_market_worker`.
-- **مدل ثبت چرخه‌ها و کلید کندل‌ها:** مدل پایگاه داده [worker_cycle.py](file:///g:/mash/backend/app/models/worker_cycle.py) حاوی جدول `worker_cycle_records` با شاخص منحصربه‌فرد `bar_key` برای تضمین عدم پردازش مجدد.
-- **صادرات ماژول:** فایل [__init__.py](file:///g:/mash/backend/app/services/worker/__init__.py).
-- **تنظیمات پیکربندی:** افزودن متغیرهای `WORKER_ENABLED`، `WORKER_SYMBOL`، `WORKER_TIMEFRAME`، `WORKER_POLL_INTERVAL_SECONDS` (۳ ثانیه) و ضرایب Retry در [config.py](file:///g:/mash/backend/app/core/config.py).
+- **سرویس پایش بازار:** ماژول [market_worker.py](/backend/app/services/worker/market_worker.py) شامل کلاس `MarketMonitoringWorker` و متد Singleton به نام `get_market_worker`.
+- **مدل ثبت چرخه‌ها و کلید کندل‌ها:** مدل پایگاه داده [worker_cycle.py](/backend/app/models/worker_cycle.py) حاوی جدول `worker_cycle_records` با شاخص منحصربه‌فرد `bar_key` برای تضمین عدم پردازش مجدد.
+- **صادرات ماژول:** فایل [__init__.py](/backend/app/services/worker/__init__.py).
+- **تنظیمات پیکربندی:** افزودن متغیرهای `WORKER_ENABLED`، `WORKER_SYMBOL`، `WORKER_TIMEFRAME`، `WORKER_POLL_INTERVAL_SECONDS` (۳ ثانیه) و ضرایب Retry در [config.py](/backend/app/core/config.py).
 
 #### ۱.۲. روش زمان‌بندی و جداسازی ناهمگام (Async Isolation)
 - اجرای پایش بازار در قالب یک تسک پس‌زمینه ناهمگام (`asyncio.create_task`) درون چرخه Event Loop فریم‌ورک FastAPI انجام می‌شود.
 - برای جلوگیری از مسدود شدن سرور وب به واسطه فراخوانی‌های مسدودکننده (Blocking) کتابخانه MetaTrader 5 و پایگاه داده، کلیه عملیات سنگین خواندن بازار و ذخیره‌سازی از طریق `asyncio.to_thread` در ریسه‌های جداگانه اجرا می‌شوند.
 
 #### ۱.۳. چرخه عمر برنامه (Lifespan Integration)
-- در فایل [main.py](file:///g:/mash/backend/app/main.py)، مدیریت چرخه عمر با سازوکار استاندارد `@asynccontextmanager` و تابع `lifespan(app)` پیاده‌سازی شد:
+- در فایل [main.py](/backend/app/main.py)، مدیریت چرخه عمر با سازوکار استاندارد `@asynccontextmanager` و تابع `lifespan(app)` پیاده‌سازی شد:
   - **مرحله راه‌اندازی (Startup):** مقداردهی جداول پایگاه داده (`init_db`)، بررسی گیت‌های امنیتی و آغاز تسک پس‌زمینه Worker.
   - **مرحله خاموش‌سازی (Shutdown):** توقف کنترل‌شده تسک با لغو امن (`cancel`)، مهلت زمانی پاکسازی ۵ ثانیه‌ای و بستن امن اتصال ترمینال متاتریدر ۵.
 
@@ -90,7 +90,7 @@ uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 
 ### ۴. بخش D: آزمون‌های خودکار و اثبات عدم ارسال سفارش
 
-مجموعه آزمون‌های اختصاصی فاز Q1 در فایل [test_phase_q1_worker.py](file:///g:/mash/backend/tests/unit/test_phase_q1_worker.py) ایجاد و اجرا شدند:
+مجموعه آزمون‌های اختصاصی فاز Q1 در فایل [test_phase_q1_worker.py](/backend/tests/unit/test_phase_q1_worker.py) ایجاد و اجرا شدند:
 
 1. `test_worker_safety_gate_prevents_start_if_not_signal_only`: اثبات مهار امنیتی و عدم امکان اجرای Worker در صورتی که حالت معامله غیر از `SIGNAL_ONLY` باشد.
 2. `test_worker_closed_bar_deduplication`: اثبات این که یک کندل فقط یک بار پردازش می‌شود و در دفعات بعدی وضعیت `NO_NEW_CLOSED_BAR` تولید می‌کند.

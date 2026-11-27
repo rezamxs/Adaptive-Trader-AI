@@ -1,7 +1,7 @@
 # ممیزی ریاضی و اعتبارسنجی الگوریتمی Volume Profile
 ## سامانه Adaptive Trader AI
 
-این سند تحلیل موشکافانه فرمول‌ها، الگوریتم‌های گسسته‌سازی، قضایای ریاضی بقای حجم و رفتار حالات مرزی در کلاس [VolumeProfileCalculator](file:///g:/mash/backend/app/services/dataset/volume_profile.py) را ارائه می‌دهد.
+این سند تحلیل موشکافانه فرمول‌ها، الگوریتم‌های گسسته‌سازی، قضایای ریاضی بقای حجم و رفتار حالات مرزی در کلاس [VolumeProfileCalculator](/backend/app/services/dataset/volume_profile.py) را ارائه می‌دهد.
 
 ---
 
@@ -26,7 +26,7 @@ $$\mathbf{P} = \{ p_0, p_1, \dots, p_{N-1} \} \quad \text{where} \quad p_k = \te
 
 در کتابخانه‌های ساده‌انگارانه تحلیل تکنیکال، کل حجم کندل صرفاً به قیمت بسته شدن ($\text{Close}$) تخصیص می‌یابد. این فرض از نظر ساختار بازار دچار سوگیری شدید است، زیرا قیمت در طول طول عمر کندل بین کمترین و بیشترین مقدار نوسان کرده است.
 
-در پیاده‌سازی [VolumeProfileCalculator](file:///g:/mash/backend/app/services/dataset/volume_profile.py)، حجم کندل $v_t$ به صورت یکنواخت بین سطل‌هایی که بازه $[\text{Low}_t, \text{High}_t]$ را پوشش می‌دهند توزیع می‌شود:
+در پیاده‌سازی [VolumeProfileCalculator](/backend/app/services/dataset/volume_profile.py)، حجم کندل $v_t$ به صورت یکنواخت بین سطل‌هایی که بازه $[\text{Low}_t, \text{High}_t]$ را پوشش می‌دهند توزیع می‌شود:
 
 $$\text{start\_idx}_t = \max\left(0, \lfloor \frac{\text{Low}_t - \text{min\_bin}}{\text{price\_step}} \rfloor\right)$$
 $$\text{end\_idx}_t = \min\left(N-1, \lceil \frac{\text{High}_t - \text{min\_bin}}{\text{price\_step}} \rceil\right)$$

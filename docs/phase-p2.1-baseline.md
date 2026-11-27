@@ -18,10 +18,10 @@
 
 ماژول‌ها و فایل‌های زیر به عنوان مبنای ممیزی و حسابرسی در این فاز بررسی شدند:
 
-1. **دفتر معاملات و شبیه‌ساز اجرای واقعی:** ماژول [backtest/engine.py](file:///g:/mash/backend/app/services/backtest/engine.py) جهت ممیزی نحوه باز و بسته شدن موقعیت‌ها بر اساس قیمت‌های خرید و فروش (Bid/Ask) و اعمال تاخیر اجرای ۱ کندلی کندل باز شدن بعدی.
-2. **برچسب‌گذاری سه‌گانه و افق زمانی:** ماژول [dataset/labeling.py](file:///g:/mash/backend/app/services/dataset/labeling.py) شامل بررسی انقضای زمانی ۲۴ کندلی و ممیزی عدم ورود مجدد در زمان باز بودن پوزیشن قبلی.
-3. **مدل رگرسیون لجستیک:** ماژول [ml/models.py](file:///g:/mash/backend/app/services/ml/models.py) جهت تولید احتمالات پیش‌بینی روی ۳,۹۳۸ کندل آزمون بدون هم‌پوشانی (Purged Walk-Forward Test Set).
-4. **گزارش‌های پیشین:** اسناد [phase-p-report.md](file:///g:/mash/docs/phase-p-report.md) و [phase-p2-independent-accounting-audit.md](file:///g:/mash/docs/phase-p2-independent-accounting-audit.md) که اعداد و معیارهای اقتصادی آن‌ها باید به طور ریاضی تطبیق داده شوند.
+1. **دفتر معاملات و شبیه‌ساز اجرای واقعی:** ماژول [backtest/engine.py](/backend/app/services/backtest/engine.py) جهت ممیزی نحوه باز و بسته شدن موقعیت‌ها بر اساس قیمت‌های خرید و فروش (Bid/Ask) و اعمال تاخیر اجرای ۱ کندلی کندل باز شدن بعدی.
+2. **برچسب‌گذاری سه‌گانه و افق زمانی:** ماژول [dataset/labeling.py](/backend/app/services/dataset/labeling.py) شامل بررسی انقضای زمانی ۲۴ کندلی و ممیزی عدم ورود مجدد در زمان باز بودن پوزیشن قبلی.
+3. **مدل رگرسیون لجستیک:** ماژول [ml/models.py](/backend/app/services/ml/models.py) جهت تولید احتمالات پیش‌بینی روی ۳,۹۳۸ کندل آزمون بدون هم‌پوشانی (Purged Walk-Forward Test Set).
+4. **گزارش‌های پیشین:** اسناد [phase-p-report.md](/docs/phase-p-report.md) و [phase-p2-independent-accounting-audit.md](/docs/phase-p2-independent-accounting-audit.md) که اعداد و معیارهای اقتصادی آن‌ها باید به طور ریاضی تطبیق داده شوند.
 
 ---
 

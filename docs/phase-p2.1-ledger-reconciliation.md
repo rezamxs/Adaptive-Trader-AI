@@ -4,11 +4,11 @@
 این سند گزارش رسمی، مستند و مبتنی بر شواهد ریاضی برای فاز P2.1 است. در این ممیزی، تمامی ارقام گزارش‌شده در فازهای P و P2 بازسازی شدند، علل مغایرت‌های آماری ریشه‌یابی گردیدند، حسابداری هزینه‌های اصطکاک معاملاتی با استاندارد بروکر تطبیق داده شد و معمای محاسباتی بیشینه افت سرمایه با اثبات ریاضی حل شد.
 
 کلیه نتایج خام این ممیزی در قالب فایل‌های داده ساختاریافته در پوشه گزارش‌ها ذخیره شده‌اند:
-- [دفتر معاملات بازسازی‌شده](file:///g:/mash/artifacts/reports/phase-p2.1-trade-ledger.csv) شامل ۵۳۷ ردیف معامله برای چهار آستانه.
-- [خلاصه آماری آستانه‌ها و تفکیک سیگنال‌ها](file:///g:/mash/artifacts/reports/phase-p2.1-threshold-summary.csv).
-- [ممیزی تفکیکی هزینه‌های معاملاتی](file:///g:/mash/artifacts/reports/phase-p2.1-cost-reconciliation.csv).
-- [تطبیق و تحلیل مغایرت فاز P با P2](file:///g:/mash/artifacts/reports/phase-p2.1-report-diff.csv).
-- [بازسازی گام‌به‌گام منحنی سرمایه و افت سرمایه](file:///g:/mash/artifacts/reports/phase-p2.1-equity-drawdown.csv).
+- [دفتر معاملات بازسازی‌شده](/artifacts/reports/phase-p2.1-trade-ledger.csv) شامل ۵۳۷ ردیف معامله برای چهار آستانه.
+- [خلاصه آماری آستانه‌ها و تفکیک سیگنال‌ها](/artifacts/reports/phase-p2.1-threshold-summary.csv).
+- [ممیزی تفکیکی هزینه‌های معاملاتی](/artifacts/reports/phase-p2.1-cost-reconciliation.csv).
+- [تطبیق و تحلیل مغایرت فاز P با P2](/artifacts/reports/phase-p2.1-report-diff.csv).
+- [بازسازی گام‌به‌گام منحنی سرمایه و افت سرمایه](/artifacts/reports/phase-p2.1-equity-drawdown.csv).
 
 ---
 
@@ -162,7 +162,7 @@ max_dd_standard = np.max(drawdown_standard)
   $$Gross_{exec} = (Exit - Entry) \times 100$$
   $$Net = Gross_{exec} - Commission$$
 
-در آزمون واحد خودکار [test_accounting_non_duplication_proof](file:///g:/mash/backend/tests/unit/test_phase_p2_accounting_and_alignment.py#L14-L45)، هر دو روش برای یک نمونه معامله با اعداد واقعی اجرا شدند و خروجی دقیقاً ۵۴۱.۵۰- دلار شد. این تطابق ثابت کرد که اسپرد و لغزش فقط یک بار محاسبه شده‌اند و دوباره‌شماری رخ نداده است.
+در آزمون واحد خودکار [test_accounting_non_duplication_proof](/backend/tests/unit/test_phase_p2_accounting_and_alignment.py#L14-L45)، هر دو روش برای یک نمونه معامله با اعداد واقعی اجرا شدند و خروجی دقیقاً ۵۴۱.۵۰- دلار شد. این تطابق ثابت کرد که اسپرد و لغزش فقط یک بار محاسبه شده‌اند و دوباره‌شماری رخ نداده است.
 
 همچنین در حجم‌های خرد، هزینه‌ها به طور خطی مقیاس می‌شوند:
 - برای ۰.۱ لات: ۵.۹۰ دلار

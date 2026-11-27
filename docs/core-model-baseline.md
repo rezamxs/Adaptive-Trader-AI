@@ -14,17 +14,17 @@
 
 - **پایگاه داده:** فایل `adaptive_trader.db` در مسیر ریشه فعال است.
 - **تعداد مدل‌های ثبت‌شده در جدول `ml_models`:** صفر ردیف. مدل‌های تولیدشده در مراحل قبل به صورت فایل‌های مجزای `.joblib` در مسیر `artifacts/models/` نگهداری شده‌اند و هنوز هیچ مدلی با وضعیت `active` در پایگاه داده فعال نشده است.
-- **حالت عملیاتی سامانه:** متغیر `EXECUTION_MODE` در فایل [config.py](file:///g:/mash/backend/app/core/config.py) روی مقدار قطعی `SIGNAL_ONLY` تنظیم است و متغیر `DEMO_TRADING_ENABLED` مقدار `False` دارد.
+- **حالت عملیاتی سامانه:** متغیر `EXECUTION_MODE` در فایل [config.py](/backend/app/core/config.py) روی مقدار قطعی `SIGNAL_ONLY` تنظیم است و متغیر `DEMO_TRADING_ENABLED` مقدار `False` دارد.
 
 ### ۳. ماژول‌های خط لوله یادگیری ماشین
 
 خط لوله پردازش داده و مدل در ماژول‌های زیر پیاده‌سازی شده است:
 
-1. **مهندسی ویژگی‌ها:** کلاس [FeatureEngineer](file:///g:/mash/backend/app/services/dataset/features.py) شامل ۲۴ ویژگی تکنیکال (بازدهی‌ها، هندسه کندل، RSI، ATR، میانگین‌های متحرک، نوسان‌پذیری و متغیرهای زمانی سینوسی/کسینوسی).
-2. **برچسب‌گذاری هدف:** کلاس [BarrierLabeler](file:///g:/mash/backend/app/services/dataset/labeling.py) بر مبنای لمس حد سود پیش از حد ضرر با مدیریت محافظه‌کارانه برخورد همزمان.
-3. **تفکیک داده‌ها:** کلاس [DatasetPipeline](file:///g:/mash/backend/app/services/dataset/pipeline.py) با تقسیم زمانی ترتیبی و اعمال حائل تطهیر (Purge Buffer) برابر با افق پیش‌بینی.
-4. **مدل‌ها و آموزش:** کلاس [ModelTrainer](file:///g:/mash/backend/app/services/ml/trainer.py) و ماژول [models.py](file:///g:/mash/backend/app/services/ml/models.py) شامل رگرسیون لجستیک، رندوم فارست و مدل پایه ساختگی (Dummy Baseline).
-5. **ارزیابی آماری:** کلاس [ModelEvaluator](file:///g:/mash/backend/app/services/ml/evaluator.py) شامل معیارهای طبقه‌بندی، ROC-AUC، Brier Score و نمودار قابلیت اطمینان (Calibration).
+1. **مهندسی ویژگی‌ها:** کلاس [FeatureEngineer](/backend/app/services/dataset/features.py) شامل ۲۴ ویژگی تکنیکال (بازدهی‌ها، هندسه کندل، RSI، ATR، میانگین‌های متحرک، نوسان‌پذیری و متغیرهای زمانی سینوسی/کسینوسی).
+2. **برچسب‌گذاری هدف:** کلاس [BarrierLabeler](/backend/app/services/dataset/labeling.py) بر مبنای لمس حد سود پیش از حد ضرر با مدیریت محافظه‌کارانه برخورد همزمان.
+3. **تفکیک داده‌ها:** کلاس [DatasetPipeline](/backend/app/services/dataset/pipeline.py) با تقسیم زمانی ترتیبی و اعمال حائل تطهیر (Purge Buffer) برابر با افق پیش‌بینی.
+4. **مدل‌ها و آموزش:** کلاس [ModelTrainer](/backend/app/services/ml/trainer.py) و ماژول [models.py](/backend/app/services/ml/models.py) شامل رگرسیون لجستیک، رندوم فارست و مدل پایه ساختگی (Dummy Baseline).
+5. **ارزیابی آماری:** کلاس [ModelEvaluator](/backend/app/services/ml/evaluator.py) شامل معیارهای طبقه‌بندی، ROC-AUC، Brier Score و نمودار قابلیت اطمینان (Calibration).
 
 ### ۴. نتایج آزمون‌های خودکار موجود
 

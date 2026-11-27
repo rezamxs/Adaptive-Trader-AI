@@ -7,7 +7,7 @@
 
 ### ۱. جایگاه ماژول در معماری سامانه
 
-ماژول [volume_profile.py](file:///g:/mash/backend/app/services/dataset/volume_profile.py) به عنوان یک مؤلفه مهندسی ویژگی و تحلیل حراج قیمت درون بسته `dataset` قرار دارد. هدف این مؤلفه محاسبه سطوح کلیدی نظریه حراج بازار شامل:
+ماژول [volume_profile.py](/backend/app/services/dataset/volume_profile.py) به عنوان یک مؤلفه مهندسی ویژگی و تحلیل حراج قیمت درون بسته `dataset` قرار دارد. هدف این مؤلفه محاسبه سطوح کلیدی نظریه حراج بازار شامل:
 - **نقطه کنترل (Point of Control - POC):** سطح قیمتی دارای بیشترین تراکم حجم مبادلاتی.
 - **محدوده ارزش بالا (Value Area High - VAH):** کرانه بالایی بازه قیمتی دربرگیرنده ۷۰ درصد از کل حجم دادوستدها.
 - **محدوده ارزش پایین (Value Area Low - VAL):** کرانه پایینی بازه قیمتی دربرگیرنده ۷۰ درصد از کل حجم دادوستدها.
@@ -49,7 +49,7 @@
 
 ### ۲. نحوه جریان داده از تامین‌کننده MT5
 
-تامین داده در سامانه از طریق کلاس [MT5MarketDataProvider](file:///g:/mash/backend/app/services/market_data/mt5_provider.py) انجام می‌پذیرد.
+تامین داده در سامانه از طریق کلاس [MT5MarketDataProvider](/backend/app/services/market_data/mt5_provider.py) انجام می‌پذیرد.
 در این کلاس، تابع `get_historical_dataframe` فراخوانی می‌شود که به طور پیش‌فرض از پارامتر `start_pos=1` در متد `copy_rates_from_pos` استفاده می‌کند:
 
 ```python
@@ -65,7 +65,7 @@ rates = mt5.copy_rates_from_pos(symbol, mt5_tf, start_pos=1, count=count)
 
 ### ۳. ویژگی‌های خروجی و نحوه نرمال‌سازی
 
-کلاس [VolumeProfileCalculator](file:///g:/mash/backend/app/services/dataset/volume_profile.py) از متد `compute_rolling_profile_features` برای تولید متغیرهای غلتان بدون نگاه به آینده (Zero Lookahead) بهره می‌برد.
+کلاس [VolumeProfileCalculator](/backend/app/services/dataset/volume_profile.py) از متد `compute_rolling_profile_features` برای تولید متغیرهای غلتان بدون نگاه به آینده (Zero Lookahead) بهره می‌برد.
 برای هر کندل $i$ در پنجره زمانی گذشته ($[i - \text{window} : i]$):
 
 1. **`vp_poc`**: سطح قیمت نقطه کنترل در پنجره گذشته.

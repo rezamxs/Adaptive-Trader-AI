@@ -36,7 +36,7 @@
 ```text
 ============================= test session starts =============================
 platform win32 -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
-rootdir: G:\mash
+rootdir: <project-root>
 configfile: pyproject.toml
 plugins: anyio-4.14.2
 collected 55 items

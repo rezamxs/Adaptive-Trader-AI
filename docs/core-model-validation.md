@@ -7,8 +7,8 @@
 
 ### بخش A: وضعیت مدل و خط لوله داده
 
-۱. **نسخه و معماری مدل:** مدل‌های تحت ارزیابی شامل رگرسیون لجستیک ([LogisticRegressionStrategyModel](file:///g:/mash/backend/app/services/ml/models.py#L52)) و جنگل تصادفی ([RandomForestStrategyModel](file:///g:/mash/backend/app/services/ml/models.py#L85)) با ۲۴ ویژگی تکنیکال از کلاس [FeatureEngineer](file:///g:/mash/backend/app/services/dataset/features.py) هستند.
-۲. **تعریف هدف:** برچسب‌گذاری دودویی خرید با متد `label_buy_barrier` در [labeling.py](file:///g:/mash/backend/app/services/dataset/labeling.py)؛ لمس حد سود ۱.۵ برابر ATR پیش از لمس حد ضرر ۱.۰ برابر ATR در افق زمانی آینده با کسر هزینه اسپرد.
+۱. **نسخه و معماری مدل:** مدل‌های تحت ارزیابی شامل رگرسیون لجستیک ([LogisticRegressionStrategyModel](/backend/app/services/ml/models.py#L52)) و جنگل تصادفی ([RandomForestStrategyModel](/backend/app/services/ml/models.py#L85)) با ۲۴ ویژگی تکنیکال از کلاس [FeatureEngineer](/backend/app/services/dataset/features.py) هستند.
+۲. **تعریف هدف:** برچسب‌گذاری دودویی خرید با متد `label_buy_barrier` در [labeling.py](/backend/app/services/dataset/labeling.py)؛ لمس حد سود ۱.۵ برابر ATR پیش از لمس حد ضرر ۱.۰ برابر ATR در افق زمانی آینده با کسر هزینه اسپرد.
 ۳. **تایم‌فریم و نماد:** بررسی روی دو سطح انجام شد:
    - سطح تشخیصی: تایم‌فریم M15 روی نمادهای `XAUUSD` و `EURUSD` (نمونه ۲,۵۰۰ کندلی) جهت ریشه‌یابی گزارش‌های پیشین.
    - سطح عملیاتی استراتژی: تایم‌فریم M1 روی نماد `XAUUSD` (نمونه ۲۰,۰۰۰ کندل واقعی از MT5).

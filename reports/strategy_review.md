@@ -4,7 +4,7 @@
 
 ## ۱. خلاصه اجرایی و دامنه ممیزی نهایی
 
-این گزارش ممیزی نهایی و سند جمع‌بندی استخراج منابع برای پروژه **Adaptive Trader AI** در مسیر `G:\mash` است. در این بررسی تجربی، تمامی شش منبع اصلی موجود در مسیر `<OWNER_HOME>\Downloads\فایل ها` به صورت مستقیم، بدون اتکا به گزارش‌های قبلی یا فرضیات مدل، بازبینی و بازخوانی شدند.
+این گزارش ممیزی نهایی و سند جمع‌بندی استخراج منابع برای پروژه **Adaptive Trader AI** در مسیر `<project-root>` است. در این بررسی تجربی، تمامی شش منبع اصلی موجود در مسیر `<local-sources>` به صورت مستقیم، بدون اتکا به گزارش‌های قبلی یا فرضیات مدل، بازبینی و بازخوانی شدند.
 
 تمامی تعارض‌های شمارشی اسناد قبلی شفاف‌سازی و حل گردید، متن تمامی ۸۹ صفحه کتاب بزرگ پرایس اکشن ممیزی شد، و در مجموع **۵۲ قانون مستقل** استخراج و با وضعیت **`UNAPPROVED`** در رجیستری ثبت گردید.
 
@@ -61,12 +61,12 @@
 
 | سند پروژه | مسیر فایل | وضعیت محتوا |
 | :--- | :--- | :--- |
-| شناسنامه منابع | [`docs/strategy/source_inventory.md`](file:///g:/mash/docs/strategy/source_inventory.md) | اصلاح متادیتا، ثبت ۳۹ صفحه و ۷۰ فایل و ممیزی کامل ۸۹ صفحه |
-| مشخصات استراتژی‌ها | [`docs/strategy/strategy_spec.md`](file:///g:/mash/docs/strategy/strategy_spec.md) | تبیین مشخصات فنی ۵۲ قانون با تفکیک چهارگانه |
-| رجیستری قوانین | [`docs/strategy/rule_registry.json`](file:///g:/mash/docs/strategy/rule_registry.json) | ۵۲ قانون کامل با وضعیت صددرصدی UNAPPROVED |
-| گزارش ابهامات و تعارض‌ها | [`docs/strategy/ambiguities.md`](file:///g:/mash/docs/strategy/ambiguities.md) | تحلیل ریسک مارتینگل، اسپرد شناور، و مفاهیم کیفی RTM |
-| نیازمندی‌های داده | [`docs/strategy/data_requirements.md`](file:///g:/mash/docs/strategy/data_requirements.md) | ماتریس ۵۲ قانون در برابر دیتای ۹۵ هزار کندلی M1 طلا |
-| گزارش ممیزی نهایی | [`reports/strategy_review.md`](file:///g:/mash/reports/strategy_review.md) | پاسخ به سوالات ممیزی و ارائه نقشه راه فاز P |
+| شناسنامه منابع | [`docs/strategy/source_inventory.md`](/docs/strategy/source_inventory.md) | اصلاح متادیتا، ثبت ۳۹ صفحه و ۷۰ فایل و ممیزی کامل ۸۹ صفحه |
+| مشخصات استراتژی‌ها | [`docs/strategy/strategy_spec.md`](/docs/strategy/strategy_spec.md) | تبیین مشخصات فنی ۵۲ قانون با تفکیک چهارگانه |
+| رجیستری قوانین | [`docs/strategy/rule_registry.json`](/docs/strategy/rule_registry.json) | ۵۲ قانون کامل با وضعیت صددرصدی UNAPPROVED |
+| گزارش ابهامات و تعارض‌ها | [`docs/strategy/ambiguities.md`](/docs/strategy/ambiguities.md) | تحلیل ریسک مارتینگل، اسپرد شناور، و مفاهیم کیفی RTM |
+| نیازمندی‌های داده | [`docs/strategy/data_requirements.md`](/docs/strategy/data_requirements.md) | ماتریس ۵۲ قانون در برابر دیتای ۹۵ هزار کندلی M1 طلا |
+| گزارش ممیزی نهایی | [`reports/strategy_review.md`](/reports/strategy_review.md) | پاسخ به سوالات ممیزی و ارائه نقشه راه فاز P |
 
 ---
 

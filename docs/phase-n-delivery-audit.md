@@ -1,7 +1,7 @@
 # گزارش نهایی ممیزی تحویل و تکرارپذیری فاز N (Phase N Delivery & Reproducibility Audit)
 
 **پروژه:** Adaptive Trader AI  
-**مسیر پروژه:** `G:\mash`  
+**مسیر پروژه:** `<project-root>`  
 **شاخه Git:** `fix/core-correctness-audit`  
 **وضعیت شاخه:** کاملاً همگام با `origin/fix/core-correctness-audit`  
 **کامیت مبنا:** `5799566 Test rejection when stored order volume exceeds current risk budget`  
