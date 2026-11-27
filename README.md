@@ -6,11 +6,48 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![MetaTrader 5](https://img.shields.io/badge/Market_Data-MetaTrader_5-blue)](https://www.metatrader5.com/)
 [![Execution](https://img.shields.io/badge/Default_Execution-SIGNAL_ONLY-success)](#مدل-ایمنی-و-مرزهای-اجرا)
-[![Core Regression CI](https://github.com/rezamxs/Adaptive-Trader-AI/actions/workflows/core-regression.yml/badge.svg?branch=main)](https://github.com/rezamxs/Adaptive-Trader-AI/actions/workflows/core-regression.yml)
+[![Core Regression CI](https://github.com/rezamxs/Adaptive-Trader-AI/actions/workflows/core-regression.yml/badge.svg?branch=main)](https://github.com/rezamxs/Adaptive-Trader-AI/actions/workflows/core-regression.yml?query=branch%3Amain)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+> [!WARNING]
+> **Research software, not financial advice.** Adaptive Trader AI is a research and engineering project. It does not promise or demonstrate profitability: the current research backtests are **negative after costs** (see [Research results](#research-results-english)). Nothing here is a recommendation to trade. Trading leveraged instruments can lose more than you invest. Use it at your own risk.
+>
+> **نرم‌افزار پژوهشی است، نه توصیه مالی.** این پروژه سودآوری را وعده نمی‌دهد و اثبات نکرده است؛ نتایج بکتست‌های پژوهشی فعلی **پس از کسر هزینه‌ها منفی** هستند. هیچ بخشی از آن توصیه به معامله نیست و مسئولیت هر استفاده با خود کاربر است.
+
+**[English summary](#english-summary)** | فارسی (متن اصلی)
 
 **Adaptive Trader AI** یک سامانه پژوهشی و مهندسی برای تبدیل داده و دانش معاملاتی به فرایندهای قابل‌اندازه‌گیری، تکرارپذیر و ممیزی‌پذیر است. معماری آن اجزای دریافت داده بازار از MetaTrader 5، پالایش و ساخت دیتاست، استخراج و بازیابی دانش، آموزش و ارزیابی مدل‌های ML، بکتست هزینه‌محور، مدیریت ریسک، تولید سیگنال و داشبورد عملیاتی را از هم جدا می‌کند.
 
 هدف سامانه صرفاً تولید یک پیش‌بینی نیست؛ هدف، حفظ زنجیره شواهد از منبع داده و تعریف برچسب تا ارزیابی خارج از نمونه، ثبت متریک‌ها و تصمیم حاکمیتی درباره مدل است. **سبز بودن تست‌ها یا عبور یک مدل از گیت‌های فنی، به‌تنهایی اثبات‌کننده مزیت معاملاتی یا سودآوری نیست.**
+
+---
+
+## English summary
+
+**Adaptive Trader AI** is a research system for algorithmic-trading experiments on MetaTrader 5 data. Its goal is a traceable evidence chain, not a trading bot: a FastAPI backend with MT5 market-data providers, dataset validation and barrier labeling, purged temporal splits, baseline / logistic-regression / random-forest models with ML walk-forward, a cost-aware event-driven backtester (spread, slippage, commission), a model registry with promotion gates, a BM25 knowledge base with human approval of extracted rules, and a Persian single-page dashboard.
+
+- **Execution is off by default:** `EXECUTION_MODE=SIGNAL_ONLY`, `DEMO_TRADING_ENABLED=false`. Live trading is out of scope.
+- **Rules are not approved:** all 52 records in [`docs/strategy/rule_registry.json`](docs/strategy/rule_registry.json) are `UNAPPROVED`.
+
+<a id="research-results-english"></a>
+**Research results.** The Phase P2.1 purged walk-forward backtest ([`artifacts/reports/phase-p2.1-threshold-summary.csv`](artifacts/reports/phase-p2.1-threshold-summary.csv)) loses money after costs at every tested probability threshold (0.25, 0.45, 0.50, 0.55): the win rate is 32–38% and net P&L is negative in all four runs. Passing tests or promotion gates is not evidence of a trading edge.
+
+**Quick start (Windows, PowerShell)**: needs Python ≥ 3.11 (the lock file and CI use 3.14) and, for real market data, the MetaTrader 5 desktop terminal:
+
+```powershell
+git clone https://github.com/rezamxs/Adaptive-Trader-AI.git
+cd Adaptive-Trader-AI
+py -3.14 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-lock.txt
+Copy-Item .env.example .env   # set API_TOKEN, METRIC_SIGNING_KEY, DATABASE_URL, MT5_PATH, MT5_SERVER
+$env:ALEMBIC_DATABASE_URL = "sqlite:///C:/absolute/path/to/Adaptive-Trader-AI/adaptive_trader.db"  # same DB as DATABASE_URL
+python -m alembic upgrade head
+python -m backend.app.main     # dashboard: http://127.0.0.1:8000/dashboard, API docs: /docs
+python -m pytest backend/tests -q
+```
+
+Licensed under the [MIT License](LICENSE). The detailed documentation below is in Persian.
 
 ---
 
@@ -195,7 +232,7 @@ Strategy Walk-Forward از یک مسیر مستقل استفاده می‌کند
 
 OCR در پیکربندی فعلی به‌صورت پیش‌فرض خاموش است. بنابراین استخراج متن دیجیتال از PDF را نباید با OCR کامل اسناد اسکن‌شده یا فهم قطعی نمودارها و تصاویر یکسان دانست.
 
-تمام 52 رکورد رجیستری فعلی UNAPPROVED هستند (buglist item 46: عدد با رجیستری واقعی `docs/strategy/rule_registry.json` هم‌تراز شد). تا زمانی که کاربر هر قانون را بازبینی و تأیید نکرده باشد، آن قانون نباید وارد استراتژی فعال شود.
+تمام 52 رکورد رجیستری فعلی ([`docs/strategy/rule_registry.json`](docs/strategy/rule_registry.json)) UNAPPROVED هستند. تا زمانی که کاربر هر قانون را بازبینی و تأیید نکرده باشد، آن قانون نباید وارد استراتژی فعال شود.
 
 ---
 
@@ -317,7 +354,7 @@ Alembic در این پروژه مقصد دیتابیس را حدس نمی‌زن
 
     python -m compileall -q backend migrations
 
-Workflow گیت‌هاب در .github/workflows/core-regression.yml مجموعه کامل تست‌های Backend را اجرا می‌کند، ماژول‌ها را Compile/Import می‌کند و Migration را روی دیتابیس SQLite موقت می‌آزماید. Runner فعلی CI از Ubuntu و Python 3.11 استفاده می‌کند. تست‌هایی که به ترمینال واقعی MT5 وابسته‌اند، در این محیط به‌صورت شرطی Skip می‌شوند؛ بنابراین CI سبز، جایگزین اعتبارسنجی عملیاتی روی Windows و ترمینال MT5 واقعی نیست.
+Workflow گیت‌هاب در .github/workflows/core-regression.yml مجموعه کامل تست‌های Backend را اجرا می‌کند، ماژول‌ها را Compile/Import می‌کند و Migration را روی دیتابیس SQLite موقت می‌آزماید. CI روی دو Runner اجرا می‌شود: Ubuntu و Windows، هر دو با Python 3.14 و نصب دقیق وابستگی‌ها از requirements-lock.txt (روی Windows پکیج MetaTrader5 هم نصب می‌شود). تست‌هایی که به ترمینال واقعی MT5 وابسته‌اند، در هر دو محیط به‌صورت شرطی Skip می‌شوند؛ بنابراین CI سبز، جایگزین اعتبارسنجی عملیاتی روی Windows و ترمینال MT5 واقعی نیست.
 
 برای بررسی نتیجه جاری، از صفحه [GitHub Actions](https://github.com/rezamxs/Adaptive-Trader-AI/actions/workflows/core-regression.yml) استفاده کنید. وضعیت Badge بالای README به شاخه main متصل است.
 
@@ -327,7 +364,7 @@ Workflow گیت‌هاب در .github/workflows/core-regression.yml مجموعه
 
 این موارد باید پیش از اتکا به خروجی سامانه در هر تصمیم معاملاتی در نظر گرفته شوند:
 
-1. **عدم اثبات سودآوری:** عبور از تست‌ها یا Promotion Gate، اثبات‌کننده وجود Edge پایدار در بازار نیست. نتایج باید روی داده خارج از نمونه و با هزینه واقعی مستقل ارزیابی شوند.
+1. **عدم اثبات سودآوری:** عبور از تست‌ها یا Promotion Gate، اثبات‌کننده وجود Edge پایدار در بازار نیست. بکتست پژوهشی فاز P2.1 ([`artifacts/reports/phase-p2.1-threshold-summary.csv`](artifacts/reports/phase-p2.1-threshold-summary.csv)) در هر چهار آستانه‌ی آزموده‌شده (0.25، 0.45، 0.50 و 0.55) پس از کسر هزینه‌ها زیان خالص داشته و نرخ برد آن بین ۳۲ تا ۳۸ درصد بوده است. نتایج باید روی داده خارج از نمونه و با هزینه واقعی مستقل ارزیابی شوند.
 2. **عدم تقارن برچسب‌ها:** Barrier Labeling فعلی برای سناریوی BUY است؛ مسیر SELL و تعریف هدف متناظر هنوز مسئله جداگانه‌ای است.
 3. **Embargo در Split ایستا:** مسیر Static Dataset Split دارای Purge است؛ وجود Embargo مستقل در این مسیر هنوز به‌عنوان یک شکاف طراحی/تصمیم ثبت شده است. این موضوع را با Purge و Embargo پیاده‌سازی‌شده در ML Walk-Forward اشتباه نگیرید.
 4. **Spread بکتست:** مدل OHLC فعلی، معادل اجرای Tick-by-Tick با Spread تاریخی شناور نیست و ممکن است در دوره‌های خبر یا نقدشوندگی پایین، هزینه واقعی را کم‌برآورد کند.
@@ -339,7 +376,7 @@ Workflow گیت‌هاب در .github/workflows/core-regression.yml مجموعه
 
 - **NaN/±Infinity در اعتبارسنجی شواهد ML Walk-Forward** (Hardening Defect سابق): در نقطهٔ گلوگاه `verify_ml_walk_forward_payload` بسته شد — هر مقدار عددی fold و aggregate باید finite و در بازهٔ [0,1] باشد؛ تست‌های پارامتری در `test_buglist_21_46.py` این قرارداد را pin کرده‌اند (2026-11-06).
 - **اتصال شواهد ML Walk-Forward به Run پایدار:** از طریق جدول `ml_walk_forward_runs` (migration 20261104_mlwfr) بسته شده — اتصال شواهد فقط با یک evaluation پایدارشده و digest-تأییدشده ممکن است.
-- **Windows CI:** job ویندوز در `core-regression.yml` فعال است و روی برنچ `fix/buglist-1-20` سبز اجرا شده است.
+- **Windows CI:** job ویندوز در `core-regression.yml` فعال است و روی شاخه `main` اجرا می‌شود.
 
 جزئیات معماری، پروتکل‌ها و گزارش‌های فنی در اسناد زیر نگهداری می‌شوند:
 
@@ -358,3 +395,11 @@ Workflow گیت‌هاب در .github/workflows/core-regression.yml مجموعه
 ## مسئولیت استفاده
 
 Adaptive Trader AI یک پروژه پژوهشی و مهندسی نرم‌افزار است، نه توصیه سرمایه‌گذاری یا تضمین بازده. هر خروجی مدل، سیگنال یا بکتست تابع کیفیت داده، فرض‌های هزینه، مشخصات بروکر و محدودیت‌های مستندشده است. استفاده از حساب واقعی و فعال‌سازی مسیرهای اجرایی خارج از دامنه مجاز فعلی پروژه است.
+
+نتایج گذشته، چه در بکتست و چه در اجرای آزمایشی، تضمینی برای نتایج آینده نیست. معامله در بازارهای اهرمی می‌تواند به زیانی بیش از سرمایه اولیه منجر شود.
+
+---
+
+## مجوز
+
+این پروژه تحت [مجوز MIT](LICENSE) منتشر شده است. مجوز MIT نرم‌افزار را «همان‌گونه که هست» و بدون هیچ ضمانتی ارائه می‌کند.
