@@ -232,7 +232,7 @@ Strategy Walk-Forward از یک مسیر مستقل استفاده می‌کند
 
 OCR در پیکربندی فعلی به‌صورت پیش‌فرض خاموش است. بنابراین استخراج متن دیجیتال از PDF را نباید با OCR کامل اسناد اسکن‌شده یا فهم قطعی نمودارها و تصاویر یکسان دانست.
 
-تمام 52 رکورد رجیستری فعلی UNAPPROVED هستند (buglist item 46: عدد با رجیستری واقعی `docs/strategy/rule_registry.json` هم‌تراز شد). تا زمانی که کاربر هر قانون را بازبینی و تأیید نکرده باشد، آن قانون نباید وارد استراتژی فعال شود.
+تمام 52 رکورد رجیستری فعلی ([`docs/strategy/rule_registry.json`](docs/strategy/rule_registry.json)) UNAPPROVED هستند. تا زمانی که کاربر هر قانون را بازبینی و تأیید نکرده باشد، آن قانون نباید وارد استراتژی فعال شود.
 
 ---
 
@@ -354,7 +354,7 @@ Alembic در این پروژه مقصد دیتابیس را حدس نمی‌زن
 
     python -m compileall -q backend migrations
 
-Workflow گیت‌هاب در .github/workflows/core-regression.yml مجموعه کامل تست‌های Backend را اجرا می‌کند، ماژول‌ها را Compile/Import می‌کند و Migration را روی دیتابیس SQLite موقت می‌آزماید. Runner فعلی CI از Ubuntu و Python 3.11 استفاده می‌کند. تست‌هایی که به ترمینال واقعی MT5 وابسته‌اند، در این محیط به‌صورت شرطی Skip می‌شوند؛ بنابراین CI سبز، جایگزین اعتبارسنجی عملیاتی روی Windows و ترمینال MT5 واقعی نیست.
+Workflow گیت‌هاب در .github/workflows/core-regression.yml مجموعه کامل تست‌های Backend را اجرا می‌کند، ماژول‌ها را Compile/Import می‌کند و Migration را روی دیتابیس SQLite موقت می‌آزماید. CI روی دو Runner اجرا می‌شود: Ubuntu و Windows، هر دو با Python 3.14 و نصب دقیق وابستگی‌ها از requirements-lock.txt (روی Windows پکیج MetaTrader5 هم نصب می‌شود). تست‌هایی که به ترمینال واقعی MT5 وابسته‌اند، در هر دو محیط به‌صورت شرطی Skip می‌شوند؛ بنابراین CI سبز، جایگزین اعتبارسنجی عملیاتی روی Windows و ترمینال MT5 واقعی نیست.
 
 برای بررسی نتیجه جاری، از صفحه [GitHub Actions](https://github.com/rezamxs/Adaptive-Trader-AI/actions/workflows/core-regression.yml) استفاده کنید. وضعیت Badge بالای README به شاخه main متصل است.
 
@@ -364,7 +364,7 @@ Workflow گیت‌هاب در .github/workflows/core-regression.yml مجموعه
 
 این موارد باید پیش از اتکا به خروجی سامانه در هر تصمیم معاملاتی در نظر گرفته شوند:
 
-1. **عدم اثبات سودآوری:** عبور از تست‌ها یا Promotion Gate، اثبات‌کننده وجود Edge پایدار در بازار نیست. نتایج باید روی داده خارج از نمونه و با هزینه واقعی مستقل ارزیابی شوند.
+1. **عدم اثبات سودآوری:** عبور از تست‌ها یا Promotion Gate، اثبات‌کننده وجود Edge پایدار در بازار نیست. بکتست پژوهشی فاز P2.1 ([`artifacts/reports/phase-p2.1-threshold-summary.csv`](artifacts/reports/phase-p2.1-threshold-summary.csv)) در هر چهار آستانه‌ی آزموده‌شده (0.25، 0.45، 0.50 و 0.55) پس از کسر هزینه‌ها زیان خالص داشته و نرخ برد آن بین ۳۲ تا ۳۸ درصد بوده است. نتایج باید روی داده خارج از نمونه و با هزینه واقعی مستقل ارزیابی شوند.
 2. **عدم تقارن برچسب‌ها:** Barrier Labeling فعلی برای سناریوی BUY است؛ مسیر SELL و تعریف هدف متناظر هنوز مسئله جداگانه‌ای است.
 3. **Embargo در Split ایستا:** مسیر Static Dataset Split دارای Purge است؛ وجود Embargo مستقل در این مسیر هنوز به‌عنوان یک شکاف طراحی/تصمیم ثبت شده است. این موضوع را با Purge و Embargo پیاده‌سازی‌شده در ML Walk-Forward اشتباه نگیرید.
 4. **Spread بکتست:** مدل OHLC فعلی، معادل اجرای Tick-by-Tick با Spread تاریخی شناور نیست و ممکن است در دوره‌های خبر یا نقدشوندگی پایین، هزینه واقعی را کم‌برآورد کند.
@@ -376,7 +376,7 @@ Workflow گیت‌هاب در .github/workflows/core-regression.yml مجموعه
 
 - **NaN/±Infinity در اعتبارسنجی شواهد ML Walk-Forward** (Hardening Defect سابق): در نقطهٔ گلوگاه `verify_ml_walk_forward_payload` بسته شد — هر مقدار عددی fold و aggregate باید finite و در بازهٔ [0,1] باشد؛ تست‌های پارامتری در `test_buglist_21_46.py` این قرارداد را pin کرده‌اند (2026-11-06).
 - **اتصال شواهد ML Walk-Forward به Run پایدار:** از طریق جدول `ml_walk_forward_runs` (migration 20261104_mlwfr) بسته شده — اتصال شواهد فقط با یک evaluation پایدارشده و digest-تأییدشده ممکن است.
-- **Windows CI:** job ویندوز در `core-regression.yml` فعال است و روی برنچ `fix/buglist-1-20` سبز اجرا شده است.
+- **Windows CI:** job ویندوز در `core-regression.yml` فعال است و روی شاخه `main` اجرا می‌شود.
 
 جزئیات معماری، پروتکل‌ها و گزارش‌های فنی در اسناد زیر نگهداری می‌شوند:
 
