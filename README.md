@@ -6,7 +6,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![MetaTrader 5](https://img.shields.io/badge/Market_Data-MetaTrader_5-blue)](https://www.metatrader5.com/)
 [![Execution](https://img.shields.io/badge/Default_Execution-SIGNAL_ONLY-success)](#مدل-ایمنی-و-مرزهای-اجرا)
-[![Core Regression CI](https://github.com/rezamxs/Adaptive-Trader-AI/actions/workflows/core-regression.yml/badge.svg?branch=reveo)](https://github.com/rezamxs/Adaptive-Trader-AI/actions/workflows/core-regression.yml)
+[![Core Regression CI](https://github.com/rezamxs/Adaptive-Trader-AI/actions/workflows/core-regression.yml/badge.svg?branch=main)](https://github.com/rezamxs/Adaptive-Trader-AI/actions/workflows/core-regression.yml)
 
 **Adaptive Trader AI** یک سامانه پژوهشی و مهندسی برای تبدیل داده و دانش معاملاتی به فرایندهای قابل‌اندازه‌گیری، تکرارپذیر و ممیزی‌پذیر است. معماری آن اجزای دریافت داده بازار از MetaTrader 5، پالایش و ساخت دیتاست، استخراج و بازیابی دانش، آموزش و ارزیابی مدل‌های ML، بکتست هزینه‌محور، مدیریت ریسک، تولید سیگنال و داشبورد عملیاتی را از هم جدا می‌کند.
 
@@ -319,7 +319,7 @@ Alembic در این پروژه مقصد دیتابیس را حدس نمی‌زن
 
 Workflow گیت‌هاب در .github/workflows/core-regression.yml مجموعه کامل تست‌های Backend را اجرا می‌کند، ماژول‌ها را Compile/Import می‌کند و Migration را روی دیتابیس SQLite موقت می‌آزماید. Runner فعلی CI از Ubuntu و Python 3.11 استفاده می‌کند. تست‌هایی که به ترمینال واقعی MT5 وابسته‌اند، در این محیط به‌صورت شرطی Skip می‌شوند؛ بنابراین CI سبز، جایگزین اعتبارسنجی عملیاتی روی Windows و ترمینال MT5 واقعی نیست.
 
-برای بررسی نتیجه جاری، از صفحه [GitHub Actions](https://github.com/rezamxs/Adaptive-Trader-AI/actions/workflows/core-regression.yml) استفاده کنید. وضعیت Badge بالای README به شاخه reveo متصل است.
+برای بررسی نتیجه جاری، از صفحه [GitHub Actions](https://github.com/rezamxs/Adaptive-Trader-AI/actions/workflows/core-regression.yml) استفاده کنید. وضعیت Badge بالای README به شاخه main متصل است.
 
 ---
 
