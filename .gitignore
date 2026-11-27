@@ -80,3 +80,6 @@ data/document_inbox/*
 
 # DB-stray archive (owner disposition 2026-11-04)
 backups/
+
+# Archives under .agents/ (e.g. vendored third-party/course source packs) must not be committed
+.agents/**/*.zip
